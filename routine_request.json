@@ -1,0 +1,54 @@
+{
+    "routine": {
+        "exercises": [
+            {
+                "exercise_template_id": "ac9782ee-bbaf-4983-8c69-99e3211aceef",
+                "notes": "Row\n\n3 x 150m",
+                "rest_seconds": null,
+                "sets": [
+                    {
+                        "distance_meters": null,
+                        "duration_seconds": 60,
+                        "reps": null,
+                        "type": "normal",
+                        "weight_kg": null
+                    }
+                ],
+                "superset_id": null
+            },
+            {
+                "exercise_template_id": "fd395cd3-6377-4c66-a60e-683a5353b510",
+                "notes": "Half Kneeling Single Arm KB Press\n\n3 x 6 ES",
+                "rest_seconds": null,
+                "sets": [
+                    {
+                        "distance_meters": null,
+                        "duration_seconds": 60,
+                        "reps": null,
+                        "type": "normal",
+                        "weight_kg": null
+                    }
+                ],
+                "superset_id": null
+            },
+            {
+                "exercise_template_id": "ac9782ee-bbaf-4983-8c69-99e3211aceef",
+                "notes": "Half Kneeling Single Arm KB Press\n\n3 x 6 ES",
+                "rest_seconds": null,
+                "sets": [
+                    {
+                        "distance_meters": null,
+                        "duration_seconds": 60,
+                        "reps": null,
+                        "type": "normal",
+                        "weight_kg": null
+                    }
+                ],
+                "superset_id": null
+            }
+        ],
+        "folder_id": null,
+        "notes": "A1) Row\nA2) Half Kneeling Single Arm KB Press\nB1) Plate Halo\nB2) Standing Rope Tricep Extension\nB3) Standing Rope Bicep Curl\nC1) Single Arm Seated Row with Iso Hold\nC2) Standing Dumbbell Curl to Press\nD1) Pause Incline Bench Press\nD2) Incline Barbell Bench Press\nE) Seated Row\nF1) Standing Arnold Press\nF2) Row\nF3) Rest\nG) Down Regulate",
+        "title": "01 Apr 2024: "
+    }
+}

@@ -1,0 +1,3385 @@
+[
+        {
+                "exercise_type": "distance_duration",
+                "info": "3 x 200m @ 80%",
+                "result": "37.5\n37.8\n37.7",
+                "workout_item_id": 52
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": 200,
+                                "duration_seconds": 37,
+                                "reps": null,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": 200,
+                                "duration_seconds": 38,
+                                "reps": null,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": 200,
+                                "duration_seconds": 37,
+                                "reps": null,
+                                "type": "normal",
+                                "weight_kg": null
+                        }
+                ]
+        },
+        {
+                "exercise_type": "distance_duration",
+                "info": "3 x 200m @ 80%",
+                "result": "37.1\n37.3\n39.2",
+                "workout_item_id": 75
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": 200,
+                                "duration_seconds": 37,
+                                "reps": null,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": 200,
+                                "duration_seconds": 37,
+                                "reps": null,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": 200,
+                                "duration_seconds": 39,
+                                "reps": null,
+                                "type": "normal",
+                                "weight_kg": null
+                        }
+                ]
+        },
+        {
+                "exercise_type": "weight_reps",
+                "info": "Build weight then:\n3 x 12",
+                "result": "52kg",
+                "workout_item_id": 144
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 12,
+                                "type": "normal",
+                                "weight_kg": 52.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 12,
+                                "type": "normal",
+                                "weight_kg": 52.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 12,
+                                "type": "normal",
+                                "weight_kg": 52.0
+                        }
+                ]
+        },
+        {
+                "exercise_type": "weight_reps",
+                "info": "3 x 5",
+                "result": "50kg",
+                "workout_item_id": 146
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 5,
+                                "type": "normal",
+                                "weight_kg": 50.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 5,
+                                "type": "normal",
+                                "weight_kg": 50.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 5,
+                                "type": "normal",
+                                "weight_kg": 50.0
+                        }
+                ]
+        },
+        {
+                "exercise_type": "weight_reps",
+                "info": "3 x 10",
+                "result": "42.4kg\n7 reps on 3rd set",
+                "workout_item_id": 147
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": 42.4
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": 42.4
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 7,
+                                "type": "normal",
+                                "weight_kg": 42.4
+                        }
+                ]
+        },
+        {
+                "exercise_type": "weight_reps",
+                "info": "3 x 10",
+                "result": "12kg",
+                "workout_item_id": 149
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": 12.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": 12.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": 12.0
+                        }
+                ]
+        },
+        {
+                "exercise_type": "distance_duration",
+                "info": "3 x 200m @ 80%",
+                "result": "38.9\n38.0\n35.4",
+                "workout_item_id": 176
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": 200,
+                                "duration_seconds": 39,
+                                "reps": null,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": 200,
+                                "duration_seconds": 38,
+                                "reps": null,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": 200,
+                                "duration_seconds": 35,
+                                "reps": null,
+                                "type": "normal",
+                                "weight_kg": null
+                        }
+                ]
+        },
+        {
+                "exercise_type": "reps_only",
+                "info": "3 x 5\nTry not to miss these today haha",
+                "result": "5x30\n5x30\n5x30",
+                "workout_item_id": 252
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 5,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 5,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 5,
+                                "type": "normal",
+                                "weight_kg": null
+                        }
+                ]
+        },
+        {
+                "exercise_type": "reps_only",
+                "info": "3 x 15-20",
+                "result": "20\n20\n20",
+                "workout_item_id": 336
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 20,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 20,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 20,
+                                "type": "normal",
+                                "weight_kg": null
+                        }
+                ]
+        },
+        {
+                "exercise_type": "weight_reps",
+                "info": "4 x 10\n60kg",
+                "result": "10x62.5\n10x62.5 \n10x62.5 \n10x62.5",
+                "workout_item_id": 386
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": 62.5
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": 62.5
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": 62.5
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": 62.5
+                        }
+                ]
+        },
+        {
+                "exercise_type": "reps_only",
+                "info": "4 x max but not more than 5",
+                "result": "5x0\n5x0\n5x0\n5x0",
+                "workout_item_id": 411
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 5,
+                                "type": "failure",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 5,
+                                "type": "failure",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 5,
+                                "type": "failure",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 5,
+                                "type": "failure",
+                                "weight_kg": null
+                        }
+                ]
+        },
+        {
+                "exercise_type": "reps_only",
+                "info": "3 x max but not more than 25",
+                "result": "25x0\n19x0\n15x0",
+                "workout_item_id": 413
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 25,
+                                "type": "failure",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 19,
+                                "type": "failure",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 15,
+                                "type": "failure",
+                                "weight_kg": null
+                        }
+                ]
+        },
+        {
+                "exercise_type": "distance_duration",
+                "info": "3 x 250m Sprints\n2-3min rest",
+                "result": "46.4sec\n2mins rest\n45.2sec\n2mins rest\n44.7sec",
+                "workout_item_id": 446
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": 250,
+                                "duration_seconds": 46,
+                                "reps": null,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": 250,
+                                "duration_seconds": 45,
+                                "reps": null,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": 250,
+                                "duration_seconds": 44,
+                                "reps": null,
+                                "type": "normal",
+                                "weight_kg": null
+                        }
+                ]
+        },
+        {
+                "exercise_type": "weight_reps",
+                "info": "Build weight then: \n3 x 10-12\n>100kg",
+                "result": "120kg for 12 reps",
+                "workout_item_id": 477
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 12,
+                                "type": "normal",
+                                "weight_kg": 120.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 12,
+                                "type": "normal",
+                                "weight_kg": 120.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 12,
+                                "type": "normal",
+                                "weight_kg": 120.0
+                        }
+                ]
+        },
+        {
+                "exercise_type": "reps_only",
+                "info": "4 x max but not more than 8",
+                "result": "8x0\n7x0\n8x0\n6x0",
+                "workout_item_id": 488
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "failure",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 7,
+                                "type": "failure",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "failure",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 6,
+                                "type": "failure",
+                                "weight_kg": null
+                        }
+                ]
+        },
+        {
+                "exercise_type": "reps_only",
+                "info": "3 x max but not more than 25",
+                "result": "25x0\n22x0\n16x0",
+                "workout_item_id": 490
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 25,
+                                "type": "failure",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 22,
+                                "type": "failure",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 16,
+                                "type": "failure",
+                                "weight_kg": null
+                        }
+                ]
+        },
+        {
+                "exercise_type": "distance_duration",
+                "info": "2 x 500m Moderate Pace",
+                "result": "1:50.4\n1:45.6",
+                "workout_item_id": 494
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": 500,
+                                "duration_seconds": 110,
+                                "reps": null,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": 500,
+                                "duration_seconds": 105,
+                                "reps": null,
+                                "type": "normal",
+                                "weight_kg": null
+                        }
+                ]
+        },
+        {
+                "exercise_type": "distance_duration",
+                "info": "6km",
+                "result": "33m 33s",
+                "workout_item_id": 528
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": 6000,
+                                "duration_seconds": 2013,
+                                "reps": null,
+                                "type": "normal",
+                                "weight_kg": null
+                        }
+                ]
+        },
+        {
+                "exercise_type": "reps_only",
+                "info": "4 x max but not more than 8",
+                "result": "8x0\n8x0\n8x0\n6x0",
+                "workout_item_id": 582
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "failure",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "failure",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "failure",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 6,
+                                "type": "failure",
+                                "weight_kg": null
+                        }
+                ]
+        },
+        {
+                "exercise_type": "reps_only",
+                "info": "3 x max but not more than 25",
+                "result": "25x0\n25x0\n19x0",
+                "workout_item_id": 584
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 25,
+                                "type": "failure",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 25,
+                                "type": "failure",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 19,
+                                "type": "failure",
+                                "weight_kg": null
+                        }
+                ]
+        },
+        {
+                "exercise_type": "reps_only",
+                "info": "4 x max but not more than 8",
+                "result": "8x0\n8x0\n8x0\n8x0",
+                "workout_item_id": 662
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "failure",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "failure",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "failure",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "failure",
+                                "weight_kg": null
+                        }
+                ]
+        },
+        {
+                "exercise_type": "reps_only",
+                "info": "3 x max but not more than 25",
+                "result": "25x0\n25x0\n22x0",
+                "workout_item_id": 664
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 25,
+                                "type": "failure",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 25,
+                                "type": "failure",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 22,
+                                "type": "failure",
+                                "weight_kg": null
+                        }
+                ]
+        },
+        {
+                "exercise_type": "weight_reps",
+                "info": "Build weight then: \n3 x 10-12\n100kg",
+                "result": "110kg",
+                "workout_item_id": 708
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 12,
+                                "type": "normal",
+                                "weight_kg": 110.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 12,
+                                "type": "normal",
+                                "weight_kg": 110.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 12,
+                                "type": "normal",
+                                "weight_kg": 110.0
+                        }
+                ]
+        },
+        {
+                "exercise_type": "weight_reps",
+                "info": "4 x 10-12\n67.5kg",
+                "result": "12x67.5\n12x67.5\n12x67.5\n11.5x67.5",
+                "workout_item_id": 719
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 12,
+                                "type": "normal",
+                                "weight_kg": 67.5
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 12,
+                                "type": "normal",
+                                "weight_kg": 67.5
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 12,
+                                "type": "normal",
+                                "weight_kg": 67.5
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 11,
+                                "type": "normal",
+                                "weight_kg": 67.5
+                        }
+                ]
+        },
+        {
+                "exercise_type": "distance_duration",
+                "info": "Try do 2 x 500m @ an easy pace but skip this if it irritates your calf",
+                "result": "@2mins",
+                "workout_item_id": 732
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": 500,
+                                "duration_seconds": 120,
+                                "reps": null,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": 500,
+                                "duration_seconds": 120,
+                                "reps": null,
+                                "type": "normal",
+                                "weight_kg": null
+                        }
+                ]
+        },
+        {
+                "exercise_type": "reps_only",
+                "info": "3 x 8",
+                "result": "8x0\n8x0\n8x0",
+                "workout_item_id": 741
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": null
+                        }
+                ]
+        },
+        {
+                "exercise_type": "weight_reps",
+                "info": "3 x 8-12",
+                "result": "59kg\n12\n12\n12",
+                "workout_item_id": 752
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 12,
+                                "type": "normal",
+                                "weight_kg": 59.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 12,
+                                "type": "normal",
+                                "weight_kg": 59.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 12,
+                                "type": "normal",
+                                "weight_kg": 59.0
+                        }
+                ]
+        },
+        {
+                "exercise_type": "weight_reps",
+                "info": "3 x 10-12\n@ 70kg",
+                "result": "12\n10\n10",
+                "workout_item_id": 753
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 12,
+                                "type": "normal",
+                                "weight_kg": 70.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": 70.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": 70.0
+                        }
+                ]
+        },
+        {
+                "exercise_type": "reps_only",
+                "info": "3 x 12",
+                "result": "12x0\n12x0\n12x0",
+                "workout_item_id": 785
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 12,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 12,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 12,
+                                "type": "normal",
+                                "weight_kg": null
+                        }
+                ]
+        },
+        {
+                "exercise_type": "reps_only",
+                "info": "4 x max but no more than 10",
+                "result": "8x0\n8x0\n8x0\n7x0",
+                "workout_item_id": 788
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "failure",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "failure",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "failure",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 7,
+                                "type": "failure",
+                                "weight_kg": null
+                        }
+                ]
+        },
+        {
+                "exercise_type": "reps_only",
+                "info": "5 x 8",
+                "result": "8x0\n8x0\n8x0\n8x0\n8x0",
+                "workout_item_id": 796
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": null
+                        }
+                ]
+        },
+        {
+                "exercise_type": "weight_reps",
+                "info": "Build weight then: \n4 x 10",
+                "result": "70kg",
+                "workout_item_id": 817
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": 70.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": 70.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": 70.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": 70.0
+                        }
+                ]
+        },
+        {
+                "exercise_type": "weight_reps",
+                "info": "4 x 6 ES",
+                "result": "10kgs",
+                "workout_item_id": 818
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 6,
+                                "type": "normal",
+                                "weight_kg": 10.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 6,
+                                "type": "normal",
+                                "weight_kg": 10.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 6,
+                                "type": "normal",
+                                "weight_kg": 10.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 6,
+                                "type": "normal",
+                                "weight_kg": 10.0
+                        }
+                ]
+        },
+        {
+                "exercise_type": "reps_only",
+                "info": "3 x 12",
+                "result": "12x0\n12x0\n12x0",
+                "workout_item_id": 847
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 12,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 12,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 12,
+                                "type": "normal",
+                                "weight_kg": null
+                        }
+                ]
+        },
+        {
+                "exercise_type": "reps_only",
+                "info": "4 x max but no more than 10",
+                "result": "10x0\n9x0\n8x0\n7x0",
+                "workout_item_id": 857
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "failure",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 9,
+                                "type": "failure",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "failure",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 7,
+                                "type": "failure",
+                                "weight_kg": null
+                        }
+                ]
+        },
+        {
+                "exercise_type": "reps_only",
+                "info": "4 x max but no more than 10",
+                "result": "10x0\n8x0\n8x0\n8x0",
+                "workout_item_id": 916
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "failure",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": null
+                        }
+                ]
+        },
+        {
+                "exercise_type": "reps_only",
+                "info": "3 x 12",
+                "result": "12x0\n12x0\n12x0",
+                "workout_item_id": 987
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 12,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 12,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 12,
+                                "type": "normal",
+                                "weight_kg": null
+                        }
+                ]
+        },
+        {
+                "exercise_type": "weight_reps",
+                "info": "4 x 10-12\n42.5kg",
+                "result": "3 sets",
+                "workout_item_id": 1010
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 12,
+                                "type": "normal",
+                                "weight_kg": 42.5
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 12,
+                                "type": "normal",
+                                "weight_kg": 42.5
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 12,
+                                "type": "normal",
+                                "weight_kg": 42.5
+                        }
+                ]
+        },
+        {
+                "exercise_type": "reps_only",
+                "info": "4 x max but no more than 10",
+                "result": "3 sets",
+                "workout_item_id": 1011
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "failure",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "failure",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "failure",
+                                "weight_kg": null
+                        }
+                ]
+        },
+        {
+                "exercise_type": "weight_reps",
+                "info": "3 x 8 ES",
+                "result": "39kg",
+                "workout_item_id": 1068
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 39.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 39.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 39.0
+                        }
+                ]
+        },
+        {
+                "exercise_type": "weight_reps",
+                "info": "3 x 10-12\n@ 72.5kg",
+                "result": "12\n10\n8",
+                "workout_item_id": 1070
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 12,
+                                "type": "normal",
+                                "weight_kg": 72.5
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": 72.5
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 72.5
+                        }
+                ]
+        },
+        {
+                "exercise_type": "weight_reps",
+                "info": "3 x 10\n70kg",
+                "result": "✅️",
+                "workout_item_id": 1071
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": 70.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": 70.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": 70.0
+                        }
+                ]
+        },
+        {
+                "exercise_type": "weight_reps",
+                "info": "3 x 8+8 (Drop Set)",
+                "result": "2 × 73 > 59\n1 x 73 > 52",
+                "workout_item_id": 1072
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 73.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "dropset",
+                                "weight_kg": 59.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 73.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "dropset",
+                                "weight_kg": 52.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 73.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "dropset",
+                                "weight_kg": 52.0
+                        }
+                ]
+        },
+        {
+                "exercise_type": "weight_reps",
+                "info": "3 x 8-12",
+                "result": "8 x 10kg",
+                "workout_item_id": 1073
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 10.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 10.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 10.0
+                        }
+                ]
+        },
+        {
+                "exercise_type": "reps_only",
+                "info": "3 x max but no more than 10",
+                "result": "10x0\n10x0\n8x0",
+                "workout_item_id": 1108
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "failure",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "failure",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "failure",
+                                "weight_kg": null
+                        }
+                ]
+        },
+        {
+                "exercise_type": "reps_only",
+                "info": "3 x 12",
+                "result": "12x0\n12x0\n12x0",
+                "workout_item_id": 1123
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 12,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 12,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 12,
+                                "type": "normal",
+                                "weight_kg": null
+                        }
+                ]
+        },
+        {
+                "exercise_type": "reps_only",
+                "info": "5 x 8",
+                "result": "8x0\n8x0\n8x0\n8x0\n8x0",
+                "workout_item_id": 1126
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": null
+                        }
+                ]
+        },
+        {
+                "exercise_type": "bodyweight_weighted",
+                "info": "3 x 10",
+                "result": "10x10\n10x10\n10x10",
+                "workout_item_id": 1131
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": 10.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": 10.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": 10.0
+                        }
+                ]
+        },
+        {
+                "exercise_type": "distance_duration",
+                "info": "Hold arounf 1:50/500m for 3min",
+                "result": "1:49.7/500m",
+                "workout_item_id": 1237
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": 500,
+                                "duration_seconds": 109,
+                                "reps": null,
+                                "type": "normal",
+                                "weight_kg": null
+                        }
+                ]
+        },
+        {
+                "exercise_type": "distance_duration",
+                "info": "3 x 3min",
+                "result": "Row Erg\n1:50.0/500m\n1:49.9/500m\n1:48.8/500m",
+                "workout_item_id": 1239
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": 818,
+                                "duration_seconds": 180,
+                                "reps": null,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": 809,
+                                "duration_seconds": 179,
+                                "reps": null,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": 800,
+                                "duration_seconds": 178,
+                                "reps": null,
+                                "type": "normal",
+                                "weight_kg": null
+                        }
+                ]
+        },
+        {
+                "exercise_type": "reps_only",
+                "info": "3 x 5-8 @ 20kg",
+                "result": "5x20\n5x20\n5x20",
+                "workout_item_id": 1329
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 5,
+                                "type": "normal",
+                                "weight_kg": 20.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 5,
+                                "type": "normal",
+                                "weight_kg": 20.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 5,
+                                "type": "normal",
+                                "weight_kg": 20.0
+                        }
+                ]
+        },
+        {
+                "exercise_type": "reps_only",
+                "info": "3 x 5-8 @ 20kg",
+                "result": "No belt\n10x0\n9x0\n7x0",
+                "workout_item_id": 1416
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 9,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 7,
+                                "type": "normal",
+                                "weight_kg": null
+                        }
+                ]
+        },
+        {
+                "exercise_type": "bodyweight_weighted",
+                "info": "3 x 20s hold at the top",
+                "result": "10kg",
+                "workout_item_id": 1493
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": 20,
+                                "reps": null,
+                                "type": "normal",
+                                "weight_kg": 10.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": 20,
+                                "reps": null,
+                                "type": "normal",
+                                "weight_kg": 10.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": 20,
+                                "reps": null,
+                                "type": "normal",
+                                "weight_kg": 10.0
+                        }
+                ]
+        },
+        {
+                "exercise_type": "bodyweight_weighted",
+                "info": "3 x 10 @ 10kg",
+                "result": "10x10\n10x10\n10x10",
+                "workout_item_id": 1497
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": 10.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": 10.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": 10.0
+                        }
+                ]
+        },
+        {
+                "exercise_type": "weight_reps",
+                "info": "3 x 8+8",
+                "result": "8x45 > 8x41\n8x45 > 8x41\n8x45 > 8x41",
+                "workout_item_id": 1519
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 45.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "dropset",
+                                "weight_kg": 41.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 45.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "dropset",
+                                "weight_kg": 41.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 45.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "dropset",
+                                "weight_kg": 41.0
+                        }
+                ]
+        },
+        {
+                "exercise_type": "weight_reps",
+                "info": "3 x 8+8",
+                "result": "8x45 > 8x41\n8x45 > 8x41\n8x45 > 8x41",
+                "workout_item_id": 1520
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 45.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "dropset",
+                                "weight_kg": 41.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 45.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "dropset",
+                                "weight_kg": 41.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 45.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "dropset",
+                                "weight_kg": 41.0
+                        }
+                ]
+        },
+        {
+                "exercise_type": "distance_duration",
+                "info": "4 x 400m",
+                "result": "4x90sec",
+                "workout_item_id": 1547
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": 400,
+                                "duration_seconds": 90,
+                                "reps": null,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": 400,
+                                "duration_seconds": 90,
+                                "reps": null,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": 400,
+                                "duration_seconds": 90,
+                                "reps": null,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": 400,
+                                "duration_seconds": 90,
+                                "reps": null,
+                                "type": "normal",
+                                "weight_kg": null
+                        }
+                ]
+        },
+        {
+                "exercise_type": "weight_reps",
+                "info": "3 x 8+8",
+                "result": "8x18 > 8x16\n8x18 > 8x16\n8x18 > 8x16",
+                "workout_item_id": 1548
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 18.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "dropset",
+                                "weight_kg": 16.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 18.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "dropset",
+                                "weight_kg": 16.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 18.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "dropset",
+                                "weight_kg": 16.0
+                        }
+                ]
+        },
+        {
+                "exercise_type": "weight_reps",
+                "info": "3 x 8+8",
+                "result": "8x23 > 8x18\n8x23 > 8x18\n8x23 > 8x18",
+                "workout_item_id": 1549
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 23.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "dropset",
+                                "weight_kg": 18.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 23.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "dropset",
+                                "weight_kg": 18.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 23.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "dropset",
+                                "weight_kg": 18.0
+                        }
+                ]
+        },
+        {
+                "exercise_type": "reps_only",
+                "info": "Build weight then: \n3 x 5-8 @ 20kg",
+                "result": "5x15\n4x20\n3x25\n",
+                "workout_item_id": 1560
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 5,
+                                "type": "normal",
+                                "weight_kg": 15.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 4,
+                                "type": "normal",
+                                "weight_kg": 20.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 3,
+                                "type": "normal",
+                                "weight_kg": 25.0
+                        }
+                ]
+        },
+        {
+                "exercise_type": "weight_reps",
+                "info": "1 or 2 sets to build then \n2 x 6 AHAP\n2 x 8+8",
+                "result": "6x86\n6x86\n8x73 > 8x59\n8x73 > 8x59",
+                "workout_item_id": 1686
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 6,
+                                "type": "normal",
+                                "weight_kg": 86.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 6,
+                                "type": "normal",
+                                "weight_kg": 86.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 73.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "dropset",
+                                "weight_kg": 59.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 73.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "dropset",
+                                "weight_kg": 59.0
+                        }
+                ]
+        },
+        {
+                "exercise_type": "weight_reps",
+                "info": "1 or 2 sets to build then \n2 x 6 AHAP\n2 x 8+8",
+                "result": "6x93\n6x93\n8x79 > 8x66\n8x79 > 8x66",
+                "workout_item_id": 1746
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 6,
+                                "type": "normal",
+                                "weight_kg": 93.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 6,
+                                "type": "normal",
+                                "weight_kg": 93.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 79.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "dropset",
+                                "weight_kg": 66.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 79.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "dropset",
+                                "weight_kg": 66.0
+                        }
+                ]
+        },
+        {
+                "exercise_type": "weight_reps",
+                "info": "3 x 10+10",
+                "result": "10x45 > 10x36\n10x45 > 10x36\n10x45 > 10x36",
+                "workout_item_id": 1749
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": 45.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": 36.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": 45.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": 36.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": 45.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": 36.0
+                        }
+                ]
+        },
+        {
+                "exercise_type": "bodyweight_weighted",
+                "info": "3 x 12",
+                "result": "12x10\n12x10\n12x10",
+                "workout_item_id": 1773
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 12,
+                                "type": "normal",
+                                "weight_kg": 10.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 12,
+                                "type": "normal",
+                                "weight_kg": 10.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 12,
+                                "type": "normal",
+                                "weight_kg": 10.0
+                        }
+                ]
+        },
+        {
+                "exercise_type": "bodyweight_weighted",
+                "info": "3 x 12",
+                "result": "12x15\n12x15\n12x15",
+                "workout_item_id": 1788
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 12,
+                                "type": "normal",
+                                "weight_kg": 15.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 12,
+                                "type": "normal",
+                                "weight_kg": 15.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 12,
+                                "type": "normal",
+                                "weight_kg": 15.0
+                        }
+                ]
+        },
+        {
+                "exercise_type": "distance_duration",
+                "info": "2 x 750m \nNot a race ",
+                "result": "2 x 800m 🤦\u200d♂️",
+                "workout_item_id": 1789
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": 800,
+                                "duration_seconds": 240,
+                                "reps": null,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": 800,
+                                "duration_seconds": 240,
+                                "reps": null,
+                                "type": "normal",
+                                "weight_kg": null
+                        }
+                ]
+        },
+        {
+                "exercise_type": "bodyweight_weighted",
+                "info": "3 x 20s hold at the top",
+                "result": "15kg",
+                "workout_item_id": 1791
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": 20,
+                                "reps": null,
+                                "type": "normal",
+                                "weight_kg": 15.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": 20,
+                                "reps": null,
+                                "type": "normal",
+                                "weight_kg": 15.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": 20,
+                                "reps": null,
+                                "type": "normal",
+                                "weight_kg": 15.0
+                        }
+                ]
+        },
+        {
+                "exercise_type": "bodyweight_weighted",
+                "info": "3 x 10",
+                "result": "10x15\n10x15\n10x15",
+                "workout_item_id": 1792
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": 15.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": 15.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": 15.0
+                        }
+                ]
+        },
+        {
+                "exercise_type": "weight_reps",
+                "info": "3 x 8-10\n95kg",
+                "result": "12x95\n10x95\n10x95\n10x95 *waiting on a rack",
+                "workout_item_id": 1806
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": 95.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": 95.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": 95.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": 95.0
+                        }
+                ]
+        },
+        {
+                "exercise_type": "weight_reps",
+                "info": "Build up to \n2 x 6 AHAP\n2 x 8+8",
+                "result": "6x100\n6x100\n8x86 > 8x77",
+                "workout_item_id": 1827
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 6,
+                                "type": "normal",
+                                "weight_kg": 100.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 6,
+                                "type": "normal",
+                                "weight_kg": 100.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "dropset",
+                                "weight_kg": 86.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "dropset",
+                                "weight_kg": 77.0
+                        }
+                ]
+        },
+        {
+                "exercise_type": "weight_reps",
+                "info": "Build up to \n2 x 6 AHAP\n2 x 8+8",
+                "result": "6x100\n6x100\n8x86 > 8x77\n8x86 > 8x77",
+                "workout_item_id": 1837
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 6,
+                                "type": "normal",
+                                "weight_kg": 100.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 6,
+                                "type": "normal",
+                                "weight_kg": 100.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 86.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "dropset",
+                                "weight_kg": 77.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 86.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "dropset",
+                                "weight_kg": 77.0
+                        }
+                ]
+        },
+        {
+                "exercise_type": "reps_only",
+                "info": "3 x 10-15",
+                "result": "15x0\n15x0\n15x0",
+                "workout_item_id": 1848
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 15,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 15,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 15,
+                                "type": "normal",
+                                "weight_kg": null
+                        }
+                ]
+        },
+        {
+                "exercise_type": "reps_only",
+                "info": "3 x 10-15",
+                "result": "15x0\n15x0\n15x0",
+                "workout_item_id": 1859
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 15,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 15,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 15,
+                                "type": "normal",
+                                "weight_kg": null
+                        }
+                ]
+        },
+        {
+                "exercise_type": "weight_reps",
+                "info": "1 or 2 sets to build then \n2 x 6 AHAP\n2 x 8+8",
+                "result": "6x93\n6x93\n8x79 > 8x66\n8x79 > 8x66",
+                "workout_item_id": 1867
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 6,
+                                "type": "normal",
+                                "weight_kg": 93.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 6,
+                                "type": "normal",
+                                "weight_kg": 93.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 79.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "dropset",
+                                "weight_kg": 66.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 79.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "dropset",
+                                "weight_kg": 66.0
+                        }
+                ]
+        },
+        {
+                "exercise_type": "weight_reps",
+                "info": "3 x 10+10",
+                "result": "10x45 > 10x36\n10x45 > 10x36\n10x45 > 10x36",
+                "workout_item_id": 1870
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": 45.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "dropset",
+                                "weight_kg": 36.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": 45.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "dropset",
+                                "weight_kg": 36.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": 45.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "dropset",
+                                "weight_kg": 36.0
+                        }
+                ]
+        },
+        {
+                "exercise_type": "weight_reps",
+                "info": "3 x 8+8",
+                "result": "6x100\n6x100\n8x86 > 8x73\n8x86 > 8x73",
+                "workout_item_id": 1906
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 6,
+                                "type": "normal",
+                                "weight_kg": 100.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 6,
+                                "type": "normal",
+                                "weight_kg": 100.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "dropset",
+                                "weight_kg": 86.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "dropset",
+                                "weight_kg": 73.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "dropset",
+                                "weight_kg": 86.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "dropset",
+                                "weight_kg": 73.0
+                        }
+                ]
+        },
+        {
+                "exercise_type": "weight_reps",
+                "info": "4 x 8+8 (Drop Set)\n30s Rest",
+                "result": "8x79 > 8x66\n8x79 > 8x66\n8x73 > 8x59\n8x73 > 8x59",
+                "workout_item_id": 1932
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 79.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "dropset",
+                                "weight_kg": 66.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 79.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "dropset",
+                                "weight_kg": 66.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 73.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "dropset",
+                                "weight_kg": 59.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 73.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "dropset",
+                                "weight_kg": 59.0
+                        }
+                ]
+        },
+        {
+                "exercise_type": "weight_reps",
+                "info": "Lowest incline \nBuild up to max reps with 85kg",
+                "result": "9x85",
+                "workout_item_id": 1995
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 9,
+                                "type": "failure",
+                                "weight_kg": 85.0
+                        }
+                ]
+        },
+        {
+                "exercise_type": "weight_reps",
+                "info": "Build up to max reps with 86kg",
+                "result": "16x86",
+                "workout_item_id": 1996
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 16,
+                                "type": "failure",
+                                "weight_kg": 86.0
+                        }
+                ]
+        },
+        {
+                "exercise_type": "weight_reps",
+                "info": "1 or 2 clicks back from vertical\nBuild up to max reps with 26kg",
+                "result": "14x26",
+                "workout_item_id": 1997
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 14,
+                                "type": "normal",
+                                "weight_kg": 26.0
+                        }
+                ]
+        },
+        {
+                "exercise_type": "weight_reps",
+                "info": "Turn the bar upside down and use the handles in line with the bar\nBuild weight and find a 8RM",
+                "result": "8x145",
+                "workout_item_id": 2014
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "failure",
+                                "weight_kg": 145.0
+                        }
+                ]
+        },
+        {
+                "exercise_type": "bodyweight_weighted",
+                "info": "3 x 8",
+                "result": "8x25\n8x25\n8x25",
+                "workout_item_id": 2025
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 25.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 25.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 25.0
+                        }
+                ]
+        },
+        {
+                "exercise_type": "weight_reps",
+                "info": "Turn the bar upside down and use the handles in line with the bar\nBuild weight and find a 8RM",
+                "result": "9x145",
+                "workout_item_id": 2057
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 9,
+                                "type": "failure",
+                                "weight_kg": 145.0
+                        }
+                ]
+        },
+        {
+                "exercise_type": "reps_only",
+                "info": "3 x 8-10",
+                "result": "10x0\n10x0\n7x0",
+                "workout_item_id": 2075
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 7,
+                                "type": "normal",
+                                "weight_kg": null
+                        }
+                ]
+        },
+        {
+                "exercise_type": "bodyweight_weighted",
+                "info": "3 x 8",
+                "result": "8x25\n8x25\n8x25",
+                "workout_item_id": 2096
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 25.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 25.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 25.0
+                        }
+                ]
+        },
+        {
+                "exercise_type": "reps_only",
+                "info": "3 x 8-10",
+                "result": "10x0\n10x0\n8x0",
+                "workout_item_id": 2112
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": 0.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": 0.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 0.0
+                        }
+                ]
+        },
+        {
+                "exercise_type": "distance_duration",
+                "info": "5min",
+                "result": "Lvl 12",
+                "workout_item_id": 2126
+        },
+        {
+                "sets": []
+        },
+        {
+                "exercise_type": "weight_reps",
+                "info": "Lowest incline \nBuild weight then\n3 x 6-8 @87.5/90kg",
+                "result": "8x90\n6x90 * hit the rack\n8x90",
+                "workout_item_id": 2142
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 90.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 6,
+                                "type": "normal",
+                                "weight_kg": 90.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 90.0
+                        }
+                ]
+        },
+        {
+                "exercise_type": "reps_only",
+                "info": "3 x 8-10",
+                "result": "10x0\n9x0\n8x0",
+                "workout_item_id": 2145
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 9,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": null
+                        }
+                ]
+        },
+        {
+                "exercise_type": "reps_only",
+                "info": "3 x 8-10",
+                "result": "10x0\n8x0 > 2x0\n7x0 > 3x0",
+                "workout_item_id": 2178
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": 0.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 0.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 7,
+                                "type": "normal",
+                                "weight_kg": 0.0
+                        }
+                ]
+        },
+        {
+                "exercise_type": "bodyweight_weighted",
+                "info": "3 x 8",
+                "result": "8x25\n8x25\n8x25",
+                "workout_item_id": 2199
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 25.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 25.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 25.0
+                        }
+                ]
+        },
+        {
+                "exercise_type": "bodyweight_assisted",
+                "info": "3 x 6",
+                "result": "Black Band",
+                "workout_item_id": 2205
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 6,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 6,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 6,
+                                "type": "normal",
+                                "weight_kg": null
+                        }
+                ]
+        },
+        {
+                "exercise_type": "reps_only",
+                "info": "3 x 8-10",
+                "result": "10x0\n8x0\n5x0",
+                "workout_item_id": 2224
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 5,
+                                "type": "normal",
+                                "weight_kg": null
+                        }
+                ]
+        },
+        {
+                "exercise_type": "reps_only",
+                "info": "3 x 8-10",
+                "result": "10x0\n10x0\n7x0",
+                "workout_item_id": 2239
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 7,
+                                "type": "normal",
+                                "weight_kg": null
+                        }
+                ]
+        },
+        {
+                "exercise_type": "weight_reps",
+                "info": "5 x 20s hold 3/4 of the way up",
+                "result": "5x100",
+                "workout_item_id": 2257
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 1,
+                                "type": "normal",
+                                "weight_kg": 100
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 1,
+                                "type": "normal",
+                                "weight_kg": 100
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 1,
+                                "type": "normal",
+                                "weight_kg": 100
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 1,
+                                "type": "normal",
+                                "weight_kg": 100
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 1,
+                                "type": "normal",
+                                "weight_kg": 100
+                        }
+                ]
+        },
+        {
+                "exercise_type": "reps_only",
+                "info": "3 x max reps\n60s rest between each set",
+                "result": "12x0\n8x0\n5x0",
+                "workout_item_id": 2267
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 12,
+                                "type": "failure",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "failure",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 5,
+                                "type": "failure",
+                                "weight_kg": null
+                        }
+                ]
+        },
+        {
+                "exercise_type": "weight_reps",
+                "info": "3 x 8+10\ndrop set",
+                "result": "8x36 > 10x27\n8x36 > 10x27\n8x36 > 10x27",
+                "workout_item_id": 2271
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 36.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "dropset",
+                                "weight_kg": 27.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 36.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "dropset",
+                                "weight_kg": 27.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 8,
+                                "type": "normal",
+                                "weight_kg": 36.0
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 10,
+                                "type": "dropset",
+                                "weight_kg": 27.0
+                        }
+                ]
+        },
+        {
+                "exercise_type": "weight_reps",
+                "info": "5 x 20s hold 3/4 of the way up",
+                "result": "5x100",
+                "workout_item_id": 2279
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 1,
+                                "type": "normal",
+                                "weight_kg": 100
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 1,
+                                "type": "normal",
+                                "weight_kg": 100
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 1,
+                                "type": "normal",
+                                "weight_kg": 100
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 1,
+                                "type": "normal",
+                                "weight_kg": 100
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 1,
+                                "type": "normal",
+                                "weight_kg": 100
+                        }
+                ]
+        },
+        {
+                "exercise_type": "bodyweight_assisted",
+                "info": "3 x 6\nBlack Band",
+                "result": "2x6",
+                "workout_item_id": 2280
+        },
+        {
+                "sets": [
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 6,
+                                "type": "normal",
+                                "weight_kg": null
+                        },
+                        {
+                                "distance_meters": null,
+                                "duration_seconds": null,
+                                "reps": 6,
+                                "type": "normal",
+                                "weight_kg": null
+                        }
+                ]
+        }
+]

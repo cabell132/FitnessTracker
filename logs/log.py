@@ -5,7 +5,7 @@ from typing import Optional
 
 def get_logger(
     name: str = __name__,
-    log_level: int = logging.DEBUG,
+    log_level: int = logging.INFO,
     log_file_name: Optional[str] = None,
     log_sub_dir: str = "logs",
 ) -> logging.Logger:
