@@ -1,0 +1,301 @@
+---
+description: Python docstring style guide following Google Python Style Guide
+globs: **/*.py
+alwaysApply: true
+---
+# Python Docstring Style Guide (Google Style)
+
+All Python code must follow the Google Python Style Guide for docstrings. This ensures consistency, clarity, and better IDE support.
+
+## General Rules
+
+1. **Always use triple double quotes** (`"""`) for docstrings
+2. **Start docstring on the same line** as the opening quotes
+3. **End docstring with a period**
+4. **Use proper capitalization** - first word should be capitalized unless it's a parameter name
+5. **Be concise but descriptive** - explain what the function/class does, not how it does it
+
+## Function/Method Docstrings
+
+### Format
+
+```python
+def function_name(arg1: type, arg2: type = default) -> return_type:
+    """
+    Brief one-line summary.
+
+    More detailed description if needed. Can span multiple paragraphs.
+    Explain any important behavior, side effects, or edge cases.
+
+    Args:
+        arg1 (type): Description of arg1. Include units if applicable.
+        arg2 (type, optional): Description of arg2. Defaults to default.
+            Can span multiple lines for complex descriptions.
+
+    Returns:
+        return_type: Description of return value. Use None if function
+            returns nothing.
+
+    Raises:
+        ExceptionType: Description of when this exception is raised.
+
+    Example:
+        >>> function_name("value1", arg2="value2")
+        result
+    """
+```
+
+### Required Sections
+
+1. **Summary** (required): One-line description starting immediately after opening quotes
+2. **Extended Description** (optional): Additional paragraphs if needed
+3. **Args** (required if function has parameters): List all parameters
+4. **Returns** (required): Describe return value, even if None
+5. **Raises** (optional): List exceptions that may be raised
+6. **Example** (optional): Usage examples
+
+### Args Section Rules
+
+- List parameters in the same order as the function signature
+- Include type information in parentheses: `(type)`
+- For optional parameters, include "optional" and default value
+- Use union types notation: `(int | None)` not `(Optional[int])`
+- For complex types, use the actual type annotation: `(list[int])`, `(dict[str, int])`
+- End each description with a period
+- Indent continuation lines properly
+
+### Returns Section Rules
+
+- Always include, even if function returns `None`
+- Include type information: `(return_type)`
+- Describe what is returned, not just the type
+
+### Good Examples
+
+```python
+def link_spotify_beatport(
+    self,
+    session: Session,
+    beatport_ids: list[int],
+    spotify_id: str,
+    confidence_score: float = 1.0,
+    actor_user_id: int | None = None,
+) -> None:
+    """
+    Links a Spotify track to Beatport tracks in the database.
+
+    Function deletes links which are not in the list of beatport_ids, then
+    inserts the new links and updates the confidence score.
+
+    Args:
+        session (Session): The database session used for querying.
+        beatport_ids (list[int]): The Beatport track IDs to link.
+        spotify_id (str): The Spotify track ID to link.
+        confidence_score (float, optional): The confidence score for the match.
+            Defaults to 1.0.
+        actor_user_id (int | None, optional): The user ID of the actor who is
+            linking the tracks. Defaults to None.
+
+    Returns:
+        None
+    """
+```
+
+```python
+def fetch_track_data(track_id: str) -> dict[str, Any]:
+    """
+    Fetches track data from the external API.
+
+    Args:
+        track_id (str): The unique identifier for the track.
+
+    Returns:
+        dict[str, Any]: A dictionary containing track metadata including
+            title, artist, and duration.
+
+    Raises:
+        APIError: If the API request fails or track is not found.
+        ValueError: If track_id is empty or invalid format.
+    """
+```
+
+### Bad Examples
+
+```python
+# Bad: Missing summary, no Args section, no Returns section
+def process_data(data):
+    """
+    Processes the data.
+    """
+```
+
+```python
+# Bad: Wrong format, missing types, no periods
+def calculate_total(items):
+    """
+    Calculates total
+    items: list of items
+    returns: total amount
+    """
+```
+
+```python
+# Bad: Type annotation doesn't match actual type
+def get_user(user_id: int) -> dict:
+    """
+    Gets a user.
+
+    Args:
+        user_id (str): The user ID.  # Wrong type!
+    """
+```
+
+## Class Docstrings
+
+### Format
+
+```python
+class ClassName:
+    """
+    Brief one-line summary.
+
+    More detailed description of the class, its purpose, and usage.
+
+    Attributes:
+        attribute_name (type): Description of attribute.
+        another_attr (type): Description of another attribute.
+
+    Example:
+        >>> obj = ClassName(arg1, arg2)
+        >>> obj.method()
+    """
+```
+
+### Good Example
+
+```python
+class SpotifyService:
+    """
+    Service for interacting with Spotify API and managing Spotify tracks.
+
+    This service handles track linking, metadata fetching, and synchronization
+    with the database.
+
+    Attributes:
+        driver (Neo4jDriver): The Neo4j database driver instance.
+        source_service (MusicServiceSlug): The music service identifier.
+    """
+```
+
+## Module Docstrings
+
+Module docstrings should appear at the top of the file, before any imports (except `from __future__` imports).
+
+```python
+"""Module for handling Spotify track operations.
+
+This module provides services for linking Spotify tracks with other music
+services, fetching track metadata, and managing track relationships.
+"""
+```
+
+## One-Line Docstrings
+
+For simple functions, a one-line docstring is acceptable:
+
+```python
+def get_count() -> int:
+    """Returns the current count."""
+    return self._count
+```
+
+## Property Docstrings
+
+Properties should have docstrings describing what they return:
+
+```python
+@property
+def full_name(self) -> str:
+    """The user's full name (first + last)."""
+    return f"{self.first_name} {self.last_name}"
+```
+
+## Type Annotations
+
+- Always include type annotations in function signatures
+- Use modern Python type hints: `list[int]` instead of `List[int]`
+- Use union types: `int | None` instead of `Optional[int]`
+- Docstring types should match type annotations exactly
+- For complex return types, use `Any` from `typing` when necessary
+
+## Common Patterns
+
+### Optional Parameters
+
+```python
+def create_user(
+    name: str,
+    email: str | None = None,
+    age: int | None = None,
+) -> User:
+    """
+    Creates a new user.
+
+    Args:
+        name (str): The user's name.
+        email (str | None, optional): The user's email address.
+            Defaults to None.
+        age (int | None, optional): The user's age. Defaults to None.
+
+    Returns:
+        User: The created user object.
+    """
+```
+
+### Methods That Return None
+
+```python
+def update_status(self, status: str) -> None:
+    """
+    Updates the current status.
+
+    Args:
+        status (str): The new status value.
+
+    Returns:
+        None
+    """
+```
+
+### Methods That Raise Exceptions
+
+```python
+def divide(a: float, b: float) -> float:
+    """
+    Divides two numbers.
+
+    Args:
+        a (float): The dividend.
+        b (float): The divisor.
+
+    Returns:
+        float: The result of the division.
+
+    Raises:
+        ZeroDivisionError: If b is zero.
+    """
+```
+
+## Checklist
+
+When writing docstrings, ensure:
+
+- [ ] Summary line is present and concise
+- [ ] All parameters are documented in Args section
+- [ ] Returns section is present (even if None)
+- [ ] Type information matches function signature
+- [ ] Descriptions end with periods
+- [ ] Optional parameters are marked as such
+- [ ] Default values are documented
+- [ ] Exceptions are documented in Raises section (if applicable)
+- [ ] Complex behavior is explained in extended description

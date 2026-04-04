@@ -1,8 +1,8 @@
 change-python-version:
 	@pyenv local $(v)
-	@for /f "delims=" %%i in ('pyenv which python') do @poetry env use %%i
+	@uv venv --python $(v)
 	@.venv\Scripts\activate
-	@poetry update
+	@uv sync
 
 # update database schema
 update-schema:

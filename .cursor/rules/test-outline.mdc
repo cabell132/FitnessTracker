@@ -1,0 +1,325 @@
+---
+description: Professional test outline system for test files
+globs:
+  - "**/test_*.py"
+  - "**/*.test.ts"
+  - "**/*.test.tsx"
+  - "**/*.spec.ts"
+  - "**/*.spec.tsx"
+  - "**/__tests__/**/*.ts"
+  - "**/__tests__/**/*.tsx"
+alwaysApply: false
+---
+## Format - Professional Test Outline System
+
+All test implementations must adhere to this comprehensive structural framework to ensure consistency, maintainability, and professional-grade documentation across your testing suite.
+
+### **Test File Structure Template**
+
+#### **File Header Block**
+Every test file must begin with this standardized header:
+
+``
+/**
+ * ============================================================================
+ * TEST SUITE: [Descriptive Suite Name]
+ * ============================================================================
+ * 
+ * MODULE UNDER TEST: [target_module_name]
+ * TEST TYPE: [Unit/Integration/E2E/Performance]
+ * FRAMEWORK: [Jest/Mocha/PyTest/etc.]
+ * 
+ * AUTHOR: [Developer Name] <[email]>
+ * CREATED: [YYYY-MM-DD]
+ * LAST MODIFIED: [YYYY-MM-DD]
+ * VERSION: [semantic version]
+ * 
+ * DESCRIPTION:
+ * [Comprehensive description of what functionality this test suite validates]
+ * 
+ * DEPENDENCIES:
+ * - [dependency_1]: [version] - [purpose]
+ * - [dependency_2]: [version] - [purpose]
+ * 
+ * COVERAGE SCOPE:
+ * ✓ [functionality_1]
+ * ✓ [functionality_2]
+ * ✗ [excluded_functionality] - [reason for exclusion]
+ * 
+ * EXECUTION REQUIREMENTS:
+ * - Environment: [development/staging/production]
+ * - Prerequisites: [database setup, API keys, etc.]
+ * - Runtime: [estimated execution time]
+ * 
+ * ============================================================================
+ */
+``
+
+#### **Import and Setup Section**
+``
+// EXTERNAL DEPENDENCIES
+import [framework] from '[testing-framework]';
+import [assertion] from '[assertion-library]';
+
+// MODULE UNDER TEST  
+import [targetModule] from '[module-path]';
+
+// TEST UTILITIES AND MOCKS
+import [testHelper] from '[helper-path]';
+import [mockData] from '[mock-data-path]';
+
+// GLOBAL TEST CONFIGURATION
+const TEST_CONFIG = {
+    timeout: [milliseconds],
+    retries: [number],
+    environment: '[test-environment]'
+};
+``
+
+### **Individual Test Structure Template**
+
+#### **Test Suite Organization**
+``
+describe('[Module/Feature Name] - [Test Category]', () => {
+    // ========================================================================
+    // SUITE METADATA
+    // ========================================================================
+    const SUITE_INFO = {
+        name: '[descriptive-suite-name]',
+        purpose: '[what this suite validates]',
+        scope: '[specific functionality covered]',
+        testCount: [expected-number-of-tests]
+    };
+
+    // ========================================================================
+    // SETUP AND TEARDOWN
+    // ========================================================================
+    beforeAll(() => {
+        // SUITE-LEVEL SETUP
+        // Purpose: [initialization requirements]
+        console.log(`Starting test suite: ${SUITE_INFO.name}`);
+        // [setup code]
+    });
+
+    beforeEach(() => {
+        // TEST-LEVEL SETUP  
+        // Purpose: [per-test initialization]
+        // [setup code]
+    });
+
+    afterEach(() => {
+        // TEST-LEVEL CLEANUP
+        // Purpose: [per-test cleanup]
+        // [cleanup code]
+    });
+
+    afterAll(() => {
+        // SUITE-LEVEL CLEANUP
+        // Purpose: [final cleanup requirements]
+        console.log(`Completed test suite: ${SUITE_INFO.name}`);
+        // [cleanup code]
+    });
+``
+
+#### **Individual Test Format**
+``
+    // ========================================================================
+    // TEST: [Specific Functionality]
+    // ========================================================================
+    describe('[Functionality Context]', () => {
+        
+        test('[should_expected_behavior_when_specific_condition]', async () => {
+            // TEST METADATA
+            const testInfo = {
+                id: '[unique-test-identifier]',
+                category: '[happy-path/edge-case/error-handling]',
+                priority: '[high/medium/low]',
+                author: '[developer-name]',
+                created: '[YYYY-MM-DD]'
+            };
+
+            // LOGGING: Test initiation
+            console.log(`▶ Starting: ${testInfo.id}`);
+            console.log(`  Category: ${testInfo.category}`);
+            console.log(`  Priority: ${testInfo.priority}`);
+
+            try {
+                // ARRANGE: Test setup and data preparation
+                // Purpose: [explain what data/environment is being prepared]
+                const testData = {
+                    input: [test-input-data],
+                    expected: [expected-output-data],
+                    context: [additional-context-data]
+                };
+                
+                console.log(`  📋 Test Data:`, testData);
+
+                // ACT: Execute the functionality under test
+                // Purpose: [explain what action is being performed]
+                console.log(`  ⚡ Executing: [function/method name]`);
+                const result = await [functionUnderTest](testData.input);
+                
+                console.log(`  📊 Result:`, result);
+
+                // ASSERT: Validate expected outcomes
+                // Purpose: [explain what is being verified]
+                expect(result).toBe(testData.expected);
+                expect(result).toHaveProperty('[property]');
+                expect(result.[property]).toEqual([expected-value]);
+
+                // LOGGING: Test success
+                console.log(`  ✅ PASSED: ${testInfo.id}`);
+
+            } catch (error) {
+                // LOGGING: Test failure with diagnostic information
+                console.error(`  ❌ FAILED: ${testInfo.id}`);
+                console.error(`  🔍 Error Details:`, {
+                    message: error.message,
+                    stack: error.stack,
+                    testData: testData,
+                    timestamp: new Date().toISOString()
+                });
+                throw error;
+            }
+        });
+    });
+``
+
+### **Logging Standards**
+
+#### **Required Logging Levels**
+``
+// TEST EXECUTION LOGGING
+console.log(`🚀 SUITE START: [suite-name] at ${new Date().toISOString()}`);
+console.log(`▶ TEST START: [test-name]`);
+console.log(`📋 TEST DATA: [input-parameters]`);
+console.log(`⚡ EXECUTING: [function-name]`);
+console.log(`📊 RESULT: [actual-output]`);
+console.log(`✅ PASSED: [test-name]`);
+
+// ERROR AND FAILURE LOGGING
+console.error(`❌ FAILED: [test-name]`);
+console.error(`🔍 FAILURE DETAILS:`, {
+    expected: [expected-value],
+    actual: [actual-value],
+    difference: [comparison-details],
+    context: [relevant-state-information],
+    timestamp: new Date().toISOString()
+});
+
+// DEBUGGING INFORMATION
+console.debug(`🔧 DEBUG: [variable-name] =`, [variable-value]);
+console.debug(`🔧 STATE: [object-name] =`, [object-state]);
+``
+
+### **Documentation Requirements**
+
+#### **Function-Level Documentation**
+``
+/**
+ * TEST FUNCTION: [descriptive-name]
+ * 
+ * PURPOSE: [what specific functionality this test validates]
+ * 
+ * METHODOLOGY: [how the test approaches validation]
+ * 
+ * INPUTS: 
+ * - [parameter_1]: [type] - [description]
+ * - [parameter_2]: [type] - [description]
+ * 
+ * EXPECTED OUTCOMES:
+ * - [outcome_1]: [description]
+ * - [outcome_2]: [description]
+ * 
+ * FAILURE SCENARIOS:
+ * - [scenario_1]: [expected error/behavior]
+ * - [scenario_2]: [expected error/behavior]
+ * 
+ * DEPENDENCIES: [external requirements]
+ * 
+ * MAINTENANCE NOTES: [special considerations for updates]
+ */
+``
+
+### **Metadata Schema**
+
+#### **Required Metadata Fields**
+``
+const TEST_METADATA = {
+    // IDENTIFICATION
+    testId: '[unique-identifier]',
+    testName: '[descriptive-name]',
+    moduleUnderTest: '[target-module]',
+    
+    // CLASSIFICATION  
+    testType: '[unit/integration/e2e/performance]',
+    category: '[happy-path/edge-case/error-handling]',
+    priority: '[critical/high/medium/low]',
+    
+    // TRACKING
+    author: '[developer-name]',
+    reviewer: '[reviewer-name]',
+    createdDate: '[YYYY-MM-DD]',
+    lastModified: '[YYYY-MM-DD]',
+    version: '[semantic-version]',
+    
+    // EXECUTION
+    framework: '[testing-framework]',
+    environment: '[test-environment]',
+    expectedDuration: '[milliseconds]',
+    dependencies: ['[dependency-list]'],
+    
+    // MAINTENANCE
+    reviewCycle: '[frequency]',
+    deprecationDate: '[YYYY-MM-DD]',
+    maintenanceNotes: '[special-considerations]'
+};
+``
+
+### **Resource Management Templates**
+
+#### **Setup and Teardown Patterns**
+``
+// RESOURCE INITIALIZATION TEMPLATE
+const setupTestResources = async () => {
+    console.log('🔧 Initializing test resources...');
+    
+    const resources = {
+        database: await initializeTestDatabase(),
+        mockServices: await setupMockServices(),
+        testData: await loadTestData(),
+        environment: await configureTestEnvironment()
+    };
+    
+    console.log('✅ Test resources initialized');
+    return resources;
+};
+
+// RESOURCE CLEANUP TEMPLATE  
+const cleanupTestResources = async (resources) => {
+    console.log('🧹 Cleaning up test resources...');
+    
+    await resources.database?.close();
+    await resources.mockServices?.shutdown();
+    await resources.testData?.clear();
+    await resources.environment?.reset();
+    
+    console.log('✅ Test resources cleaned up');
+};
+``
+
+### **Cross-Framework Adaptation Guidelines**
+
+#### **Framework-Specific Adjustments**
+- **Jest**: Use `describe`, `test`, `beforeAll`, `afterAll`
+- **Mocha**: Use `describe`, `it`, `before`, `after`  
+- **PyTest**: Use `class Test`, `def test_`, `setup_method`, `teardown_method`
+- **RSpec**: Use `describe`, `it`, `before(:all)`, `after(:all)`
+
+#### **Language-Specific Modifications**
+- **JavaScript/TypeScript**: Use JSDoc comment blocks
+- **Python**: Use docstring format with triple quotes
+- **Java**: Use JavaDoc with @Test annotations
+- **C#**: Use XML documentation comments with [Test] attributes
+
+This format ensures every test follows professional standards with comprehensive documentation, structured logging, complete metadata, and proper resource management regardless of the specific testing framework or programming language used.

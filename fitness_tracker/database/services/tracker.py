@@ -43,6 +43,11 @@ class FitnessTrackerService(BaseService):
         if exercise_repo.get(true_coach_id=exercise.id):
             return
 
+        existing = exercise_repo.get(name=exercise.name)
+        if existing:
+            existing.true_coach_id = exercise.id
+            return
+
         entry = Exercise(
             name=exercise.name,
             true_coach_id=exercise.id,

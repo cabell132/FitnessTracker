@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "hooks": {
+    "afterFileEdit": [
+      {
+        "command": "node .cursor/hooks/lint.js"
+      }
+    ],
+    "afterTabFileEdit": [
+      {
+        "command": "node .cursor/hooks/lint.js"
+      }
+    ]
+  }
+}

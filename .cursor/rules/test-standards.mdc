@@ -1,0 +1,114 @@
+---
+globs:
+  - "**/test_*.py"
+  - "**/*.test.ts"
+  - "**/*.test.tsx"
+  - "**/*.spec.ts"
+  - "**/*.spec.tsx"
+  - "**/__tests__/**/*.ts"
+  - "**/__tests__/**/*.tsx"
+alwaysApply: true
+---
+You MUST ensure that your testing approach adheres to ALL of the following principles:
+
+### **Testing Hierarchy & Granularity**
+
+1. **Unit Test Standards (70% of test suite):**
+   - Test ONE specific function or method per test case
+   - Each test MUST be completely isolated and independent
+   - Mock ALL external dependencies (databases, APIs, file systems)
+   - Test execution time MUST be under 10ms per test
+   - Follow strict Arrange-Act-Assert structure
+
+2. **Integration Test Standards (20% of test suite):**
+   - Test component interactions and data flow between 2-3 modules
+   - Use real implementations for components being tested
+   - Mock only external system boundaries
+   - Test execution time MUST be under 100ms per test
+
+3. **End-to-End Test Standards (10% of test suite):**
+   - Test complete user workflows from start to finish
+   - Use production-like environments and realistic data
+   - Focus on critical business paths only
+   - Test execution time acceptable up to 30 seconds per test
+
+### **Test Structure & Organization**
+
+4. **File Organization:**
+   - Mirror source code directory structure in test directories
+   - Use consistent naming: ``SourceFile.test.js`` or ``test_source_file.py``
+   - Group related tests in describe/context blocks with clear hierarchy
+   - Separate test utilities and fixtures into dedicated files
+
+5. **Test Naming Convention:**
+   - Format: ``should_[expected_behavior]_when_[condition]``
+   - Example: ``should_return_empty_list_when_no_items_exist``
+   - Test names MUST be readable sentences describing expected behavior
+   - Avoid technical jargon; focus on business behavior
+
+6. **Test Structure Pattern:**
+   ```
+   // Arrange: Set up test conditions and inputs
+   // Act: Execute the code being tested
+   // Assert: Verify the expected outcome
+   ```
+
+### **Code Quality Standards**
+
+7. **Test Independence (FIRST Principles):**
+   - **Fast**: Each test runs in isolation under 10ms (unit) / 100ms (integration)
+   - **Independent**: Tests can run in any order without affecting results
+   - **Repeatable**: Same results in any environment (dev, staging, CI)
+   - **Self-Validating**: Clear pass/fail with descriptive failure messages
+   - **Timely**: Tests written alongside or before production code
+
+8. **Assertion Standards:**
+   - Use specific assertions over generic ones: ``expect(result).toBe(5)`` not ``expect(result).toBeTruthy()``
+   - Include meaningful failure messages: ``expect(user.age, 'User age validation').toBe(25)``
+   - Test both positive and negative cases for each behavior
+   - Verify state changes, not implementation details
+
+9. **Test Data Management:**
+   - Use factory functions or builders for creating test objects
+   - Employ realistic data that represents actual use cases
+   - Create edge case data systematically (null, empty, boundary values)
+   - Isolate test data creation in setup functions or fixtures
+
+### **Maintainability & Performance**
+
+10. **Test Maintenance:**
+    - Extract common test logic into reusable helper functions
+    - Use descriptive variable names that explain test scenarios
+    - Keep tests DRY while maintaining individual test clarity
+    - Refactor tests when production code changes, don't just make them pass
+
+11. **Performance Optimization:**
+    - Run expensive setup once per test suite, not per test
+    - Use test doubles (mocks, stubs, fakes) to eliminate external dependencies
+    - Implement parallel test execution where possible
+    - Monitor and optimize slow-running tests continuously
+
+12. **Documentation Requirements:**
+    - Begin each test file with a comment explaining what component is being tested
+    - Document complex test scenarios with inline comments
+    - Include examples of expected inputs and outputs for complex test data
+    - Maintain README files explaining test strategy and execution instructions
+
+### **Quality Gates**
+
+13. **Coverage Requirements:**
+    - Minimum 80% line coverage for critical business logic
+    - 100% coverage for public API methods and interfaces
+    - Focus on branch coverage over line coverage for conditional logic
+    - Exclude trivial getters/setters from coverage requirements
+
+14. **Test Review Checklist:**
+    - [ ] Test name clearly describes expected behavior
+    - [ ] Test follows Arrange-Act-Assert pattern
+    - [ ] Test is independent and can run in isolation
+    - [ ] All assertions include meaningful failure messages
+    - [ ] Test data is realistic and represents actual use cases
+    - [ ] External dependencies are properly mocked
+    - [ ] Test execution time meets performance standards
+
+Keep these testing standards in mind throughout the ENTIRE duration of test development and maintenance.

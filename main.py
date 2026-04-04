@@ -1,13 +1,14 @@
+from datetime import datetime, timedelta
+
+import urllib3
+from dateutil.relativedelta import relativedelta
+from fitness_tracker.apis.hevy_app.client import HevyAppClient
+from fitness_tracker.apis.hevy_app.types import UpdatedWorkout
 from fitness_tracker.apis.true_coach.auth import authorize
 from fitness_tracker.apis.true_coach.client import TrueCoachClient
-from fitness_tracker.apis.hevy_app.client import HevyAppClient
 from fitness_tracker.database import Database
 from fitness_tracker.sync import Syncronizer
 from sqlalchemy import create_engine
-from dateutil.relativedelta import relativedelta
-from datetime import datetime, timedelta
-import urllib3
-from fitness_tracker.apis.hevy_app.types import UpdatedWorkout
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -23,7 +24,7 @@ sync = Syncronizer(engine)
 sync.apple_health_to_tracker.sync_metrics()
 sync.apple_health_to_tracker.sync_workouts()
 
-with open("hevy_last_sync.txt", "r") as f:
+with open("hevy_last_sync.txt") as f:
     previous = datetime.fromisoformat(f.read())
 
 now = datetime.now()
@@ -56,6 +57,7 @@ with db.tracker.get_session() as session:
     due = datetime.now().replace(
         hour=0, minute=0, second=0, microsecond=0
     )  # + relativedelta(days=2)
-    workout = db.true_coach.get_workout(due=due, session=session)
-    print(workout.id, workout.title)
-res = sync.true_coach_to_hevy.sync_workout(workout.id)
+    workouts = db.true_coach.get_workouts(due=due, session=session)
+    for workout in workouts:
+        print(workout.id, workout.title)
+        res = sync.true_coach_to_hevy.sync_workout(workout.id)

@@ -1,0 +1,74 @@
+---
+description: Jira automation workflow and guardrails for the agent
+globs:
+alwaysApply: false
+---
+# Jira Agent Workflow
+
+Use this rule whenever the user asks us to “work on X” or otherwise signals that Jira + GitHub automation is required. The goal is to keep Jira, branches, and PRs fully synced without duplicating work.
+
+## Default Flow
+1. **Search Jira first.** Look up existing issues by summary, custom tags, or fuzzy match. Only create a new ticket if nothing relevant exists.
+2. **Populate every field** when creating issues: summary, description, acceptance criteria, component, estimate, labels, reporter.
+3. **Create a branch** that matches team naming: `JIRA-KEY-short-desc` (e.g., `PROJ-123-add-sso`).
+4. **Push the branch and open a PR** titled `JIRA-KEY — Short Summary`. Link the Jira issue in the PR body and state the semantic-release impact (`feat`, `fix`, etc.).
+5. **Link both ways.** Ensure Jira shows the PR/branch (GitHub for Jira handles this when keys are present). If not, add a remote link via REST API.
+6. **Transition workflow states.**
+   - When the PR opens: move Jira to *In Progress* and optionally comment.
+   - When the PR merges (CI green): move Jira to *Done* or *Ready for QA* and add a comment referencing commits/PR.
+
+## Semantic Versioning Expectations
+- The repo uses semantic-release with the Conventional Commits parser defined in `backend/.releaserc.js`, so every merge commit (usually via squash) must follow `JIRA-KEY type(scope): subject`.
+- Valid `type` values include `feat`, `fix`, `docs`, `bugfix`, `chore`, etc. Pick the one that drives the correct version bump.
+- PR descriptions must call out the intended `type` and `scope` so reviewers know what release section the change will land in.
+- If a PR bundles multiple logical changes, split them so each PR has a single semantic-release type.
+- When approving, confirm the squash-merge commit message keeps both the Jira key and the Conventional Commit header (e.g., `TT-22 feat(ci): enforce jira automation rules`).
+
+## Automation & Guardrails
+- **Idempotency:** Always search before creating tickets or branches to avoid duplicates.
+- **Permissions:** Act as the service account (e.g., `jira-bot@yourorg`). Prefix comments with `[agent] ... (action-id: xxx)`.
+- **Smart commits:** Support `#time`, `#comment`, and `#transition` tokens only when explicitly requested (e.g., `PROJ-123 ... #transition "In Review"`).
+- **Security:** Service accounts should only have create/update/comment/transition rights in Jira and minimal repo permissions in GitHub.
+
+## Jira ↔ GitHub Linking
+1. Install and configure the official GitHub for Jira app (preferred).
+2. Enforce branch/PR/commit names that include the Jira key so linking is automatic.
+3. When automation fails, manually POST `/rest/api/3/issue/{key}/remotelink` with the PR URL and add a Jira comment noting the linkage.
+
+## Jira Automation Rules (Cloud)
+- **Rule 1:** PR created ⇒ transition to *In Progress*, add comment `PR opened: <url> by <actor>`, add label `in-review`.
+- **Rule 2:** PR merged ⇒ transition to *Done*, add comment `Merged via PR <url>. Closing issue.`, log release note if needed.
+- **Rule 3:** Issue created ⇒ run duplicate detection via “Lookup issues”; comment with potential duplicates and flag if high similarity.
+- **Rule 4:** Idle issues ⇒ scheduled daily; if *In Progress* with no dev activity for N days, ping the assignee (Slack/email) and comment.
+
+## Branch Protection & CI
+- Protect `main` and release branches; disallow direct pushes.
+- Require CI success plus a “Jira checks” workflow before merge.
+- Enforce PR titles that contain the Jira key (GitHub Action or bot).
+- Require CODEOWNERS/required reviewers as defined by the team.
+
+## Operational Notes
+- Allow rare, explicitly requested quick-fix exceptions; tag them later.
+- Offer a dry-run mode when the user just wants to preview tickets/branches/PRs.
+- Permit a human override (`no-ticket-needed` label) but only when explicitly authorized.
+- On API throttles, retry with backoff and notify a human if repeated failures occur.
+- When the user says “plan” or “set to plan,” capture the plan in Jira: attach it to the relevant issue if one exists, otherwise create a new task or subtask (agent’s choice). Include appropriate labels (e.g., `planning`, `needs-spec`) and set dependencies/links so execution work waits on the planning artifact.
+
+## Implementation Checklist
+1. Install GitHub for Jira and connect the org.
+2. Create the `jira-bot` Jira account plus a GitHub App/bot with minimal permissions.
+3. Publish branch/commit/PR naming policy (README/onboarding).
+4. Distribute commit-msg hooks enforcing Jira keys.
+5. Add `.github/workflows/jira-checks.yml` and mark it required.
+6. Configure the Jira automation rules above.
+7. Set branch protection rules in GitHub.
+8. Monitor automation health; define an incident/alert path.
+9. Run an end-to-end test in a staging Jira project + repo before production rollout.
+
+## Example Agent Flow
+> User: “Agent, work on adding SSO to the app.”
+1. Search Jira; no matches found.
+2. Create `PROJ-321` with full description + acceptance criteria.
+3. Create branch `PROJ-321-add-sso`, push it, and open PR `PROJ-321 — Add SSO support` referencing the Jira issue.
+4. Transition Jira to *In Progress*, comment: `[agent] Picked up; branch created (action-id: abc123)`.
+5. On merge with passing CI, transition to *Done*, comment with PR link and commits.

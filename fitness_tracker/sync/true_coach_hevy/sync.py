@@ -54,7 +54,7 @@ class TrueCoachToHevySyncronizer:
                 )  # type: ignore
                 exercises: list[PostRoutinesRequestExercise] = []
                 used_exercises: list[HevyAppExercise] = []
-                for item in tqdm(workout_items):  # type: ignore
+                for order_index, item in enumerate(tqdm(workout_items), start=1):  # type: ignore
                     if isinstance(item, TrueCoachWorkoutItem):
                         exercise = item.exercise
                         if isinstance(exercise, TrueCoachExercise):  # type: ignore
@@ -86,10 +86,10 @@ class TrueCoachToHevySyncronizer:
                             hevy_app_exercise = placeholder_exercises.pop(0)
                             notes = f"{item.name}\n\n{item.info}"
 
-                        if superset_index:
+                        if superset_index and order_index in order:
                             super_set = (
-                                superset_index[order[item.position]["superset_group"]]
-                                if order[item.position]["is_superset"]
+                                superset_index[order[order_index]["superset_group"]]
+                                if order[order_index]["is_superset"]
                                 else None
                             )  # type: ignore
                         else:

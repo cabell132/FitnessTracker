@@ -37,9 +37,11 @@ notebooks/
 # Node.js
 node_modules/
 
-# Poetry
+# uv
 .venv/
 dist/
+
+# Poetry (deprecated - using uv now)
 
 # PyCharm
 .idea/

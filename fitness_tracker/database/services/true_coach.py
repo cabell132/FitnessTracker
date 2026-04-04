@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
@@ -16,6 +16,12 @@ from fitness_tracker.apis.true_coach.types import (
     Workout,
     WorkoutItem,
 )
+from fitness_tracker.database.models.tracker import (
+    Sets as SetsTrackerModel,
+)
+from fitness_tracker.database.models.tracker import (
+    WorkoutItem as WorkoutItemTrackerModel,
+)
 from fitness_tracker.database.models.true_coach import (
     TrueCoachAssessment,
     TrueCoachAssessmentItem,
@@ -24,10 +30,6 @@ from fitness_tracker.database.models.true_coach import (
     TrueCoachTag,
     TrueCoachWorkout,
     TrueCoachWorkoutItem,
-)
-from fitness_tracker.database.models.tracker import (
-    Sets as SetsTrackerModel,
-    WorkoutItem as WorkoutItemTrackerModel,
 )
 from fitness_tracker.database.repository.true_coach import (
     TrueCoachAssessmentItemRepository,
@@ -242,24 +244,24 @@ class TrueCoachService(BaseService):
         # Build a subquery to fetch WorkoutItem IDs associated with the TrueCoachWorkoutItem IDs
         wi_subq = (
             session.query(WorkoutItemTrackerModel.id)
-            .filter(WorkoutItemTrackerModel.true_coach_id.in_(tc_subq))
+            .filter(WorkoutItemTrackerModel.true_coach_id.in_(select(tc_subq.c.id)))
             .subquery()
         )
 
         # Delete SETS records where workout_item_id is in the list of WorkoutItem IDs.
         session.query(SetsTrackerModel).filter(
-            SetsTrackerModel.workout_item_id.in_(wi_subq)
+            SetsTrackerModel.workout_item_id.in_(select(wi_subq.c.id))
         ).delete(synchronize_session=False)
 
         # Delete WorkoutItem records.
         session.query(WorkoutItemTrackerModel).filter(
-            WorkoutItemTrackerModel.id.in_(wi_subq)
+            WorkoutItemTrackerModel.id.in_(select(wi_subq.c.id))
         ).delete(synchronize_session=False)
 
         # Delete TrueCoachWorkoutItem records.
-        session.query(TrueCoachWorkoutItem).filter(TrueCoachWorkoutItem.id.in_(tc_subq)).delete(
-            synchronize_session=False
-        )
+        session.query(TrueCoachWorkoutItem).filter(
+            TrueCoachWorkoutItem.id.in_(select(tc_subq.c.id))
+        ).delete(synchronize_session=False)
 
         # Commit the transaction.
         session.commit()
@@ -268,6 +270,11 @@ class TrueCoachService(BaseService):
         """Get a workout by id."""
         workout_repo = TrueCoachWorkoutRepository(session=session)
         return workout_repo.get(**kwargs)
+
+    def get_workouts(self, session: Session, **kwargs: Any):
+        """Get a list of workouts"""
+        workout_repo = TrueCoachWorkoutRepository(session=session)
+        return workout_repo.get_all(**kwargs)
 
     def get_workout_item(self, session: Session, **kwargs: Any):
         """Get a workout item by kwargs"""

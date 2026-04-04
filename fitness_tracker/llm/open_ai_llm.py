@@ -1,9 +1,9 @@
 from typing import Any
+import asyncio
 
 from dotenv import load_dotenv
-from langchain.chains import LLMChain
-from langchain.output_parsers import PydanticOutputParser
-from langchain.prompts.chat import ChatPromptTemplate, HumanMessagePromptTemplate
+from langchain_core.output_parsers import PydanticOutputParser
+from langchain_core.prompts import ChatPromptTemplate, HumanMessagePromptTemplate
 from langchain_openai import ChatOpenAI
 from pydantic.v1 import ValidationError
 from pydantic import SecretStr
@@ -62,12 +62,12 @@ class OpenAILLM:
         Perform a prompt using a template and a Pydantic object.
 
         Args:
-            data (str): The data to be used in the prompt.
+            data_list (list[str]): The list of data to be used in the prompts.
             promt_template (str): The template for the prompt.
             pydantic_object (Any): The Pydantic object used for parsing the output.
 
         Returns:
-            The parsed output based on the Pydantic object.
+            list[Any]: The parsed outputs based on the Pydantic object.
 
         """
         message = HumanMessagePromptTemplate.from_template(
@@ -78,23 +78,18 @@ class OpenAILLM:
         # generate the response
         parser = PydanticOutputParser(pydantic_object=pydantic_object)
 
-        chain = LLMChain(
-            llm=self.model,
-            prompt=chat_prompt,
-        )
-
-        input_lst = [
-            {"data": data, "format_instructions": parser.get_format_instructions()}
-            for data in data_list
-        ]
-
-        output = await chain.aapply(input_lst)
-
-        results: list[Any] = []
-        for res in output:
+        async def process_single_item(data: str) -> Any:
+            """Process a single data item asynchronously."""
+            chat_prompt_with_values = chat_prompt.format_prompt(
+                data=data, format_instructions=parser.get_format_instructions()
+            )
+            output = await self.model.ainvoke(chat_prompt_with_values.to_messages())
             try:
-                results.append(parser.parse(res["text"]))
+                return parser.parse(output.content)  # type: ignore
             except ValidationError:
-                results.append(res["text"])
+                return output.content
+
+        # Process all items in parallel
+        results = await asyncio.gather(*[process_single_item(data) for data in data_list])
 
         return results
