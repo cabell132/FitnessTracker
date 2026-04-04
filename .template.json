@@ -1,0 +1,15 @@
+{
+    "template": "ModuleTemplate",
+    "template_repo": "gh:cabell132/CookiecutterTemplates",
+    "synced_at": "2026-04-04",
+    "variables": {
+        "project_slug": "fitness_tracker",
+        "python_version": "3.12",
+        "enable_precommit": "yes",
+        "full_name": "Cameron Bell",
+        "email": "cabell132@hotmail.com",
+        "include_cli": "none",
+        "include_docs": "none",
+        "include_docker": "no"
+    }
+}

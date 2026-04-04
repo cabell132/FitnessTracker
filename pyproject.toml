@@ -51,6 +51,23 @@ dev = [
     "types-sqlalchemy==1.4.53.38",
 ]
 
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.6",
+    "ty>=0.0.1a8",
+    "pydoclint>=0.6.0",
+    "poethepoet>=0.25",
+    "pre-commit>=3.8",
+    "pip-audit>=2.7",
+    "sloppylint>=0.5.1",
+    "ai-slop-detector>=2.7.0",
+]
+
+[tool.uv]
+managed = true
+
 [tool.commitizen]  # https://commitizen-tools.github.io/commitizen/config/
 bump_message = "bump(release): v$current_version → v$new_version"
 tag_format = "v$version"
@@ -58,22 +75,19 @@ update_changelog_on_bump = true
 version = "0.0.0"
 version_files = ["pyproject.toml:project.version"]
 
-[tool.coverage.report] # https://coverage.readthedocs.io/en/latest/config.html#report
-fail_under = 50
-precision = 1
+[tool.coverage.run]
+branch = true
+source = ["fitness_tracker"]
+
+[tool.coverage.report]
 show_missing = true
 skip_covered = true
-
-[tool.coverage.run]  # https://coverage.readthedocs.io/en/latest/config.html#run
-branch = true
-command_line = "--module pytest"
-data_file = "reports/.coverage"
-source = ["fitness_tracker"]
+fail_under = 80
 
 [tool.coverage.xml]  # https://coverage.readthedocs.io/en/latest/config.html#xml
 output = "reports/coverage.xml"
 
-[tool.mypy] # https://mypy.readthedocs.io/en/latest/config_file.html
+[tool.mypy]  # https://mypy.readthedocs.io/en/latest/config_file.html
 junit_xml = "reports/mypy.xml"
 plugins = "pydantic.mypy"
 strict = true
@@ -92,159 +106,93 @@ init_typed = true
 warn_required_dynamic_aliases = true
 warn_untyped_fields = true
 
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = "-ra --strict-markers --strict-config --maxfail=1"
+testpaths = ["tests"]
 
-[tool.pytest.ini_options]  # https://docs.pytest.org/en/latest/reference/reference.html#ini-options-ref
-addopts = "--color=yes --doctest-modules --exitfirst --failed-first --strict-config --strict-markers --verbosity=2 --junitxml=reports/pytest.xml"
-filterwarnings = ["error", "ignore::DeprecationWarning"]
-testpaths = ["fitness_tracker", "tests"]
-xfail_strict = true
-
-[tool.ruff] # https://github.com/charliermarsh/ruff
-fix = true
-ignore-init-module-imports = true
+[tool.ruff]
 line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
 select = [
-  "A",
-  "ASYNC",
-  "B",
-  "BLE",
-  "C4",
-  "C90",
-  "D",
-  "DTZ",
-  "E",
-  "EM",
-  "ERA",
-  "F",
-  "FBT",
-  "FLY",
-  "FURB",
-  "G",
-  "I",
-  "ICN",
-  "INP",
-  "INT",
-  "ISC",
-  "LOG",
-  "N",
-  "NPY",
-  "PERF",
-  "PGH",
-  "PIE",
-  "PLC",
-  "PLE",
-  "PLR",
-  "PLW",
-  "PT",
-  "PTH",
-  "PYI",
-  "RET",
-  "RSE",
-  "RUF",
-  "S",
-  "SIM",
-  "SLF",
-  "SLOT",
-  "T10",
-  "T20",
-  "TCH",
-  "TID",
-  "TRY",
-  "UP",
-  "W",
-  "YTT",
+    "A", "ANN", "ASYNC", "B", "BLE", "C4", "C90", "D", "DTZ", "E", "EM",
+    "ERA", "F", "FBT", "FLY", "FURB", "G", "I", "ICN", "INP", "INT",
+    "ISC", "LOG", "N", "PERF", "PGH", "PIE", "PLC", "PLE", "PLR", "PLW",
+    "PT", "PTH", "PYI", "RET", "RSE", "RUF", "S", "SIM", "SLF", "SLOT",
+    "T10", "T20", "TID", "TRY", "UP", "W", "YTT",
 ]
 ignore = [
-  "E501",
-  "RET504",
-  "S101",
-  "ISC001",
-  "D100",
-  "I001",
-  "PGH003",
-  "PERF203",
-  "FBT001",
-  "FBT002",
-  "D212",
+    "ANN401", "E501", "ISC001", "I001", "PGH003", "PERF203", "FBT001",
+    "FBT002", "PLR2004", "S101", "RET504",
 ]
-unfixable = ["ERA001", "F401", "F841", "T201", "T203"]
-src = ["fitness_tracker", "tests"]
-target-version = "py39"
+unfixable = ["ERA001", "F841", "RUF100", "T201", "T203"]
+external = ["DOC"]
 
-[tool.ruff.flake8-tidy-imports]
+[tool.ruff.lint.flake8-tidy-imports]
 ban-relative-imports = "all"
 
-[tool.ruff.pycodestyle]
+[tool.ruff.lint.pycodestyle]
 max-doc-length = 100
 
-
-[tool.ruff.pydocstyle]
+[tool.ruff.lint.pydocstyle]
 convention = "google"
 
-[tool.poe.tasks] # https://github.com/nat-n/poethepoet
+[tool.ruff.lint.pylint]
+max-args = 3
+max-statements = 20
 
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["ANN", "SLF001", "TID252", "F401", "F403", "E402", "S105", "D", "PLC0415"]
 
-[tool.poe.tasks.docs]
-help = "Generate this package's docs"
-cmd = """
-  pdoc
-    --docformat $docformat
-    --output-directory $outputdirectory
-    fitness_tracker
-  """
+[tool.ty.environment]
+python-version = "3.12"
 
-[[tool.poe.tasks.docs.args]]
-help = "The docstring style (default: google)"
-name = "docformat"
-options = ["--docformat"]
-default = "google"
+[tool.ty.src]
+include = ["fitness_tracker"]
 
-[[tool.poe.tasks.docs.args]]
-help = "The output directory (default: docs)"
-name = "outputdirectory"
-options = ["--output-directory"]
-default = "docs"
+[tool.ty.rules]
+unknown-argument = "ignore"
+possibly-missing-attribute = "ignore"
+unused-ignore-comment = "ignore"
 
+[tool.pydoclint]
+style = "google"
+arg-type-hints-in-docstring = true
+arg-type-hints-in-signature = true
+check-return-types = true
+check-yield-types = true
+require-return-section-when-returning-nothing = false
+check-class-attributes = false
+exclude = '\.ipynb$|^tests/'
+skip-checking-short-docstrings = false
+allow-init-docstring = true
 
-[tool.poe.tasks.lab]
-help = "Run Jupyter Lab"
-
-[[tool.poe.tasks.lab.sequence]]
-cmd = "mkdir -p notebooks"
-
-[[tool.poe.tasks.lab.sequence]]
-cmd = """
-  jupyter lab
-    --allow-root
-    --notebook-dir notebooks
-  """
+[tool.poe.tasks.format]
+cmd = "ruff format fitness_tracker tests"
 
 [tool.poe.tasks.lint]
-help = "Lint this package"
+cmd = "ruff check fitness_tracker tests"
 
-[[tool.poe.tasks.lint.sequence]]
-cmd = """
-    pre-commit run
-      --all-files
-      --color always
-    """
+[tool.poe.tasks.typecheck]
+cmd = "ty check"
 
-
-[[tool.poe.tasks.lint.sequence]]
-shell = "safety check --continue-on-error --full-report"
-
+[tool.poe.tasks.doclint]
+cmd = "pydoclint fitness_tracker"
 
 [tool.poe.tasks.test]
-help = "Test this package"
+cmd = "pytest --cov --maxfail=1 --disable-warnings"
 
-[[tool.poe.tasks.test.sequence]]
-cmd = "coverage run"
+[tool.poe.tasks.format-check]
+cmd = "ruff format --check fitness_tracker tests"
 
-[[tool.poe.tasks.test.sequence]]
-cmd = "coverage report"
+[tool.poe.tasks.audit]
+cmd = "pip-audit"
 
-[[tool.poe.tasks.test.sequence]]
-cmd = "coverage xml"
+[tool.poe.tasks.check]
+sequence = ["format", "lint", "typecheck", "doclint", "test"]
+help = "Run all quality checks"
 
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]
@@ -287,16 +235,16 @@ default = "semantic-release <semantic-release>"
 
 [tool.semantic_release.commit_parser_options]
 allowed_tags = [
-  "build",
-  "chore",
-  "ci",
-  "docs",
-  "feat",
-  "fix",
-  "perf",
-  "style",
-  "refactor",
-  "test",
+    "build",
+    "chore",
+    "ci",
+    "docs",
+    "feat",
+    "fix",
+    "perf",
+    "style",
+    "refactor",
+    "test",
 ]
 minor_tags = ["feat"]
 patch_tags = ["fix", "perf"]

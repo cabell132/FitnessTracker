@@ -1,0 +1,73 @@
+{
+    "hooks": {
+        "PreToolUse": [
+            {
+                "matcher": "Bash",
+                "hooks": [
+                    { "type": "command", "command": ".claude/scripts/enforce-uv.sh" },
+                    { "type": "command", "command": ".claude/scripts/enforce-poe.sh" },
+                    { "type": "command", "command": ".claude/scripts/enforce-safe-git.sh" }
+                ]
+            },
+            {
+                "matcher": "Write|Edit",
+                "hooks": [
+                    { "type": "command", "command": ".claude/scripts/protect-init.sh" },
+                    { "type": "command", "command": ".claude/scripts/protect-config.sh" }
+                ]
+            }
+        ],
+        "PostToolUse": [
+            {
+                "matcher": "Write|Edit",
+                "hooks": [
+                    { "type": "command", "command": ".claude/scripts/pydoclint-check.sh" },
+                    { "type": "command", "command": ".claude/scripts/check-file-length.sh" },
+                    { "type": "command", "command": ".claude/scripts/check-single-class.sh" },
+                    { "type": "command", "command": ".claude/scripts/check-test-naming.sh" }
+                ]
+            }
+        ],
+        "Stop": [
+            {
+                "hooks": [
+                    { "type": "command", "command": ".claude/scripts/ruff-format.sh", "timeout": 30 },
+                    { "type": "command", "command": ".claude/scripts/ty-check.sh", "timeout": 30 },
+                    { "type": "command", "command": ".claude/scripts/ruff-check.sh", "timeout": 30 }
+                ]
+            }
+        ]
+    },
+    "env": {
+        "CLAUDE_CODE_TASK_LIST_ID": "fitness_tracker"
+    },
+    "permissions": {
+        "allow": [
+            "Bash(ty check:*)",
+            "Bash(ls:*)",
+            "Read",
+            "Edit",
+            "Write",
+            "Glob",
+            "Grep",
+            "Bash(cd: *)",
+            "Bash(python:*)",
+            "Bash(git add:*)",
+            "Bash(git commit:*)",
+            "Bash(git diff:*)",
+            "Bash(git log:*)",
+            "Bash(git status:*)",
+            "Bash(cat:*)",
+            "Bash(head:*)",
+            "Bash(find:*)",
+            "Bash(uv run:*)",
+            "Bash(uv add:*)",
+            "WebSearch"
+        ],
+        "deny": [
+            "Bash(rm -rf:*)",
+            "Bash(git push:*)",
+            "Bash(git reset --hard:*)"
+        ]
+    }
+}
