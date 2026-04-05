@@ -1,3 +1,5 @@
-from .sync import Syncronizer
+"""Public entrypoints for platform synchronization."""
 
-__all__ = ['Syncronizer']
+from fitness_tracker.sync.sync import Syncronizer
+
+__all__ = ["Syncronizer"]

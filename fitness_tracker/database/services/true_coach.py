@@ -320,8 +320,11 @@ class TrueCoachService(BaseService):
         """Insert or merge a workout item from a PUT payload.
 
         Args:
-            session: Active SQLAlchemy session.
-            workout_item: Updated workout item fields from the API.
+            session (Session): Active SQLAlchemy session.
+            workout_item (PutWorkoutItemRequest): Updated workout item fields from the API.
+
+        Returns:
+            None: Not used; writes through the given session.
         """
         workout_item_repo = TrueCoachWorkoutItemRepository(session=session)
         instance = TrueCoachWorkoutItem(
@@ -342,8 +345,11 @@ class TrueCoachService(BaseService):
         """Insert or merge a workout and prune removed items.
 
         Args:
-            session: Active SQLAlchemy session.
-            workout: Workout payload from the API.
+            session (Session): Active SQLAlchemy session.
+            workout (Workout): Workout payload from the API.
+
+        Returns:
+            None: Not used; writes through the given session.
         """
         # Remove old workout items
         if workout.workout_item_ids:
@@ -370,9 +376,13 @@ class TrueCoachService(BaseService):
         """Delete workout items (and related rows) not present in the keep list.
 
         Args:
-            session: Active SQLAlchemy session.
-            workout_id: Parent workout id.
-            workout_items: Item ids to retain; if empty, all items for the workout are removed.
+            session (Session): Active SQLAlchemy session.
+            workout_id (int): Parent workout id.
+            workout_items (list[int]): Item ids to retain; if empty, all items for the workout
+                are removed.
+
+        Returns:
+            None: Not used; deletes and commits on the session.
         """
         # If workout_items is empty, default to a list with a dummy value:
         items_to_keep = workout_items if workout_items else [-1]
@@ -416,11 +426,11 @@ class TrueCoachService(BaseService):
         """Load a single workout by repository filters.
 
         Args:
-            session: Active SQLAlchemy session.
-            **kwargs: Arguments forwarded to ``TrueCoachWorkoutRepository.get``.
+            session (Session): Active SQLAlchemy session.
+            **kwargs (Any): Arguments forwarded to ``TrueCoachWorkoutRepository.get``.
 
         Returns:
-            The workout row if found, otherwise ``None``.
+            TrueCoachWorkout | None: The workout row if found, otherwise ``None``.
         """
         workout_repo = TrueCoachWorkoutRepository(session=session)
         return workout_repo.get(**kwargs)
@@ -429,11 +439,11 @@ class TrueCoachService(BaseService):
         """Load workouts matching the given filters.
 
         Args:
-            session: Active SQLAlchemy session.
-            **kwargs: Arguments forwarded to ``TrueCoachWorkoutRepository.get_all``.
+            session (Session): Active SQLAlchemy session.
+            **kwargs (Any): Arguments forwarded to ``TrueCoachWorkoutRepository.get_all``.
 
         Returns:
-            All matching workout rows (possibly empty).
+            list[TrueCoachWorkout]: All matching workout rows (possibly empty).
         """
         workout_repo = TrueCoachWorkoutRepository(session=session)
         return workout_repo.get_all(**kwargs)
@@ -442,11 +452,11 @@ class TrueCoachService(BaseService):
         """Load a single workout item by repository filters.
 
         Args:
-            session: Active SQLAlchemy session.
-            **kwargs: Arguments forwarded to ``TrueCoachWorkoutItemRepository.get``.
+            session (Session): Active SQLAlchemy session.
+            **kwargs (Any): Arguments forwarded to ``TrueCoachWorkoutItemRepository.get``.
 
         Returns:
-            The workout item row if found, otherwise ``None``.
+            TrueCoachWorkoutItem | None: The workout item row if found, otherwise ``None``.
         """
         workout_item_repo = TrueCoachWorkoutItemRepository(session=session)
         return workout_item_repo.get(**kwargs)
@@ -457,11 +467,11 @@ class TrueCoachService(BaseService):
         """Load workout items matching the given filters.
 
         Args:
-            session: Active SQLAlchemy session.
-            **kwargs: Arguments forwarded to ``TrueCoachWorkoutItemRepository.get_all``.
+            session (Session): Active SQLAlchemy session.
+            **kwargs (Any): Arguments forwarded to ``TrueCoachWorkoutItemRepository.get_all``.
 
         Returns:
-            All matching workout item rows (possibly empty).
+            list[TrueCoachWorkoutItem]: All matching workout item rows (possibly empty).
         """
         workout_item_repo = TrueCoachWorkoutItemRepository(session=session)
         return workout_item_repo.get_all(**kwargs)
@@ -470,8 +480,11 @@ class TrueCoachService(BaseService):
         """Insert or merge one assessment item row.
 
         Args:
-            session: Active SQLAlchemy session.
-            assessment: Assessment item from the API.
+            session (Session): Active SQLAlchemy session.
+            assessment (AssessmentItem): Assessment item from the API.
+
+        Returns:
+            None: Not used; writes through the given session.
         """
         assessment_repo = TrueCoachAssessmentItemRepository(session=session)
         instance = TrueCoachAssessmentItem(
@@ -490,8 +503,11 @@ class TrueCoachService(BaseService):
         """Insert or merge the parent assessment row.
 
         Args:
-            session: Active SQLAlchemy session.
-            assessment: Assessment metadata from the API.
+            session (Session): Active SQLAlchemy session.
+            assessment (Assessment): Assessment metadata from the API.
+
+        Returns:
+            None: Not used; writes through the given session.
         """
         assessment_repo = TrueCoachAssessmentRepository(session=session)
         instance = TrueCoachAssessment(
@@ -512,7 +528,10 @@ class TrueCoachService(BaseService):
         """Persist an assessment and its item rows from an API response.
 
         Args:
-            assessment: Response payload containing assessment and items.
+            assessment (AssessmentResponse): Response payload containing assessment and items.
+
+        Returns:
+            None: Not used; opens a session and commits.
         """
         with self.get_session() as session:
             self._add_assessment(session=session, assessment=assessment.assessment)
@@ -524,8 +543,11 @@ class TrueCoachService(BaseService):
         """Remove a workout row and commit.
 
         Args:
-            session: Active SQLAlchemy session.
-            workout: ORM instance to delete.
+            session (Session): Active SQLAlchemy session.
+            workout (TrueCoachWorkout): ORM instance to delete.
+
+        Returns:
+            None: Not used; deletes and commits.
         """
         workout_repo = TrueCoachWorkoutRepository(session=session)
         workout_repo.delete(workout)

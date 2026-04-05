@@ -1,33 +1,34 @@
+"""True Coach OAuth password grant and token file helpers."""
+
 import json
 import logging
 import os
 import time
-from typing import Any, Dict, Optional, cast
+from pathlib import Path
+from typing import Any, cast
 from urllib.parse import urlencode
-from dotenv import load_dotenv
-import certifi
 
 import requests
+from dotenv import load_dotenv
 
 log = logging.getLogger("api.true_coach")
 
 load_dotenv()
 
+TOKEN_PATH = Path("true_coach_token.json")
 
-def make_url(endpoint: str, query: Optional[Dict[str, str]] = None) -> str:
-    """Get complete URL for a given API endpoint.
 
-    :param endpoint: API endpoint
-    :type endpoint: str
-    :param query: Query parameters, defaults to None
-    :type query: Optional[Dict[str, str]], optional
+def make_url(endpoint: str, query: dict[str, str] | None = None) -> str:
+    """Build an absolute URL for a True Coach API path.
 
-    :return: Complete URL for the given endpoint
-    :rtype: str
+    Args:
+        endpoint (str): API path, with or without a leading slash.
+        query (dict[str, str] | None, optional): Query string parameters. Defaults to None.
+
+    Returns:
+        str: Full URL, including optional query string.
     """
-
-    api_base: str = f"https://app.truecoach.co/proxy/api"
-
+    api_base = "https://app.truecoach.co/proxy/api"
     if not endpoint.startswith("/"):
         endpoint = f"/{endpoint}"
     if query:
@@ -36,96 +37,80 @@ def make_url(endpoint: str, query: Optional[Dict[str, str]] = None) -> str:
 
 
 class TrueCoachOAuthToken:
-    """TrueCoach OAuth token class"""
+    """In-memory OAuth token returned by the password grant."""
 
-    def __init__(self, data: Dict[str, Any]) -> None:
-        """Initiate the token class
+    def __init__(self, data: dict[str, Any]) -> None:
+        """Populate fields from the token JSON payload.
 
-        :param cfg: The true_coach configuration
-        :type cfg: TrueCoachConfig
-        :param data: The token data
-        :type data: Dict[str, Any]
+        Args:
+            data (dict[str, Any]): Raw token dictionary from the API or token file.
         """
         self.access_token = cast(str, data.get("access_token"))
         self.user_id = cast(int, data.get("user_id"))
         self.token_type = cast(str, data.get("token_type"))
 
-    def encode(self):
-        """Encodes the class into json serializable object"""
+    def encode(self) -> dict[str, str]:
+        """Serialize the access token for JSON storage.
+
+        Returns:
+            dict[str, str]: Minimal dict suitable for ``json.dump``.
+        """
         return {
             "access_token": self.access_token,
         }
 
 
-def _authorize_with_true_coach_api(
- s: requests.Session
-) -> TrueCoachOAuthToken:
-    """
-    Authorize the user with the TrueCoach API.
+def _authorize_with_true_coach_api(s: requests.Session) -> TrueCoachOAuthToken:
+    """Exchange email and True Coach password for an access token.
 
-    :param cfg: The true_coach configuration
-    :type cfg: TrueCoachConfig
-    :param s: The requests session to use for the authorization.
-    :type s: requests.Session
-    :return: The TrueCoachOAuthToken object containing the access token
-             and refresh token.
-    :rtype: TrueCoachOAuthToken
-    :raises TrueCoachAPIError: If there is an error with the authorization process.
-    """
-    # Login to get session id and csrf token cookies
+    Args:
+        s (requests.Session): Session used for the token POST (TLS verify disabled).
 
+    Returns:
+        TrueCoachOAuthToken: Parsed token including expiry metadata.
+
+    Note:
+        Uses ``response.raise_for_status()`` which may raise ``requests.HTTPError``.
+    """
     response = s.post(
         url=make_url("/oauth/token/"),
-        json={"username": os.environ['EMAIL'], "password": os.environ['TRUECOACH_PASSWORD'], "grant_type": "password"},
-        verify=False
+        json={
+            "username": os.environ["EMAIL"],
+            "password": os.environ["TRUECOACH_PASSWORD"],
+            "grant_type": "password",
+        },
+        verify=False,
+        timeout=30,
     )
-    
+    response.raise_for_status()
     data = response.json()
-    log.debug(
-        'Retrieved access token from the True Coach API',
-        json.dumps(data),
-    )
-
+    log.debug("Retrieved access token from the True Coach API: %s", json.dumps(data))
     data["expires_at"] = time.time() + 36000
-
-    # Save token to file
-    with open("true_coach_token.json", "w", encoding="utf-8") as f:
-        json.dump(data, f)
-
+    TOKEN_PATH.write_text(json.dumps(data), encoding="utf-8")
     return TrueCoachOAuthToken(data)
 
 
-def check_token_file():
+def check_token_file() -> TrueCoachOAuthToken | None:
+    """Load a token from disk when the cache file is present.
+
+    Returns:
+        TrueCoachOAuthToken | None: Parsed token, or ``None`` if no file exists.
     """
-    Check if the token file exists
-    if it does, check if the token is valid
-    if it is, return the token
-    """
-    file = "true_coach_token.json"
-    if os.path.isfile(file):
-        with open(file, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            token = TrueCoachOAuthToken(data)
-            # if not token.is_expired():
-            return token
+    if not TOKEN_PATH.is_file():
+        return None
+    data = json.loads(TOKEN_PATH.read_text(encoding="utf-8"))
+    return TrueCoachOAuthToken(data)
 
 
 def authorize() -> TrueCoachOAuthToken:
-    """Authorize client and fetch access token.
-    Uses username and password provided by the user in the config.
-    Uses authorization_code grant type in TrueCoach OAuth flow.
+    """Return a valid token, refreshing via password grant when needed.
 
-    :param cfg: The true_coach configuration
-    :type cfg: TrueCoachConfig
-    :returns:               TrueCoach OAuth token
-    :rtype:                 :py:class:`TrueCoachOAuthToken`
+    Returns:
+        TrueCoachOAuthToken: Token from cache or freshly obtained from the API.
     """
     log.debug('Started authorizing to the API using "username and password"')
-
-    # Check if token file exists
     token = check_token_file()
     if token:
         return token
-
     with requests.Session() as s:
         return _authorize_with_true_coach_api(s)

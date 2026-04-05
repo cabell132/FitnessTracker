@@ -29,7 +29,8 @@ alembic revision --autogenerate && alembic upgrade head
 
 ### Code Style
 - **Docstrings**: Google style (enforced via ruff pydocstyle)
-- **Type hints**: Required everywhere, strict mypy enabled
+- **Type hints**: Required everywhere, checked only with **ty** (Astral), via `uv run ty check` or `uv run poe typecheck`
+- **Not used**: Do not add **mypy** (no `mypy.ini`, no CI mypy step); this repo standardizes on ty
 - **Linting**: ruff with extensive rule set (see pyproject.toml)
 - **Line length**: 100 characters max
 
@@ -88,12 +89,12 @@ rg -n "PROMPT_" fitness_tracker/llm/prompt_templates.py
 Before creating a PR:
 
 1. `uv run ruff check fitness_tracker tests` - no lint errors
-2. `uv run mypy fitness_tracker` - no type errors  
+2. `uv run ty check` - no type errors  
 3. `uv run pytest` - all tests pass
 4. Docstrings follow Google style (see `.cursor/rules/` for format)
 
 ## Pre-PR Single Command
 
 ```bash
-uv run ruff check fitness_tracker tests && uv run mypy fitness_tracker && uv run pytest
+uv run ruff check fitness_tracker tests && uv run ty check && uv run pytest
 ```

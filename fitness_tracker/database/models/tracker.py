@@ -1,3 +1,5 @@
+"""Unified fitness tracker ORM models (workouts, exercises, metrics, sets)."""
+
 from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import (
@@ -205,7 +207,11 @@ class Sets(BaseModel):
     )
 
     def __repr__(self) -> str:
-        """Return a string representation of the object."""
+        """Return a debug representation of this set row.
+
+        Returns:
+            str: Angle-bracket summary of load and rep fields.
+        """
         return f"<HevyAppWorkoutSets id={self.id} workout_item_id={self.workout_item_id} index={self.index} type={self.type} weight_kg={self.weight_kg} reps={self.reps} distance_meters={self.distance_meters} duration_seconds={self.duration_seconds} rpe={self.rpe}>"
 
 

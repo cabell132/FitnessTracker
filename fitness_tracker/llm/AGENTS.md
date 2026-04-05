@@ -112,5 +112,5 @@ rg -n "async def" fitness_tracker/llm
 ## Pre-PR Checks
 
 ```bash
-uv run ruff check fitness_tracker/llm && uv run mypy fitness_tracker/llm
+uv run ruff check fitness_tracker/llm && uv run ty check fitness_tracker/llm
 ```

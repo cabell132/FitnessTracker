@@ -1,49 +1,72 @@
-from fitness_tracker.database.repository.base import BaseRepository
-from fitness_tracker.database.models.hevy_app import *
+"""Repositories for Hevy App ORM tables."""
+
 from sqlalchemy.orm import Session
 
+from fitness_tracker.database.models.hevy_app import (
+    HevyAppActivatedMuscle,
+    HevyAppExercise,
+    HevyAppSets,
+    HevyAppWorkout,
+    HevyAppWorkoutItem,
+)
+from fitness_tracker.database.repository.base import BaseRepository
+
+
 class HevyAppWorkoutRepository(BaseRepository[HevyAppWorkout]):
-    """True Coach repository class"""
-    
-    def __init__(self, session:Session) -> None:
-        """Initiate the True Coach repository with the session
-        
+    """Persistence access for :class:`~fitness_tracker.database.models.hevy_app.HevyAppWorkout`."""
+
+    def __init__(self, session: Session) -> None:
+        """Create a workout repository for the given session.
+
+        Args:
+            session (Session): Active SQLAlchemy session.
         """
         super().__init__(session=session, model_class=HevyAppWorkout)
 
+
 class HevyAppWorkoutItemRepository(BaseRepository[HevyAppWorkoutItem]):
-    """True Coach repository class"""
-    
-    def __init__(self, session:Session) -> None:
-        """Initiate the True Coach repository with the session
-        
+    """Persistence access for Hevy :class:`HevyAppWorkoutItem` rows."""
+
+    def __init__(self, session: Session) -> None:
+        """Create a workout-item repository for the given session.
+
+        Args:
+            session (Session): Active SQLAlchemy session.
         """
         super().__init__(session=session, model_class=HevyAppWorkoutItem)
 
+
 class HevyAppSetsRepository(BaseRepository[HevyAppSets]):
-    """True Coach repository class"""
-    
-    def __init__(self, session:Session) -> None:
-        """Initiate the True Coach repository with the session
-        
+    """Persistence access for :class:`~fitness_tracker.database.models.hevy_app.HevyAppSets`."""
+
+    def __init__(self, session: Session) -> None:
+        """Create a sets repository for the given session.
+
+        Args:
+            session (Session): Active SQLAlchemy session.
         """
         super().__init__(session=session, model_class=HevyAppSets)
-        
+
+
 class HevyAppExerciseRepository(BaseRepository[HevyAppExercise]):
-    """True Coach repository class"""
-    
-    def __init__(self, session:Session) -> None:
-        """Initiate the True Coach repository with the session
-        
+    """Persistence access for :class:`~fitness_tracker.database.models.hevy_app.HevyAppExercise`."""
+
+    def __init__(self, session: Session) -> None:
+        """Create an exercise repository for the given session.
+
+        Args:
+            session (Session): Active SQLAlchemy session.
         """
         super().__init__(session=session, model_class=HevyAppExercise)
-        
+
+
 class HevyAppActivatedMuscleRepository(BaseRepository[HevyAppActivatedMuscle]):
-    """True Coach repository class"""
-    
-    def __init__(self, session:Session) -> None:
-        """Initiate the True Coach repository with the session
-        
+    """Persistence access for Hevy :class:`HevyAppActivatedMuscle` rows."""
+
+    def __init__(self, session: Session) -> None:
+        """Create an activated-muscle repository for the given session.
+
+        Args:
+            session (Session): Active SQLAlchemy session.
         """
         super().__init__(session=session, model_class=HevyAppActivatedMuscle)
-

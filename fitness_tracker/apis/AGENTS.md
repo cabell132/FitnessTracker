@@ -92,5 +92,5 @@ rg -n "class.*Error|Exception" fitness_tracker/apis/**/exceptions.py
 ## Pre-PR Checks
 
 ```bash
-uv run ruff check fitness_tracker/apis && uv run mypy fitness_tracker/apis
+uv run ruff check fitness_tracker/apis && uv run ty check fitness_tracker/apis
 ```

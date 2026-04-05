@@ -30,8 +30,10 @@ notebooks/
 # macOS
 .DS_Store
 
-# mypy
-.dmypy.json
+# ty (Astral type checker)
+.ty_cache/
+
+# mypy (not used in this project; ignore local cache if present)
 .mypy_cache/
 
 # Node.js

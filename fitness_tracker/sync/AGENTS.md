@@ -128,5 +128,5 @@ rg -n "Path.*SQL" fitness_tracker/sync
 ## Pre-PR Checks
 
 ```bash
-uv run ruff check fitness_tracker/sync && uv run mypy fitness_tracker/sync
+uv run ruff check fitness_tracker/sync && uv run ty check fitness_tracker/sync
 ```

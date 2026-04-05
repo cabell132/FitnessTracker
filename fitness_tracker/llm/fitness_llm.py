@@ -1,92 +1,98 @@
-from typing import TypeVar
+"""Domain-specific LLM helpers built on :class:`~fitness_tracker.llm.open_ai_llm.OpenAILLM`."""
 
-from langchain_core.language_models import BaseChatModel
+import logging
+from typing import cast
 
 from fitness_tracker.llm.open_ai_llm import OpenAILLM
-from fitness_tracker.llm.prompt_models import PostRoutinesRequestSets, Exercise, WorkoutItemLinkList
-from fitness_tracker.llm.prompt_templates import (
-    PROMPT_EXTRACT_INFO_SETS, PROMPT_EXERCISE, PROMPT_EXTRACT_COMPLETED_SETS, PROMPT_HEVY_TO_TRUE_COACH_WORKOUT_ITEMS
+from fitness_tracker.llm.prompt_models import (
+    Exercise,
+    PostRoutinesRequestSets,
+    WorkoutItemLinkList,
 )
-import logging
-
-T = TypeVar("T", bound=BaseChatModel)
+from fitness_tracker.llm.prompt_templates import (
+    PROMPT_EXERCISE,
+    PROMPT_EXTRACT_COMPLETED_SETS,
+    PROMPT_EXTRACT_INFO_SETS,
+    PROMPT_HEVY_TO_TRUE_COACH_WORKOUT_ITEMS,
+)
 
 # Set the logging level for SQLAlchemy and Alembic to WARNING
-logging.getLogger('httpcore').setLevel(logging.WARNING)
-logging.getLogger('openai').setLevel(logging.WARNING)
-logging.getLogger('sqlalchemy').setLevel(logging.WARNING)
-logging.getLogger('urllib3').setLevel(logging.WARNING)
-logging.getLogger('httpx').setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("openai").setLevel(logging.WARNING)
+logging.getLogger("sqlalchemy").setLevel(logging.WARNING)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.basicConfig(level=logging.WARNING)
 
 
 class FitnessLLM(OpenAILLM):
-    """Fitness Related Questions."""
+    """High-level prompts for workouts, exercises, and item linking."""
 
     def __init__(
         self,
         model_name: str,
         temperature: float = 0,
         max_completion_tokens: int = 150,
-    ):
+    ) -> None:
+        """Create a fitness-tuned LLM with the given model settings.
+
+        Args:
+            model_name (str): OpenAI model id.
+            temperature (float, optional): Sampling temperature. Defaults to 0.
+            max_completion_tokens (int, optional): Completion cap. Defaults to 150.
+        """
         super().__init__(model_name, temperature, max_completion_tokens)
 
     def parse_the_sets(self, info: str) -> PostRoutinesRequestSets:
-        """
-        Given the text of the exercise information, parse the sets.
+        """Parse Hevy-style set text into structured set rows.
 
         Args:
-            info (str): the text of the exercise information
+            info (str): Free-form exercise prescription text.
 
         Returns:
-            PostRoutinesRequestSets: the parsed sets
+            PostRoutinesRequestSets: Parsed normal/warmup/failure/dropset rows.
         """
+        return self.function_prompt(info, PROMPT_EXTRACT_INFO_SETS, PostRoutinesRequestSets)
 
-        return self.function_prompt(
-            info, PROMPT_EXTRACT_INFO_SETS, PostRoutinesRequestSets
-        )
-    
     def parse_completeted_sets(self, exercise_type: str, info: str, result: str) -> PostRoutinesRequestSets:
-        """
-        Given the text of the exercise information, parse the sets.
+        """Parse completed workout commentary into structured sets.
 
         Args:
-            exercise_type (str): the type of the exercise
-            info (str): the text of the exercise information
-            result (str): the result of the exercise
+            exercise_type (str): Hevy exercise type key.
+            info (str): Planned prescription text.
+            result (str): Logged result text from the client.
 
         Returns:
-            PostRoutinesRequestSets: the parsed sets
+            PostRoutinesRequestSets: Parsed sets for persistence.
         """
-
         data = str(
             {
                 "exercise_type": exercise_type,
                 "info": info,
-                "result": result
+                "result": result,
             }
         )
 
-        return self.function_prompt(
-            data, PROMPT_EXTRACT_COMPLETED_SETS, PostRoutinesRequestSets
-        )
-    
-    def link_workout_items(self, hevy_items: list[dict[str, str | int]], true_coach_items:  list[dict[str, str | int]]) -> WorkoutItemLinkList:
-        """
-        Given the text of the exercise information, parse the sets.
+        return self.function_prompt(data, PROMPT_EXTRACT_COMPLETED_SETS, PostRoutinesRequestSets)
+
+    def link_workout_items(
+        self,
+        hevy_items: list[dict[str, str | int]],
+        true_coach_items: list[dict[str, str | int]],
+    ) -> WorkoutItemLinkList:
+        """Propose Hevy ↔ True Coach item id pairings.
 
         Args:
-            hevy_items (list[dict[str, str | int]]): the text of the exercise information
-            true_coach_items (list[dict[str, str | int]]): the text of the exercise information
+            hevy_items (list[dict[str, str | int]]): Hevy-side exercise blocks.
+            true_coach_items (list[dict[str, str | int]]): True Coach blocks.
 
         Returns:
-            WorkoutItemLinkList: the parsed sets
+            WorkoutItemLinkList: Suggested links including optional nulls.
         """
-
         data = str(
             {
                 "hevy_app_items": hevy_items,
-                "true_coach_items": true_coach_items
+                "true_coach_items": true_coach_items,
             }
         )
 
@@ -94,34 +100,27 @@ class FitnessLLM(OpenAILLM):
             data, PROMPT_HEVY_TO_TRUE_COACH_WORKOUT_ITEMS, WorkoutItemLinkList
         )
 
-    
     def get_exercise_info(self, data: str) -> Exercise:
-        """
-        Given the text of the exercise information, parse the sets.
+        """Extract primary/secondary muscles and equipment from exercise text.
 
         Args:
-            data (str): the text of the exercise information
+            data (str): Exercise name or description.
 
         Returns:
-            Exercise: the parsed sets
+            Exercise: Structured tags for the exercise.
         """
+        return self.function_prompt(data, PROMPT_EXERCISE, Exercise)
 
-        return self.function_prompt(
-            data, PROMPT_EXERCISE, Exercise
-        )
-
-    
     async def parse_the_sets_async(self, data_list: list[str]) -> list[PostRoutinesRequestSets]:
-        """
-        Given the text of the exercise information, parse the sets.
+        """Parse many set blobs concurrently.
 
         Args:
-            data_list (list[str]): the text of the exercise information
+            data_list (list[str]): One prescription string per exercise.
 
         Returns:
-            PostRoutinesRequestSets: the parsed sets
+            list[PostRoutinesRequestSets]: Parsed results aligned with ``data_list``.
         """
-
-        return await self.function_prompt_async(
+        out = await self.function_prompt_async(
             data_list, PROMPT_EXTRACT_INFO_SETS, PostRoutinesRequestSets
         )
+        return cast(list[PostRoutinesRequestSets], out)

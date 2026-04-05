@@ -1,10 +1,13 @@
+"""HTTP session for Hevy web-origin endpoints (auth-token header flow)."""
+
 import os
-from typing import Any, Optional
+from typing import Any
 from urllib.parse import urlencode
 
-import logs
 import requests
 from dotenv import load_dotenv
+
+import logs
 
 from fitness_tracker.apis.hevy_app.exceptions import HevyAppAPIError
 
@@ -13,68 +16,70 @@ load_dotenv()
 logger = logs.get_logger(__name__)
 
 
+def _endpoint_without_url_scheme(endpoint: str) -> str:
+    """Strip a leading ``https://`` if present so URL joining stays consistent.
+
+    Args:
+        endpoint (str): API path or full URL.
+
+    Returns:
+        str: Path without the ``https://`` scheme prefix.
+    """
+    return endpoint.removeprefix("https://")
+
+
 class HevyAppWebSession:
-    """HevyApp API session class"""
+    """Web-style Hevy calls using ``HEVY_WEB_API_KEY`` plus static web headers."""
 
     def __init__(self) -> None:
-        """Initiate the client and make sure it is correctly authorized
-        If token is passed, it is used to make a call to
-        /my/account endpoint to check if the token is access_token is valid
-
-        If the token is not passed, or it is invalid, it authorizes the user
-        using username and password credentials given in the config
-        and uses the token obtained in this way
-
-        :param token:    HevyAppOAuthToken
-        """
+        """Load web API credentials from the environment."""
         self.api_key = os.environ["HEVY_WEB_API_KEY"]
 
-    def make_url(self, endpoint: str, query: Optional[dict[str, str]] = None) -> str:
-        """Get complete URL for a given API endpoint.
+    def make_url(self, endpoint: str, query: dict[str, str] | None = None) -> str:
+        """Build an absolute URL on ``api.hevyapp.com``.
 
-        :param endpoint: API endpoint
-        :type endpoint: str
-        :param query: Query parameters, defaults to None
-        :type query: Optional[Dict[str, str]], optional
+        Args:
+            endpoint (str): Path starting with or without ``/``.
+            query (dict[str, str] | None, optional): Query parameters. Defaults to None.
 
-        :return: Complete URL for the given endpoint
-        :rtype: str
+        Returns:
+            str: Fully qualified URL.
         """
-        api_base: str = "https://api.hevyapp.com"
-
+        api_base = "https://api.hevyapp.com"
         if not endpoint.startswith("/"):
             endpoint = f"/{endpoint}"
         if query:
             return api_base + endpoint + "?" + urlencode(query)
         return api_base + endpoint
 
-    def _get_request_headers(self):
-        """Formats Authorization and User-Agent HTTP client request headers
+    def _get_request_headers(self) -> dict[str, str]:
+        """Return headers for web-token authenticated calls.
 
-        :returns: HTTP client request headers
-        :rtype: dict
+        Returns:
+            dict[str, str]: Auth and API-key headers.
         """
         return {"auth-token": self.api_key, "x-api-key": "shelobs_hevy_web"}
 
-    def format_response(self, endpoint: str, response: requests.Response) -> dict[str, Any]:
-        """
-        Extract the "results" field from a JSON response.
+    def format_response(self, _endpoint: str, response: requests.Response) -> dict[str, Any]:
+        """Parse JSON and decorate successful dict bodies with ``request_url``.
 
-        :param endpoint: The endpoint that was requested.
-        :type endpoint: str
-        :param response: The response object to extract the results from.
-        :type response: requests.Response
-        :return: The "results" field from the JSON response, or the entire JSON response
-                if "results" is not present.
-        :rtype: Dict[str, Any]
-        :raises HevyAppAPIError: If the response is empty or if there is an error with
-                                  the response.
+        Args:
+            _endpoint (str): Unused placeholder for a stable call signature.
+            response (requests.Response): Completed HTTP response.
+
+        Returns:
+            dict[str, Any]: Parsed JSON payload.
+
+        Raises:
+            HevyAppAPIError: When the HTTP status indicates failure.
         """
-        if not response:
+        if not response.ok:
+            req_url = response.url or ""
+            msg = f"Error {response.status_code} for {req_url!r}"
             raise HevyAppAPIError(
-                f"Error {response.status_code} for '{response.request.path_url}",
+                msg,
                 status_code=response.status_code,
-                url=response.request.path_url,
+                url=req_url,
             )
         data = response.json()
         if response.status_code == 200:
@@ -84,34 +89,27 @@ class HevyAppWebSession:
                 data = {"results": data, "request_url": response.url}
         return data
 
-    def make_request(self, method: str, endpoint: str, **kwargs: Any) -> Optional[dict[str, Any]]:
-        """Make a request to the HevyApp API.
+    def make_request(self, method: str, endpoint: str, **kwargs: Any) -> dict[str, Any] | None:
+        """Perform an HTTP request using web session authentication.
 
-        :param mode:    Mode of the request, either GET or POST
-        :param endpoint: API endpoint to request
-        :param params:  Parameters to pass to the API
-        :type method:   The method to use for the request
-        :type enpoint:  str
-        :type params:   Dict[str, Any]
-        :return:        JSON response from the API
-        :rtype:         Dict[str, Any]
-        :raises HevyAppAPIError: If there is an error making the request.
+        Args:
+            method (str): HTTP verb.
+            endpoint (str): API path or host-relative URL.
+            **kwargs (Any): Extra arguments for ``requests.Session.request``.
+
+        Returns:
+            dict[str, Any] | None: Parsed body when present; ``None`` for 204 or DELETE success.
+
+        Raises:
+            HevyAppAPIError: On transport errors or HTTP error responses.
         """
-        # Define the headers.
+        url = self.make_url(_endpoint_without_url_scheme(endpoint))
         headers = self._get_request_headers()
 
-        # normalise the url
-
-        if endpoint.startswith("https://"):
-            endpoint = endpoint.replace("https://", "")
-
-        url = self.make_url(endpoint)
-
-        print(f"Making request to {url}")
+        logger.debug("Making Hevy web request to %s", url)
 
         with requests.Session() as session:
             try:
-                headers = self._get_request_headers()
                 response = session.request(
                     method.upper(),
                     url,
@@ -120,18 +118,26 @@ class HevyAppWebSession:
                     verify=False,
                     **kwargs,
                 )
-                logger.debug(f"HevyApp API Request: status_code={response.status_code}, url={url}")
-
             except Exception as e:
-                raise HevyAppAPIError(
-                    f"Error connecting to HevyApp API: {e}",
-                    url=url,
-                ) from e
-            if not response:
-                raise HevyAppAPIError(
-                    f"Error {response.status_code} for '{response.request.path_url}' {response.text}",
-                    status_code=response.status_code,
-                    url=response.request.path_url,
-                )
-        if response.status_code != 204 and method.upper() != "DELETE":
-            return self.format_response(endpoint, response)
+                msg = f"Error connecting to HevyApp API: {e}"
+                raise HevyAppAPIError(msg, url=url) from e
+
+        logger.debug(
+            "HevyApp API Request: status_code=%s, url=%s",
+            response.status_code,
+            url,
+        )
+
+        if not response.ok:
+            req_url = response.url or ""
+            msg = f"Error {response.status_code} for {req_url!r}"
+            if response.text:
+                msg = f"{msg} body={response.text!r}"
+            raise HevyAppAPIError(
+                msg,
+                status_code=response.status_code,
+                url=req_url,
+            )
+        if response.status_code == 204 or method.upper() == "DELETE":
+            return None
+        return self.format_response(endpoint, response)

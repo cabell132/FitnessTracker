@@ -1,24 +1,35 @@
-from typing import Any
+"""Thin LangChain + OpenAI wrapper for templated structured prompts."""
+
 import asyncio
+import os
+from typing import Any, cast
 
 from dotenv import load_dotenv
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.prompts import ChatPromptTemplate, HumanMessagePromptTemplate
 from langchain_openai import ChatOpenAI
-from pydantic.v1 import ValidationError
 from pydantic import SecretStr
-import os
+from pydantic.v1 import ValidationError
 
 load_dotenv()
 
 
 class OpenAILLM:
+    """OpenAI chat client with Pydantic output parsing."""
+
     def __init__(
         self,
         model_name: str,
         temperature: float = 0.0,
         max_completion_tokens: int = 150,
-    ):
+    ) -> None:
+        """Create a configured chat model for prompts.
+
+        Args:
+            model_name (str): OpenAI model id (e.g. ``gpt-4o-mini``).
+            temperature (float, optional): Sampling temperature. Defaults to 0.0.
+            max_completion_tokens (int, optional): Cap on completion length. Defaults to 150.
+        """
         self.model = ChatOpenAI(
             api_key=SecretStr(os.environ["OPENAI_API_KEY"]),
             model=model_name,
@@ -26,70 +37,65 @@ class OpenAILLM:
             max_completion_tokens=max_completion_tokens,
         )
 
-    def function_prompt(
-        self, data: str, promt_template: str, pydantic_object: Any
-    ) -> Any:
-        """
-        Perform a prompt using a template and a Pydantic object.
+    def function_prompt(self, data: str, promt_template: str, pydantic_object: Any) -> Any:
+        """Run a single structured prompt and parse into ``pydantic_object``.
 
         Args:
-            data (str): The data to be used in the prompt.
-            promt_template (str): The template for the prompt.
-            pydantic_object (Any): The Pydantic object used for parsing the output.
+            data (str): User or tool payload interpolated into the template.
+            promt_template (str): LangChain template string (may use ``{data}``, etc.).
+            pydantic_object (Any): Pydantic model class for the parser.
 
         Returns:
-            The parsed output based on the Pydantic object.
-
+            Any: Parsed instance of ``pydantic_object``.
         """
         message = HumanMessagePromptTemplate.from_template(
             template=promt_template,
         )
-        chat_prompt = ChatPromptTemplate.from_messages(messages=[message])  # type: ignore
-        # generate the response
-
-        parser = PydanticOutputParser(pydantic_object=pydantic_object)  # type: ignore
+        chat_prompt = ChatPromptTemplate.from_messages(messages=[message])
+        parser = PydanticOutputParser(pydantic_object=pydantic_object)
         chat_prompt_with_values = chat_prompt.format_prompt(
             data=data, format_instructions=parser.get_format_instructions()
         )
         output = self.model.invoke(chat_prompt_with_values.to_messages())
 
-        return parser.parse(output.content)  # type: ignore
+        return parser.parse(cast(str, output.content))
 
     async def function_prompt_async(
         self, data_list: list[str], promt_template: str, pydantic_object: Any
-    ) -> Any:
-        """
-        Perform a prompt using a template and a Pydantic object.
+    ) -> list[Any]:
+        """Run structured prompts for many inputs concurrently.
 
         Args:
-            data_list (list[str]): The list of data to be used in the prompts.
-            promt_template (str): The template for the prompt.
-            pydantic_object (Any): The Pydantic object used for parsing the output.
+            data_list (list[str]): One prompt payload per item.
+            promt_template (str): Shared LangChain template.
+            pydantic_object (Any): Pydantic model class for each parse.
 
         Returns:
-            list[Any]: The parsed outputs based on the Pydantic object.
-
+            list[Any]: Parsed objects (or raw content on validation failure).
         """
         message = HumanMessagePromptTemplate.from_template(
             template=promt_template,
         )
-        chat_prompt = ChatPromptTemplate.from_messages(messages=[message])  # type: ignore
+        chat_prompt = ChatPromptTemplate.from_messages(messages=[message])
 
-        # generate the response
         parser = PydanticOutputParser(pydantic_object=pydantic_object)
 
         async def process_single_item(data: str) -> Any:
-            """Process a single data item asynchronously."""
+            """Parse one row; fall back to raw text if validation fails.
+
+            Args:
+                data (str): Payload for this item.
+
+            Returns:
+                Any: Parsed model or raw assistant content.
+            """
             chat_prompt_with_values = chat_prompt.format_prompt(
                 data=data, format_instructions=parser.get_format_instructions()
             )
             output = await self.model.ainvoke(chat_prompt_with_values.to_messages())
             try:
-                return parser.parse(output.content)  # type: ignore
+                return parser.parse(cast(str, output.content))
             except ValidationError:
                 return output.content
 
-        # Process all items in parallel
-        results = await asyncio.gather(*[process_single_item(data) for data in data_list])
-
-        return results
+        return await asyncio.gather(*[process_single_item(data) for data in data_list])

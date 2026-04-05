@@ -1,4 +1,6 @@
-from fitness_tracker.apis.true_coach import TrueCoachClient
-from fitness_tracker.apis.hevy_app import HevyAppClient
+"""Public exports for fitness platform API clients."""
 
-__all__ = ['TrueCoachClient', 'HevyAppClient']
+from fitness_tracker.apis.hevy_app import HevyAppClient
+from fitness_tracker.apis.true_coach import TrueCoachClient
+
+__all__ = ["HevyAppClient", "TrueCoachClient"]

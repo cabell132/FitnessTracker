@@ -34,7 +34,6 @@ dependencies = [
 test = [
     "commitizen>=3.2.1",
     "coverage[toml]>=7.2.5",
-    "mypy>=1.2.0",
     "poethepoet>=0.20.0",
     "pre-commit>=3.3.1",
     "pytest>=7.3.1",
@@ -56,6 +55,7 @@ dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
     "ruff>=0.6",
+    "types-python-dateutil>=2.9.0",
     "ty>=0.0.1a8",
     "pydoclint>=0.6.0",
     "poethepoet>=0.25",
@@ -86,25 +86,6 @@ fail_under = 80
 
 [tool.coverage.xml]  # https://coverage.readthedocs.io/en/latest/config.html#xml
 output = "reports/coverage.xml"
-
-[tool.mypy]  # https://mypy.readthedocs.io/en/latest/config_file.html
-junit_xml = "reports/mypy.xml"
-plugins = "pydantic.mypy"
-strict = true
-disallow_subclassing_any = false
-disallow_untyped_decorators = false
-ignore_missing_imports = true
-pretty = true
-show_column_numbers = true
-show_error_codes = true
-show_error_context = true
-warn_unreachable = true
-
-[tool.pydantic-mypy]  # https://pydantic-docs.helpmanual.io/mypy_plugin/#configuring-the-plugin
-init_forbid_extra = true
-init_typed = true
-warn_required_dynamic_aliases = true
-warn_untyped_fields = true
 
 [tool.pytest.ini_options]
 minversion = "8.0"
@@ -145,7 +126,11 @@ max-statements = 20
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["ANN", "SLF001", "TID252", "F401", "F403", "E402", "S105", "D", "PLC0415"]
+"fitness_tracker/database/models/__init__.py" = ["F403", "F405"]
+"fitness_tracker/database/repository/__init__.py" = ["F403", "F405"]
+"fitness_tracker/llm/prompt_templates.py" = ["S608"]
 
+# Static types: use ty only ([tool.ty]); mypy is intentionally not configured.
 [tool.ty.environment]
 python-version = "3.12"
 

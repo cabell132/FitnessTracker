@@ -1,32 +1,46 @@
-from typing import Optional
+"""Parse True Coach workout HTML for Hevy routine generation."""
+
+from typing import cast
 
 import pandas as pd
 from bs4 import BeautifulSoup
+
 from fitness_tracker.apis.hevy_app.types import PostRoutinesRequestSet
 
 
-def get_workout_order(description: str):
+def get_workout_order(description: str) -> dict[int, dict[str, str | int | None]]:
+    """Parse exercise order and superset markers from True Coach HTML.
+
+    Args:
+        description (str): Raw HTML ``short_description`` from True Coach.
+
+    Returns:
+        dict[int, dict[str, str | int | None]]: 1-based step index to exercise metadata.
+
+    Raises:
+        ValueError: If the HTML lacks expected workout structure.
+    """
     soup = BeautifulSoup(description, "html.parser")
 
     name_and_info = soup.find("p", class_="name-and-info")
     if name_and_info is None:
-        raise Exception("No workout elements found")
+        msg = "No workout elements found"
+        raise ValueError(msg)
 
-    # Get all text, splitting by the <br/> tags
     exercises: list[str] = [
-        line.strip() for line in name_and_info.decode_contents().split("<br/>") if line.strip()
-    ]  # type: ignore
+        line.strip()
+        for line in name_and_info.decode_contents().split("<br/>")
+        if line.strip()
+    ]
 
-    # Clean the lines to remove any residual HTML tags or spaces
-    exercises = [BeautifulSoup(line, "html.parser").text.strip() for line in exercises]
+    exercises = [BeautifulSoup(line, "html.parser").get_text().strip() for line in exercises]
 
     order: dict[int, dict[str, str | int | None]] = {}
     for i, element in enumerate(exercises, start=1):
         key, value = element.split(") ")
         if key[-1].isdigit():
-            # separate the numbers from the letters
-            numbers = int("".join([c for c in key if c.isdigit()]))
-            letters = "".join([c for c in key if not c.isdigit()])
+            numbers = int("".join(c for c in key if c.isdigit()))
+            letters = "".join(c for c in key if not c.isdigit())
             order[i] = {
                 "exercise_name": value.strip(),
                 "is_superset": True,
@@ -46,17 +60,36 @@ def get_workout_order(description: str):
     return order
 
 
-def get_superset_index(order: dict[int, dict[str, str | int | None]]) -> Optional[dict[str, int]]:
-    df = pd.DataFrame(order).T
-    df = df.loc[df["is_superset"] == True]
+def get_superset_index(order: dict[int, dict[str, str | int | None]]) -> dict[str, int] | None:
+    """Build superset group labels to Hevy superset_id indices.
+
+    Args:
+        order (dict[int, dict[str, str | int | None]]): Output of :func:`get_workout_order`.
+
+    Returns:
+        dict[str, int] | None: Group label to superset index, or ``None`` when empty.
+    """
+    df = pd.DataFrame.from_dict(order, orient="index")
     if df.empty:
         return None
-    df = df.groupby("superset_group", as_index=False).agg({"superset_order": "max"})  # type: ignore
-    df = df.reset_index().set_index("superset_group")  # type: ignore
-    return df["index"].to_dict()  # type: ignore
+    subset = df.loc[df["is_superset"].astype(bool)]
+    if subset.empty:
+        return None
+    grouped = subset.groupby("superset_group", as_index=False)["superset_order"].max()
+    grouped = grouped.reset_index(drop=True).assign(row_index=lambda d: d.index)
+    out = grouped.set_index("superset_group")["row_index"].to_dict()
+    return cast(dict[str, int], out)
 
 
 def create_notes(description: str) -> str:
+    """Extract plain-text notes from True Coach workout HTML.
+
+    Args:
+        description (str): Raw HTML description.
+
+    Returns:
+        str: Newline-joined text from the name block, or empty string.
+    """
     soup = BeautifulSoup(description, "html.parser")
 
     workout_elements = soup.find("p", class_="name-and-info")
@@ -67,10 +100,17 @@ def create_notes(description: str) -> str:
 
 
 def parse_sets(description: str) -> list[PostRoutinesRequestSet]:
-    sets: list[PostRoutinesRequestSet] = [
+    """Fallback routine sets when LLM parsing returns nothing.
+
+    Args:
+        description (str): Exercise info HTML or text (unused placeholder).
+
+    Returns:
+        list[PostRoutinesRequestSet]: A single default set row.
+    """
+    return [
         PostRoutinesRequestSet(
             type="normal",
             duration_seconds=60,
         )
     ]
-    return sets

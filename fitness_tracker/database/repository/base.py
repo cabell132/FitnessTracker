@@ -1,152 +1,159 @@
+"""Generic SQLAlchemy repository base for ORM models."""
+
 from collections.abc import Sequence
-from typing import Any, Generic, Optional, TypeVar
+from typing import Any, Generic, TypeVar
 
 import logs
 from fitness_tracker.database.models.base import BaseModel
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Query, Session
 from sqlalchemy.sql import func
-
-T = TypeVar("T", bound=BaseModel)
 
 logger = logs.get_logger(__name__)
 
+T = TypeVar("T", bound=BaseModel)
 
-class BaseRepository(Generic[T]):
+
+class BaseRepository(Generic[T]):  # noqa: UP046
     """Base repository class to be inherited by all other repositories."""
 
     def __init__(
         self,
         session: Session,
         model_class: type[T],
-    ):
+    ) -> None:
         """Initialize the repository class.
 
         Args:
-            session: The session to use for the repository.
-            model_class: The model class to use for the repository.
+            session (Session): The session to use for the repository.
+            model_class (type[T]): The model class to use for the repository.
         """
         self.model_class = model_class
         self.session = session
 
-    def query(self, *entities: Any, **kwargs: Any):
-        """Function to create for the given entities.
+    def query(self, *entities: Any, **kwargs: Any) -> Query[Any]:
+        """Build a SQLAlchemy query for the given entities.
 
         Args:
-            *entities: The entities to query.
-            **kwargs: The query parameters.
+            *entities (Any): Entities or columns to query.
+            **kwargs (Any): Equality filters passed to ``filter_by``.
 
         Returns:
-            The query object.
-
-        Example:
-            >>> query = self.query(ArtistModel)
-
-        Query the `name` column of the `ArtistModel` table:
-            >>> query = self.query(ArtistModel.name)
+            Query[Any]: SQLAlchemy query object.
         """
-        query = self.session.query(*entities)
+        q = self.session.query(*entities)
         if kwargs:
-            query = query.filter_by(**kwargs)  # type: ignore
-        return query
+            q = q.filter_by(**kwargs)
+        return q
 
-    def get(self, **kwargs: Any) -> Optional[T]:
-        """Function to return a record of a model class by kwargs.
+    def get(self, **kwargs: Any) -> T | None:
+        """Return a single model row matching the given equality filters.
 
         Args:
-            **kwargs: The kwargs of the record to return.
+            **kwargs (Any): Column name to value filters passed to ``filter_by``.
 
         Returns:
-            A record of a model class.
+            T | None: Matching ORM instance, or None if absent.
         """
-        return self.query(self.model_class, **kwargs).first()  # type: ignore
+        return self.query(self.model_class, **kwargs).first()
 
     def get_all(self, **kwargs: Any) -> list[T]:
-        """Function to return all records of a model class.
+        """Return all model rows matching the given equality filters.
 
         Args:
-            **kwargs: The kwargs of the record to return.
+            **kwargs (Any): Column name to value filters passed to ``filter_by``.
 
         Returns:
-        All records of a model class.
+            list[T]: All matching ORM instances.
         """
-        return self.query(self.model_class, **kwargs).all()  # type: ignore
+        return self.query(self.model_class, **kwargs).all()
 
     def exists(self, **kwargs: Any) -> bool:
-        """Function to return a record of a model class by kwargs.
+        """Return whether any row matches the given equality filters.
 
-        :param kwargs: The kwargs of the record to return
-        :type kwargs: dict
+        Args:
+            **kwargs (Any): Column name to single value, same as :meth:`get`.
 
-        :return: A record of a model class
-        :rtype: Optional[Base]
+        Returns:
+            bool: True if :meth:`get` would return a row.
         """
         return self.get(**kwargs) is not None
 
     def exists_list(self, **kwargs: Any) -> Sequence[bool]:
-        """Function to check if a record exists in the database based on the given kwargs.
-
-        :param kwargs: kwargs to filter the records by with the format {column_name: [value1, value2, ...]}
-        :type kwargs: dict
-
-        :return: A list of boolean values indicating whether the records exist or not.
-        :rtype: Sequence[bool]
-        """  # noqa: W505
-        results: Sequence[bool] = []
-        for key, values in kwargs.items():
-            for value in values:
-                results.append(self.exists(**{key: value}))
-        return results
-
-    def add(self, obj: T):
-        """Function to add a record to the database.
-
-        :param obj: The record to add to the database
-        :type obj: Base
-
-        :return: The added record
-        :rtype: Base
-        """
-        self.session.add(obj)  # type: ignore
-        logger.debug("Added %s to the database", obj)
-
-    def merge(self, obj: T):
-        """Function to merge a record to the database.
-
-        :param obj: The record to merge to the database
-        :type obj: Base
-
-        :return: The merged record
-        :rtype: Base
-        """
-        self.session.merge(obj)  # type: ignore
-
-    def insert_ignore(self, obj: T) -> None:
-        """Function to add a record to the database if it doesn't already exist.
+        """Return existence flags for each value in per-column lists.
 
         Args:
-            obj: The record to add to the database.
+            **kwargs (Any): Mapping of column name to iterable of values to test
+                (each value is checked with :meth:`exists`).
+
+        Returns:
+            Sequence[bool]: Parallel booleans for each (column, value) pair expanded
+                in key order, then value order.
+        """
+        return [
+            self.exists(**{key: value})
+            for key, values in kwargs.items()
+            for value in values
+        ]
+
+    def add(self, obj: T) -> None:
+        """Add a record to the database.
+
+        Args:
+            obj (T): ORM instance to persist on flush/commit.
+
+        Returns:
+            None: Nothing is returned.
+        """
+        self.session.add(obj)
+        logger.debug("Added %s to the database", obj)
+
+    def merge(self, obj: T) -> None:
+        """Merge a detached instance into the current session.
+
+        Args:
+            obj (T): ORM instance to merge.
+
+        Returns:
+            None: Nothing is returned.
+        """
+        self.session.merge(obj)
+
+    def insert_ignore(self, obj: T) -> None:
+        """Add a row via model-specific insert-ignore SQL if not already present.
+
+        Args:
+            obj (T): Instance whose :meth:`insert_ignore` builds the statement.
+
+        Returns:
+            None: Nothing is returned; execution is staged on the session.
         """
         if getattr(obj, "date_created", None) is None:
             obj.date_created = func.now()
         if getattr(obj, "date_updated", None) is None:
             obj.date_updated = func.now()
         stmnt = obj.insert_ignore()
-        self.session.execute(stmnt)  # type: ignore
+        self.session.execute(stmnt)
 
     def delete(self, obj: T) -> None:
-        """Function to delete a record from the database.
+        """Delete a persisted instance from the current session.
 
-        :param obj: The record to delete from the database
-        :type obj: Base
+        Args:
+            obj (T): ORM instance to remove.
+
+        Returns:
+            None: Nothing is returned.
         """
-        self.session.delete(obj)  # type: ignore
+        self.session.delete(obj)
         logger.debug("Deleted %s from the database", obj)
 
     def delete_all(self, **kwargs: Any) -> None:
-        """Function to delete a record from the database by id.
+        """Delete every row matching the given equality filters.
 
-        :param kwargs: The kwargs of the record to delete from the database
-        :type kwargs: dict
+        Args:
+            **kwargs (Any): Filters passed to :meth:`get_all`.
+
+        Returns:
+            None: Nothing is returned.
         """
         recs = self.get_all(**kwargs)
         for rec in recs:

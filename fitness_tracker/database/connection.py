@@ -1,13 +1,15 @@
+"""Database facade wiring SQLAlchemy engine to domain services."""
+
 import logging
 
 from sqlalchemy.engine import Engine
 
-from fitness_tracker.database.models import *  # noqa: F403
+from fitness_tracker.database.models.base import BaseModel
 from fitness_tracker.database.services import (
+    AppleHealthService,
     FitnessTrackerService,
     HevyAppService,
     TrueCoachService,
-    AppleHealthService,
 )
 
 # Configure logging
@@ -25,14 +27,11 @@ class Database:
         connection: A connection to the MySQL database.
     """
 
-    def __init__(self, engine: Engine):
+    def __init__(self, engine: Engine) -> None:
         """Initialize a connection to a MySQL database.
 
         Args:
-            engine: A connection to the MySQL database.
-
-        Attributes:
-            connection: A connection to the MySQL database.
+            engine (Engine): SQLAlchemy engine for the fitness tracker database.
         """
         self.engine = engine
         logger.debug("Database engine: %s", self.engine)
@@ -42,17 +41,10 @@ class Database:
         self.tracker = FitnessTrackerService(engine)
         self.apple_health = AppleHealthService(engine)
 
-        # Enable foreign key constraints
-        # @event.listens_for(self.engine, "connect")
-        # def set_sqlite_pragma(dbapi_connection: Connection, connection_record: Any):
-        #     cursor = dbapi_connection.cursor()
-        #     cursor.execute("PRAGMA foreign_keys=ON")
-        #     cursor.close()
-
-    def init_db(self):
+    def init_db(self) -> None:
         """Create tables in the database using the SQLAlchemy metadata."""
-        BaseModel.metadata.create_all(self.engine)  # noqa: F405
+        BaseModel.metadata.create_all(self.engine)
 
-    def drop_tables(self):
+    def drop_tables(self) -> None:
         """Drop tables in the database using the SQLAlchemy metadata."""
-        BaseModel.metadata.drop_all(self.engine)  # noqa: F405
+        BaseModel.metadata.drop_all(self.engine)

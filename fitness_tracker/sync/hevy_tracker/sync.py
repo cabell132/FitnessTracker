@@ -1,37 +1,60 @@
+"""Sync Hevy workouts into the internal tracker and link True Coach IDs."""
+
+import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import cast
+
+from sqlalchemy.orm import Session
+from sqlalchemy.sql import text
 
 from fitness_tracker.apis import HevyAppClient
-from fitness_tracker.apis.hevy_app.types import DeletedWorkout, UpdatedWorkout, Workout
-from fitness_tracker.apis.hevy_app.types import Exercise as HevyAppExercise
+from fitness_tracker.apis.hevy_app.types import DeletedWorkout, Exercise as HevyAppExercise, UpdatedWorkout, Workout
 from fitness_tracker.database import Database
 from fitness_tracker.database.models import TrueCoachExercise
 from fitness_tracker.llm.fitness_llm import FitnessLLM
-from sqlalchemy.orm import Session
-from sqlalchemy.sql import text
-from dateutil.parser import parse
+
+logger = logging.getLogger(__name__)
+
+
+def _parse_api_datetime(value: str) -> datetime:
+    """Parse ISO-like timestamps from Hevy API strings.
+
+    Args:
+        value (str): Timestamp string from Hevy (may end with ``Z``).
+
+    Returns:
+        datetime: Parsed timezone-aware or naive datetime.
+    """
+    normalized = value.replace("Z", "+00:00") if value.endswith("Z") else value
+    return datetime.fromisoformat(normalized)
 
 
 class HevyToFitnessTrackerSyncronizer:
-    """Syncronizer class"""
+    """Incremental Hevy → tracker sync with True Coach ID extraction and SQL linking."""
 
     def __init__(self, database: Database, source: HevyAppClient, llm: FitnessLLM) -> None:
-        """Initiate the syncronizer with the clients."""
+        """Initiate the syncronizer with the clients.
+
+        Args:
+            database (Database): Persistence layer.
+            source (HevyAppClient): Hevy API client for events.
+            llm (FitnessLLM): LLM for fuzzy workout item linking.
+        """
         self._database = database
         self._source = source
         self._llm = llm
 
     def update_workout(self, session: Session, workout: UpdatedWorkout) -> None:
-        """Update the workout with the given id.
+        """Update the tracker row and link SQL for a Hevy workout update event.
 
         Args:
-            workout_id (int): The workout id to syncronize
-
+            session (Session): SQLAlchemy session.
+            workout (UpdatedWorkout): Hevy workout event payload.
         """
         self._database.hevy_app.add_workout(session, workout.workout)
         true_coach_id = self.link_workout(session, workout.workout.id, workout.workout)
-        print(f"True Coach ID for workout {workout.workout.id} is {true_coach_id}")
+        logger.info("True Coach ID for workout %s is %s", workout.workout.id, true_coach_id)
         session.commit()
         if true_coach_id:
             self.link_workout_items(session, true_coach_id)
@@ -40,33 +63,32 @@ class HevyToFitnessTrackerSyncronizer:
             self.insert_sets(session, true_coach_id)
             self.update_exercises(session, true_coach_id)
         else:
-            print(f"Could not find True Coach ID for workout {workout.workout.id}")
-
+            logger.info("Could not find True Coach ID for workout %s", workout.workout.id)
 
         self.update_metrics(session)
 
     def delete_workout(self, session: Session, event: DeletedWorkout) -> None:
-        """Delete the workout with the given id.
+        """Delete a Hevy-linked workout in the tracker.
 
         Args:
-            workout_id (int): The workout id to syncronize
-
+            session (Session): SQLAlchemy session.
+            event (DeletedWorkout): Deletion event from Hevy.
         """
         self._database.hevy_app.delete_workout(session, id=event.id)
 
-    def link_workout(
-        self, session: Session, workout_id: str, workout: Workout
-    ) -> Optional[int]:
-        """Get the linked workout.
+    def link_workout(self, session: Session, workout_id: str, workout: Workout) -> int | None:
+        """Resolve True Coach workout id embedded in the Hevy title and link IDs.
 
         Args:
-            session (Session): The session to use
-            workout_id (str): The Hevy workout id to get the linked workout
-            workout_description (str): The workout description to get the linked workout
+            session (Session): SQLAlchemy session.
+            workout_id (str): Hevy workout id.
+            workout (Workout): Hevy workout payload containing the title tail id.
 
+        Returns:
+            int | None: Parsed True Coach workout id when valid digits were found.
         """
         true_coach_id = workout.title.split("\n")[-1]
-        print(true_coach_id)
+        logger.debug("Parsed True Coach id candidate: %s", true_coach_id)
         if not true_coach_id.isdigit():
             true_coach_id = workout.title.split(" ")[-1]
             if not true_coach_id.isdigit():
@@ -74,21 +96,19 @@ class HevyToFitnessTrackerSyncronizer:
 
         tr_workout = self._database.tracker.get_workout(session, true_coach_id=int(true_coach_id))
         if tr_workout:
-            tr_workout.hevy_app_id = workout_id  # type: ignore
-            tr_workout.start_date=parse(workout.start_time) # type: ignore
-            tr_workout.end_date=parse(workout.end_time) # type: ignore
+            tr_workout.hevy_app_id = workout_id
+            tr_workout.start_date = _parse_api_datetime(workout.start_time)
+            tr_workout.end_date = _parse_api_datetime(workout.end_time)
 
-            session.merge(tr_workout)  # type: ignore
+            session.merge(tr_workout)
         return int(true_coach_id)
 
     def link_workout_items(self, session: Session, true_coach_id: int) -> None:
-        """Link the exercises.
+        """Link Hevy and True Coach workout items using SQL plus LLM suggestions.
 
         Args:
-            session (Session): The session to use
-            true_coach_id (int): The True Coach workout id
-            hevy_exercises (list[HevyAppExercise]): The Hevy App exercises
-
+            session (Session): SQLAlchemy session.
+            true_coach_id (int): True Coach workout id being linked.
         """
         insert_script = text(
             Path("fitness_tracker/database/SQL/hevy/tracker/workout_items/update.sql").read_text(
@@ -103,7 +123,7 @@ class HevyToFitnessTrackerSyncronizer:
                     FROM WorkoutItem as wi
                     JOIN Workout w ON wi.workout_id = w.id
                     JOIN TrueCoachWorkoutItem tcwi ON wi.true_coach_id = tcwi.id
-                    WHERE w.true_coach_id = :true_coach_id 
+                    WHERE w.true_coach_id = :true_coach_id
                     AND wi.hevy_app_id IS NULL
                     """)
         res = session.execute(stmnt, {"true_coach_id": true_coach_id}).fetchall()
@@ -140,12 +160,11 @@ class HevyToFitnessTrackerSyncronizer:
         session.commit()
 
     def update_exercise(self, session: Session, true_coach_id: int) -> None:
-        """Update the exercise with the given id.
+        """Update tracker exercise ids from linked Hevy items.
 
         Args:
-            session (Session): The session to use
-            true_coach_id (int): The True Coach exercise id to syncronize
-
+            session (Session): SQLAlchemy session.
+            true_coach_id (int): True Coach workout id scope.
         """
         stmnt = text("""
                     UPDATE WorkoutItem
@@ -172,16 +191,15 @@ class HevyToFitnessTrackerSyncronizer:
                         AND w.true_coach_id = :true_coach_id
                     );
                         """)
-        session.execute(stmnt, {"true_coach_id": true_coach_id})  # type: ignore
+        session.execute(stmnt, {"true_coach_id": true_coach_id})
         session.commit()
 
     def update_sets(self, session: Session, true_coach_id: int) -> None:
-        """Update the sets with the given id.
+        """Run SQL to refresh set rows for a workout.
 
         Args:
-            session (Session): The session to use
-            true_coach_id (int): The True Coach exercise id to syncronize
-
+            session (Session): SQLAlchemy session.
+            true_coach_id (int): True Coach workout id scope.
         """
         stmnt = text(
             Path("fitness_tracker/database/SQL/hevy/tracker/sets/update.sql").read_text(
@@ -192,12 +210,11 @@ class HevyToFitnessTrackerSyncronizer:
         session.commit()
 
     def insert_sets(self, session: Session, true_coach_id: int) -> None:
-        """Insert the sets with the given id.
+        """Insert missing set rows from Hevy data.
 
         Args:
-            session (Session): The session to use
-            true_coach_id (int): The True Coach exercise id to syncronize
-
+            session (Session): SQLAlchemy session.
+            true_coach_id (int): True Coach workout id scope.
         """
         stmnt = text(
             Path("fitness_tracker/database/SQL/hevy/tracker/sets/insert.sql").read_text(
@@ -208,12 +225,11 @@ class HevyToFitnessTrackerSyncronizer:
         session.commit()
 
     def update_exercises(self, session: Session, true_coach_id: int) -> None:
-        """Update the exercises.
+        """Bulk-update exercise associations for a workout.
 
         Args:
-            session (Session): The session to use
-            true_coach_id (int): The True Coach workout id
-
+            session (Session): SQLAlchemy session.
+            true_coach_id (int): True Coach workout id scope.
         """
         stmnt = text(
             Path("fitness_tracker/database/SQL/hevy/tracker/exercises/update.sql").read_text(
@@ -223,24 +239,25 @@ class HevyToFitnessTrackerSyncronizer:
         session.execute(stmnt, {"true_coach_id": true_coach_id})
         session.commit()
 
-
     def link_exercises(
         self, session: Session, true_coach_id: int, hevy_exercises: list[HevyAppExercise]
     ) -> None:
-        """Link the exercises.
+        """Align Hevy exercises with True Coach items by workout ordering.
 
         Args:
-            session (Session): The session to use
-            true_coach_id (int): The True Coach workout id
-            hevy_exercises (list[HevyAppExercise]): The Hevy App exercises
-
+            session (Session): SQLAlchemy session.
+            true_coach_id (int): True Coach workout id.
+            hevy_exercises (list[HevyAppExercise]): Exercises from the Hevy workout.
         """
         true_coach_workout_items = self._database.true_coach.get_workout_items(
             session, workout_id=true_coach_id
         )
-        # sort workout items by position
-        true_coach_workout_items.sort(key=lambda x: x.position)  # type: ignore
-        true_coach_exercises = [item.exercise for item in true_coach_workout_items]
+        true_coach_workout_items.sort(
+            key=lambda x: cast(int, x.position) if x.position is not None else 0,
+        )
+        true_coach_exercises = [
+            ex for item in true_coach_workout_items if (ex := item.exercise) is not None
+        ]
 
         for hevy_exercise in hevy_exercises:
             self.link_exercise(session, true_coach_exercises, hevy_exercise)
@@ -250,38 +267,27 @@ class HevyToFitnessTrackerSyncronizer:
         session: Session,
         true_coach_exercises: list[TrueCoachExercise],
         hevy_exercise: HevyAppExercise,
-        threshold: int = 90,
+        _threshold: int = 90,
     ) -> None:
-        """Link the exercises.
+        """Link a single Hevy exercise to the tracker by index order.
 
         Args:
-            session (Session): The session to use
-            true_coach_exercises (list[TrueCoachExercise]): The True Coach exercises
-            hevy_exercise (HevyAppExercise): The Hevy App exercise
-
+            session (Session): SQLAlchemy session.
+            true_coach_exercises (list[TrueCoachExercise]): Ordered True Coach exercises.
+            hevy_exercise (HevyAppExercise): Hevy block from the workout payload.
+            _threshold (int, optional): Reserved for future fuzzy match cutoff. Defaults to 90.
         """
         instance = self._database.tracker.get_exercise(
             session, hevy_app_id=hevy_exercise.exercise_template_id
         )
-        if instance:
-            if instance.true_coach_id:
-                print(f"Exercise {hevy_exercise.title} has a true_coach_id")
-                return
-
-        # best_match = None
-        # best_score = 0
-        # for true_coach_exercise in true_coach_exercises:
-        #     score = fuzz.WRatio(str(true_coach_exercise.name), str(hevy_exercise.title))
-        #     if score > best_score:
-        #         best_score = score
-        #         best_match = true_coach_exercise
-        # print(f"Best match for {hevy_exercise.title} is {best_match.name} with score {best_score}")
-        # if best_score < threshold:
-        #     return
-
-        best_match = true_coach_exercises[hevy_exercise.index]
-        if not best_match:
+        if instance and instance.true_coach_id:
+            logger.info("Exercise %s has a true_coach_id", hevy_exercise.title)
             return
+
+        idx = hevy_exercise.index
+        if idx < 0 or idx >= len(true_coach_exercises):
+            return
+        best_match = true_coach_exercises[idx]
 
         instance = self._database.tracker.get_exercise(session, true_coach_id=best_match.id)
         if instance:
@@ -289,27 +295,28 @@ class HevyToFitnessTrackerSyncronizer:
             session.merge(instance)
 
     def sync_events(self, events: list[UpdatedWorkout | DeletedWorkout]) -> None:
-        """Syncronize the events
+        """Apply Hevy workout events to the database in batch.
 
         Args:
-            events (list[UpdatedWorkout | DeletedWorkout]): The events to syncronize
-
+            events (list[UpdatedWorkout | DeletedWorkout]): Ordered Hevy events.
         """
         with self._database.hevy_app.get_session() as session:
             for event in events:
                 if isinstance(event, UpdatedWorkout):
                     self.update_workout(session, event)
-                elif isinstance(event, DeletedWorkout):  # type: ignore
+                elif isinstance(event, DeletedWorkout):
                     self.delete_workout(session, event)
 
             session.commit()
 
     def sync_workouts(self, since: datetime) -> list[UpdatedWorkout | DeletedWorkout]:
-        """Syncronize the workout with the given id.
+        """Fetch and apply Hevy workout events since a timestamp.
 
         Args:
-            since (datetime): The datetime to syncronize
+            since (datetime): Lower bound for the Hevy events query.
 
+        Returns:
+            list[UpdatedWorkout | DeletedWorkout]: Events applied (oldest first).
         """
         res = self._source.workouts.get_workout_events(since=since)
         if res:
@@ -326,17 +333,15 @@ class HevyToFitnessTrackerSyncronizer:
         return []
 
     def update_metrics(self, session: Session) -> None:
-        """Update the metrics with the given id.
+        """Insert calorie metrics derived from Hevy sync.
 
         Args:
-            session (Session): The session to use
-            metrics (list[UpdatedWorkout | DeletedWorkout]): The metrics to syncronize
-
+            session (Session): SQLAlchemy session.
         """
         stmnt = text(
-                Path("fitness_tracker/database/SQL/hevy/tracker/metric/calories_burned/insert.sql").read_text(
-                    encoding="utf-8"
-                )
-            )
-        session.execute(stmnt) # type: ignore
+            Path(
+                "fitness_tracker/database/SQL/hevy/tracker/metric/calories_burned/insert.sql"
+            ).read_text(encoding="utf-8")
+        )
+        session.execute(stmnt)
         session.commit()

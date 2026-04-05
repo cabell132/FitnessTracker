@@ -1,7 +1,21 @@
+"""Format Hevy set logs into True Coach workout item result text."""
+
+from collections.abc import Callable
+
 from fitness_tracker.apis.hevy_app.types import Set
 
+SetFormatter = Callable[[list[Set]], str]
 
-def format_duration(seconds: int):
+
+def format_duration(seconds: int) -> str:
+    """Format a duration in seconds as hours, minutes, and seconds.
+
+    Args:
+        seconds (int): Elapsed seconds (non-negative).
+
+    Returns:
+        str: Human-readable duration pieces joined by spaces.
+    """
     hours = seconds // 3600
     remaining_seconds = seconds % 3600
     minutes = remaining_seconds // 60
@@ -19,10 +33,17 @@ def format_duration(seconds: int):
 
 
 def format_reps_only_result(sets: list[Set]) -> str:
+    """Format rep-only sets as newline-separated lines.
+
+    Args:
+        sets (list[Set]): Hevy sets containing rep counts.
+
+    Returns:
+        str: Lines suitable for True Coach ``result`` text.
+    """
     result = ""
     for set_ in sets:
         if set_.type == "dropset":
-            # remove the newline character from the previous line
             result = result[:-1]
             result += f" > {set_.reps}\n"
         else:
@@ -31,37 +52,37 @@ def format_reps_only_result(sets: list[Set]) -> str:
 
 
 def format_distance_duration_result(sets: list[Set]) -> str:
-    """Formats a list of sets into a string that details the distance, duration, and pace for each set.
+    """Format distance and duration sets with pace per line.
 
     Args:
-        sets (list[Set]): A list of Set objects, where each Set contains distance in meters and duration in seconds.
+        sets (list[Set]): Sets with distance and duration populated.
 
     Returns:
-        str: A formatted string where each line represents a set with its distance, duration, and pace.
-    """  # noqa: W505
+        str: One line per set with meters, duration, and pace.
+    """
     result = ""
     for set_ in sets:
-        pace = calculate_pace(set_.distance_meters, set_.duration_seconds)
-        result += (
-            f"{set_.distance_meters}m in {format_duration(seconds=set_.duration_seconds)} @{pace}\n"
-        )
+        dist = set_.distance_meters or 0
+        dur = set_.duration_seconds or 0
+        pace = calculate_pace(dist, dur)
+        result += f"{dist}m in {format_duration(dur)} @{pace}\n"
     return result
 
 
 def calculate_pace(distance_meters: int, duration_seconds: int) -> str:
-    """Calculate the pace in minutes per kilometer.
+    """Compute pace in minutes per kilometer.
 
     Args:
-        distance_meters (int): The distance in meters.
-        duration_seconds (int): The duration in seconds.
+        distance_meters (int): Distance in meters.
+        duration_seconds (int): Elapsed seconds.
 
     Returns:
-        str: The pace in minutes per kilometer.
+        str: Pace as ``m:ss.s min/km`` or ``0.00 min/km`` when distance is zero.
     """
     if distance_meters == 0:
         return "0.00 min/km"
     distance_km = distance_meters / 1000
-    pace_seconds = duration_seconds / distance_km  # Total pace in seconds per km
+    pace_seconds = duration_seconds / distance_km
 
     minutes = int(pace_seconds // 60)
     seconds = round(pace_seconds % 60, 1)
@@ -70,22 +91,17 @@ def calculate_pace(distance_meters: int, duration_seconds: int) -> str:
 
 
 def format_weight_reps_result(sets: list[Set]) -> str:
-    """Formats a list of sets into a string representation of weight and reps.
+    """Format weight and rep sets, including dropsets and warmups.
 
     Args:
-        sets (list[Set]): A list of Set objects, where each Set contains information
-                          about the type of set (e.g., "dropset", "warmup"), the number
-                          of reps, and the weight in kilograms.
+        sets (list[Set]): Hevy strength sets.
 
     Returns:
-        str: A formatted string representing the weight and reps for each set.
-             Dropsets are indicated with a ">" symbol, warmup sets are prefixed with
-             "Warmup Set:", and regular sets are formatted as "reps x weight kg".
+        str: Human-readable lines per set.
     """
     result = ""
     for set_ in sets:
         if set_.type == "dropset":
-            # remove the newline character from the previous line
             result = result[:-1]
             result += f" > {set_.reps} x {set_.weight_kg} kg\n"
         elif set_.type == "warmup":
@@ -96,34 +112,30 @@ def format_weight_reps_result(sets: list[Set]) -> str:
 
 
 def format_bodyweight_assisted_result(sets: list[Set]) -> str:
-    """Formats a list of sets into a string representation of bodyweight-assisted exercises.
+    """Format bodyweight-assisted sets using the weight/rep formatter.
 
     Args:
-        sets (list[Set]): A list of Set objects, where each Set contains information
-                          about the number of reps and the weight in kilograms.
+        sets (list[Set]): Hevy sets for assisted movements.
 
     Returns:
-        str: A formatted string representing the weight and reps for each set.
-             The weight is formatted as a percentage of bodyweight.
+        str: Formatted lines per set.
     """
     return format_weight_reps_result(sets)
 
 
 def format_bodyweight_weighted_result(sets: list[Set]) -> str:
-    """Formats a list of sets into a string representation of bodyweight and weighted exercises.
+    """Format bodyweight and added-weight sets.
 
     Args:
-        sets (list[Set]): A list of Set objects, where each Set contains information
-                          about the number of reps, the weight in kilograms, and the
-                          weight as a percentage of bodyweight.
+        sets (list[Set]): Hevy sets that may omit weight.
 
     Returns:
-        str: A formatted string representing the weight and reps for each set.
-             The weight is formatted as a percentage of bodyweight.
+        str: Reps-only or weight x reps lines.
     """
     result = ""
     for set_ in sets:
-        if set_.weight_kg > 0:  # type: ignore
+        w = set_.weight_kg or 0
+        if w > 0:
             result += f"{set_.reps} x {set_.weight_kg} kg\n"
         else:
             result += f"{set_.reps} reps\n"
@@ -131,48 +143,46 @@ def format_bodyweight_weighted_result(sets: list[Set]) -> str:
 
 
 def format_duration_result(sets: list[Set]) -> str:
-    """Formats a list of sets into a string representation of duration exercises.
+    """Format duration-only sets.
 
     Args:
-        sets (list[Set]): A list of Set objects, where each Set contains information
-                          about the number of reps and the duration in seconds.
+        sets (list[Set]): Sets with ``duration_seconds`` set.
 
     Returns:
-        str: A formatted string representing the duration for each set.
+        str: One formatted duration per line.
     """
     result = ""
     for set_ in sets:
-        result += f"{format_duration(seconds=set_.duration_seconds)}\n"
+        sec = set_.duration_seconds or 0
+        result += f"{format_duration(sec)}\n"
     return result
 
 
 def format_weight_duration_result(sets: list[Set]) -> str:
-    """Formats a list of sets into a string representation of weight and duration exercises.
+    """Format combined weight and duration sets.
 
     Args:
-        sets (list[Set]): A list of Set objects, where each Set contains information
-                          about the number of reps, the weight in kilograms, and the
-                          duration in seconds.
+        sets (list[Set]): Sets with weight and duration.
 
     Returns:
-        str: A formatted string representing the weight and duration for each set.
+        str: One line per set describing load and time held.
     """
     result = ""
     for set_ in sets:
-        result += f"{set_.weight_kg} kg for {format_duration(seconds=set_.duration_seconds)}\n"
+        sec = set_.duration_seconds or 0
+        kg = set_.weight_kg or 0
+        result += f"{kg} kg for {format_duration(sec)}\n"
     return result
 
 
 def format_short_distance_weight_result(sets: list[Set]) -> str:
-    """Formats a list of sets into a string representation of short distance and weight exercises.
+    """Format short carries or sled pushes with weight and distance.
 
     Args:
-        sets (list[Set]): A list of Set objects, where each Set contains information
-                          about the number of reps, the distance in meters, and the
-                          weight in kilograms.
+        sets (list[Set]): Sets with both distance and weight.
 
     Returns:
-        str: A formatted string representing the distance, weight, and reps for each set.
+        str: One line per set.
     """
     result = ""
     for set_ in sets:
@@ -180,7 +190,7 @@ def format_short_distance_weight_result(sets: list[Set]) -> str:
     return result
 
 
-mapping = {
+mapping: dict[str, SetFormatter] = {
     "reps_only": format_reps_only_result,
     "bodyweight_assisted": format_bodyweight_assisted_result,
     "short_distance_weight": format_short_distance_weight_result,

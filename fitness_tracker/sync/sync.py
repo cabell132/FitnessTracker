@@ -1,3 +1,5 @@
+"""Composes directional sync classes for Hevy, True Coach, and Apple Health."""
+
 import os
 
 import dropbox
@@ -16,10 +18,14 @@ from fitness_tracker.sync.tracker_true_coach.sync import TrackerToTrueCoachSyncr
 
 
 class Syncronizer:
-    """Syncronizer class."""
+    """Orchestrator that wires database and API clients to directional syncers."""
 
     def __init__(self, engine: Engine) -> None:
-        """Initiate the syncronizer with the clients."""
+        """Wire API clients, Dropbox, and directional syncers to one engine.
+
+        Args:
+            engine (Engine): SQLAlchemy engine backing :class:`~fitness_tracker.database.Database`.
+        """
         self._database = Database(engine)
         self._hevy_app = HevyAppClient()
         self._dbx = dropbox.Dropbox(os.environ["DROPBOX_ACCESS_TOKEN"])

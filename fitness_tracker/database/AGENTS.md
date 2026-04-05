@@ -138,5 +138,5 @@ rg -n "UniqueConstraint" fitness_tracker/database/models
 ## Pre-PR Checks
 
 ```bash
-uv run ruff check fitness_tracker/database && uv run mypy fitness_tracker/database
+uv run ruff check fitness_tracker/database && uv run ty check fitness_tracker/database
 ```

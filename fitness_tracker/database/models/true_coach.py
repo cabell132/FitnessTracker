@@ -1,3 +1,5 @@
+"""SQLAlchemy models mirroring True Coach API entities."""
+
 from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
@@ -14,6 +16,8 @@ if TYPE_CHECKING:
 
 
 class TrueCoachWorkout(BaseModel):
+    """Scheduled client workout row synced from True Coach."""
+
     __tablename__: str = __qualname__
 
     id = Column(Integer, primary_key=True, autoincrement=False)  # API provides id
@@ -51,6 +55,8 @@ class TrueCoachWorkout(BaseModel):
 
 
 class TrueCoachWorkoutItem(BaseModel):
+    """One exercise block within a True Coach workout."""
+
     __tablename__: str = __qualname__
 
     id = Column(Integer, primary_key=True, autoincrement=False)  # API provides id
@@ -79,10 +85,17 @@ class TrueCoachWorkoutItem(BaseModel):
     )
 
     def __repr__(self) -> str:
+        """Return a debug representation of this workout item.
+
+        Returns:
+            str: Angle-bracket summary of ids and placement fields.
+        """
         return f"<TrueCoachWorkoutItem id={self.id} workout_id={self.workout_id} name={self.name} info={self.info} comment={self.comment} is_circuit={self.is_circuit} state={self.state} position={self.position} exercise_id={self.exercise_id} assessment_id={self.assessment_id}>"
 
 
 class TrueCoachExercise(BaseModel):
+    """Trainer library exercise definition."""
+
     __tablename__: str = __qualname__
 
     id = Column(
@@ -95,7 +108,7 @@ class TrueCoachExercise(BaseModel):
     default = Column(Boolean, default=False)
 
     # Relationships
-    tags: Mapped[Optional[list["TrueCoachTag"]]] = relationship(
+    tags: Mapped[list["TrueCoachTag"] | None] = relationship(
         "TrueCoachTag", secondary="TrueCoachExerciseTags", back_populates="exercises"
     )
     tracker: Mapped[Optional["Exercise"]] = relationship(
@@ -111,10 +124,17 @@ class TrueCoachExercise(BaseModel):
     )
 
     def __repr__(self) -> str:
+        """Return a debug representation of this exercise.
+
+        Returns:
+            str: Angle-bracket summary of name and media fields.
+        """
         return f"<TrueCoachExercise id={self.id} name={self.name} description={self.description} url={self.url} video_partner_name={self.video_partner_name} default={self.default}>"
 
 
 class TrueCoachTag(BaseModel):
+    """Tag dimension (pattern, plane, etc.) attached to exercises."""
+
     __tablename__: str = __qualname__
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -122,15 +142,22 @@ class TrueCoachTag(BaseModel):
     category = Column(String, nullable=False)  # e.g., 'pattern', 'plane', 'level'
 
     # Relationship
-    exercises: Mapped[Optional[list["TrueCoachExercise"]]] = relationship(
+    exercises: Mapped[list["TrueCoachExercise"] | None] = relationship(
         "TrueCoachExercise", secondary="TrueCoachExerciseTags", back_populates="tags"
     )
 
     def __repr__(self) -> str:
+        """Return a debug representation of this tag.
+
+        Returns:
+            str: Angle-bracket summary of name and category.
+        """
         return f"<TrueCoachTag id={self.id} name={self.name} category={self.category}>"
 
 
 class TrueCoachExerciseTags(BaseModel):
+    """Association between exercises and tags."""
+
     __tablename__: str = __qualname__
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -142,10 +169,17 @@ class TrueCoachExerciseTags(BaseModel):
     tag: Mapped["TrueCoachTag"] = relationship("TrueCoachTag", overlaps="exercises,tags")
 
     def __repr__(self) -> str:
+        """Return a debug representation of this exercise-tag link.
+
+        Returns:
+            str: Angle-bracket summary of foreign keys.
+        """
         return f"<TrueCoachExerciseTags id={self.id} exercise_id={self.exercise_id} tag_id={self.tag_id}>"
 
 
 class TrueCoachAssessment(BaseModel):
+    """Assessment definition row from True Coach."""
+
     __tablename__: str = __qualname__
 
     id = Column(Integer, primary_key=True, autoincrement=False)
@@ -160,15 +194,22 @@ class TrueCoachAssessment(BaseModel):
     created_at = Column(DateTime, nullable=True)
     # Relationships
 
-    assessment_items: Mapped[Optional[list["TrueCoachAssessmentItem"]]] = relationship(
+    assessment_items: Mapped[list["TrueCoachAssessmentItem"] | None] = relationship(
         "TrueCoachAssessmentItem", back_populates="assessment"
     )
 
     def __repr__(self) -> str:
+        """Return a debug representation of this assessment definition.
+
+        Returns:
+            str: Angle-bracket summary of targets and metadata.
+        """
         return f"<TrueCoachAssessment id={self.id} assessment_group_id={self.assessment_group_id} name={self.name} units={self.units} order={self.order} target={self.target} target_percentage={self.target_percentage} linked_assessment_id={self.linked_assessment_id} updated_at={self.updated_at} created_at={self.created_at}>"
 
 
 class TrueCoachAssessmentItem(BaseModel):
+    """Single logged assessment value for a client."""
+
     __tablename__: str = __qualname__
 
     id = Column(Integer, primary_key=True, autoincrement=False)
@@ -186,4 +227,9 @@ class TrueCoachAssessmentItem(BaseModel):
     )
 
     def __repr__(self) -> str:
+        """Return a debug representation of this assessment log row.
+
+        Returns:
+            str: Angle-bracket summary of value and dates.
+        """
         return f"<TrueCoachAssessmentItem id={self.id} assessment_id={self.assessment_id} value={self.value} note={self.note} created_at={self.created_at} updated_at={self.updated_at} date={self.date} completed_date={self.completed_date}>"

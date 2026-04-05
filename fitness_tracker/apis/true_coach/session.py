@@ -1,11 +1,13 @@
-from typing import Any, Optional
+"""HTTP session and request helpers for True Coach."""
+
+from typing import Any
 
 import requests
 
 import logs
 
 from fitness_tracker.apis.true_coach.auth import TrueCoachOAuthToken, authorize, make_url
-from .exceptions import TrueCoachAPIError
+from fitness_tracker.apis.true_coach.exceptions import TrueCoachAPIError
 
 USER_AGENT = "beets/4 +https://beets.io/"
 
@@ -13,62 +15,51 @@ logger = logs.get_logger(__name__)
 
 
 class TrueCoachSession:
-    """TrueCoach API session class"""
+    """Authenticated ``requests`` wrapper with response normalization."""
 
-    def __init__(
-        self, token: Optional[TrueCoachOAuthToken] = None
-    ) -> None:
-        """Initiate the client and make sure it is correctly authorized
-        If token is passed, it is used to make a call to
-        /my/account endpoint to check if the token is access_token is valid
+    def __init__(self, token: TrueCoachOAuthToken | None = None) -> None:
+        """Create a session, loading ``authorize()`` output when no token is passed.
 
-        If the token is not passed, or it is invalid, it authorizes the user
-        using username and password credentials given in the config
-        and uses the token obtained in this way
-
-        :param token:    TrueCoachOAuthToken
+        Args:
+            token (TrueCoachOAuthToken | None, optional): Cached OAuth token. Defaults to None.
         """
-
         self.token = token
-        self._log = logs.get_logger()
-
-        # Token from the file passed
         if self.token is None:
             self.token = authorize()
 
+    def _get_request_headers(self) -> dict[str, str]:
+        """Build default Authorization and User-Agent headers.
 
-    def _get_request_headers(self):
-        """Formats Authorization and User-Agent HTTP client request headers
-
-        :returns: HTTP client request headers
-        :rtype: dict
+        Returns:
+            dict[str, str]: Headers for API calls.
         """
-
+        assert self.token is not None
         return {
-            "Authorization": f"Bearer {getattr(self.token,'access_token')}",
+            "Authorization": f"Bearer {self.token.access_token}",
             "User-Agent": USER_AGENT,
             "Role": "Client",
         }
 
-    def format_response(self, endpoint: str, response: requests.Response) -> dict[str, Any]:
-        """
-        Extract the "results" field from a JSON response.
+    def format_response(self, _endpoint: str, response: requests.Response) -> dict[str, Any]:
+        """Parse JSON and annotate successful dict payloads with ``request_url``.
 
-        :param endpoint: The endpoint that was requested.
-        :type endpoint: str
-        :param response: The response object to extract the results from.
-        :type response: requests.Response
-        :return: The "results" field from the JSON response, or the entire JSON response
-                if "results" is not present.
-        :rtype: Dict[str, Any]
-        :raises TrueCoachAPIError: If the response is empty or if there is an error with
-                                  the response.
+        Args:
+            _endpoint (str): Relative path (unused; kept for stable call signatures).
+            response (requests.Response): Completed HTTP response.
+
+        Returns:
+            dict[str, Any]: Parsed JSON object or wrapped list payload.
+
+        Raises:
+            TrueCoachAPIError: If the server returned a non-success status.
         """
-        if not response:
+        if not response.ok:
+            req_url = response.url or ""
+            msg = f"Error {response.status_code} for {req_url!r}"
             raise TrueCoachAPIError(
-                f"Error {response.status_code} for '{response.request.path_url}",
+                msg,
                 status_code=response.status_code,
-                url=response.request.path_url,
+                url=req_url,
             )
         data = response.json()
         if response.status_code == 200:
@@ -78,35 +69,29 @@ class TrueCoachSession:
                 data = {"results": data, "request_url": response.url}
         return data
 
+    def make_request(self, method: str, endpoint: str, **kwargs: Any) -> dict[str, Any] | None:
+        """Send an HTTP request and return normalized JSON when present.
 
-    def make_request(self, method: str, endpoint: str, **kwargs: Any) -> Optional[dict[str, Any]]:
-        """Make a request to the TrueCoach API.
+        Args:
+            method (str): HTTP verb (for example ``GET`` or ``POST``).
+            endpoint (str): API path or absolute URL fragment.
+            **kwargs (Any): Extra arguments forwarded to ``requests.Session.request``.
 
-        :param mode:    Mode of the request, either GET or POST
-        :param endpoint: API endpoint to request
-        :param params:  Parameters to pass to the API
-        :type method:   The method to use for the request
-        :type enpoint:  str
-        :type params:   Dict[str, Any]
-        :return:        JSON response from the API
-        :rtype:         Dict[str, Any]
-        :raises TrueCoachAPIError: If there is an error making the request.
+        Returns:
+            dict[str, Any] | None: Parsed body for non-204 responses; ``None`` for 204.
+
+        Raises:
+            TrueCoachAPIError: On transport errors or HTTP error responses.
         """
-        # Define the headers.
         headers = self._get_request_headers()
-
-        # normalise the url
-
-        if endpoint.startswith("https://"):
-            endpoint = endpoint.replace("https://", "")
-
-        url = make_url(endpoint)
-
-        print(f"Making request to {url}")
+        norm_endpoint = endpoint
+        if norm_endpoint.startswith("https://"):
+            norm_endpoint = norm_endpoint.replace("https://", "")
+        url = make_url(norm_endpoint)
+        logger.debug("Making request to %s", url)
 
         with requests.Session() as session:
             try:
-                headers = self._get_request_headers()
                 response = session.request(
                     method.upper(),
                     url,
@@ -115,20 +100,24 @@ class TrueCoachSession:
                     verify=False,
                     **kwargs,
                 )
-                logger.debug(
-                    f"TrueCoach API Request: status_code={response.status_code}, url={url}"
-                )
-
             except Exception as e:
-                raise TrueCoachAPIError(
-                    f"Error connecting to TrueCoach API: {e}",
-                    url=url,
-                ) from e
-            if not response:
-                raise TrueCoachAPIError(
-                    f"Error {response.status_code} for '{response.request.path_url}",
-                    status_code=response.status_code,
-                    url=response.request.path_url,
-                )
-        if response.status_code != 204:
-            return self.format_response(endpoint, response)
+                msg = f"Error connecting to TrueCoach API: {e}"
+                raise TrueCoachAPIError(msg, url=url) from e
+
+        logger.debug(
+            "TrueCoach API Request: status_code=%s, url=%s",
+            response.status_code,
+            url,
+        )
+
+        if not response.ok:
+            req_url = response.url or ""
+            msg = f"Error {response.status_code} for {req_url!r}"
+            raise TrueCoachAPIError(
+                msg,
+                status_code=response.status_code,
+                url=req_url,
+            )
+        if response.status_code == 204:
+            return None
+        return self.format_response(endpoint, response)

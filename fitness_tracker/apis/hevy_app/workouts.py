@@ -1,5 +1,6 @@
-from datetime import datetime
-from typing import Optional
+"""Hevy App workout endpoints."""
+
+from datetime import UTC, datetime
 
 from fitness_tracker.apis.hevy_app.session import HevyAppSession
 from fitness_tracker.apis.hevy_app.types import (
@@ -12,91 +13,111 @@ from fitness_tracker.apis.hevy_app.types import (
 
 
 class HevyAppWorkouts:
-    """True Coach API Workouts class"""
+    """Workout listing, events, and mutation helpers."""
 
     def __init__(self, session: HevyAppSession) -> None:
-        """Initiate the Workouts class with the token"""
+        """Attach the REST session used for all workout calls.
+
+        Args:
+            session (HevyAppSession): Authenticated API session.
+        """
         self._session = session
         self.endpoint = "/workouts"
 
-    def get(self, page: int = 1, per_page: int = 10) -> Optional[WorkoutResponse]:
-        """Get a paginated list of workouts.
+    def get(self, page: int = 1, per_page: int = 10) -> WorkoutResponse | None:
+        """List workouts with pagination.
 
         Args:
-            page (int): The page number to retrieve. Defaults to 1. Minimum is 1.
-            per_page (int): The number of items per page. Defaults to 10. Maximum is 10.
+            page (int): Page index (1-based).
+            per_page (int): Page size.
+
+        Returns:
+            WorkoutResponse | None: Parsed list payload, or ``None`` when empty.
         """
         query = {"page": page, "pageSize": per_page}
-
         data = self._session.make_request(method="GET", endpoint=self.endpoint, params=query)
         if data:
             return WorkoutResponse(**data)
+        return None
 
-    def get_workout(self, id: str) -> Optional[Workout]:
-        """Get a single workout's complete details by the workoutId.
+    def get_workout(self, workout_id: str) -> Workout | None:
+        """Fetch one workout by id.
 
         Args:
-            id (int): The ID of the workout to retrieve.
+            workout_id (str): Workout id.
+
+        Returns:
+            Workout | None: Parsed workout, or ``None`` when empty.
         """
-        endpoint = f"{self.endpoint}/{id}"
+        endpoint = f"{self.endpoint}/{workout_id}"
         data = self._session.make_request(method="GET", endpoint=endpoint)
         if data:
             return Workout(**data)
+        return None
 
     def get_workout_count(self) -> int:
-        """Get the total number of workouts on the account.
+        """Return total workouts reported by the count endpoint.
 
         Returns:
-            int: The count of workouts available on the account.
+            int: Count, or ``0`` when the response is missing.
         """
         endpoint = f"{self.endpoint}/count"
         data = self._session.make_request(method="GET", endpoint=endpoint)
-        return data["workout_count"] if data else 0
+        return int(data["workout_count"]) if data and "workout_count" in data else 0
 
     def get_workout_events(
-        self, page: int = 1, per_page: int = 10, since: datetime = datetime(1970, 1, 1)
-    ) -> Optional[PaginatedWorkoutEvents]:
-        """Retrieve a paged list of workout events (updates or deletes) since a given date.
-
-        Events are ordered from newest to oldest. The intention is to allow clients to keep
-        their local cache of workouts up to date without having to fetch the entire list of workouts.
+        self,
+        page: int = 1,
+        per_page: int = 10,
+        since: datetime = datetime(1970, 1, 1, tzinfo=UTC),
+    ) -> PaginatedWorkoutEvents | None:
+        """Page workout create/update/delete events after a timestamp.
 
         Args:
-            page (int): The page number to retrieve. Defaults to 1. Minimum is 1.
-            per_page (int): The number of items per page. Defaults to 10. Maximum is 10.
-            since (str): The date and time to start retrieving workouts from. Defaults to "1970-01-01T00:00:00Z".
+            page (int): Page index (1-based).
+            per_page (int): Page size.
+            since (datetime): Lower bound; serialized with ``isoformat``.
 
-        Returns a paginated array of workout events, indicating updates or deletions.
+        Returns:
+            PaginatedWorkoutEvents | None: Event page, or ``None`` when empty.
         """
         query = {"page": page, "pageSize": per_page, "since": since.isoformat()}
-
         endpoint = f"{self.endpoint}/events"
         data = self._session.make_request(method="GET", endpoint=endpoint, params=query)
         if data:
             return PaginatedWorkoutEvents(**data)
+        return None
 
-    def update_workout(self, id: str, workout: Workout) -> Optional[Workout]:
-        """Update a workout by ID.
+    def update_workout(self, workout_id: str, workout: Workout) -> Workout | None:
+        """Replace workout fields with a full ``Workout`` model.
 
         Args:
-            id (int): The ID of the workout to update.
-            workout (Workout): The updated workout object.
+            workout_id (str): Workout id.
+            workout (Workout): Replacement payload.
+
+        Returns:
+            Workout | None: Parsed workout, or ``None`` when empty.
         """
-        endpoint = f"{self.endpoint}/{id}"
+        endpoint = f"{self.endpoint}/{workout_id}"
         data = self._session.make_request(
             method="PUT", endpoint=endpoint, json=workout.model_dump()
         )
         if data:
             return Workout(**data)
+        return None
 
-    def create(self, workout: PostWorkoutsRequestBody) -> Optional[PostWorkoutsResponse]:
-        """Create a new workout.
+    def create(self, workout: PostWorkoutsRequestBody) -> PostWorkoutsResponse | None:
+        """Create a workout from the POST DTO.
 
         Args:
-            workout (Workout): The workout object to create.
+            workout (PostWorkoutsRequestBody): Body wrapper accepted by the API.
+
+        Returns:
+            PostWorkoutsResponse | None: Parsed response, or ``None`` when empty.
         """
         data = self._session.make_request(
             method="POST", endpoint=self.endpoint, json=workout.model_dump()
         )
         if data:
             return PostWorkoutsResponse(**data)
+        return None

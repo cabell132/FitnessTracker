@@ -1,5 +1,6 @@
-from pprint import pprint
-from typing import Any, Literal, Optional
+"""True Coach workouts API resource."""
+
+from typing import Any, Literal
 
 from fitness_tracker.apis.true_coach.session import TrueCoachSession
 from fitness_tracker.apis.true_coach.types import (
@@ -8,39 +9,42 @@ from fitness_tracker.apis.true_coach.types import (
     WorkoutResponse,
 )
 
+WorkoutState = Literal["pending", "completed", "missed"]
+
 
 class TrueCoachWorkouts:
-    """True Coach API Workouts class"""
+    """Fetches and updates client workouts and workout items."""
 
     def __init__(self, session: TrueCoachSession) -> None:
-        """Initiate the Workouts class with the token"""
+        """Attach this resource to an authenticated session.
+
+        Args:
+            session (TrueCoachSession): Session used for HTTP calls.
+        """
         self._session = session
         self.endpoint = "clients/2876143/workouts"
 
-    def get(
+    def get(  # noqa: PLR0913
         self,
         order: Literal["asc", "desc"] = "asc",
         page: int = 1,
         per_page: int = 10,
-        states: Literal["pending", "completed", "missed"]
-        | list[Literal["pending", "completed", "missed"]] = "pending",
-    ) -> Optional[WorkoutResponse]:
-        """Get the workouts of the user.
+        states: WorkoutState | list[WorkoutState] = "pending",
+    ) -> WorkoutResponse | None:
+        """List workouts with simple pagination and state filters.
 
         Args:
-            order (Literal["asc", "desc"]): The order of the workouts
-            page (int): The page of the workouts
-            per_page (int): The number of workouts per page
-            states (Literal["pending", "completed", "missed"] | list[Literal["pending", "completed", "missed"]]): The states of the workouts
+            order (Literal["asc", "desc"]): Sort order for results.
+            page (int): Page index.
+            per_page (int): Page size.
+            states (WorkoutState | list[WorkoutState]): State filter for the listing.
 
         Returns:
-            WorkoutResponse: The workouts of the user
-
+            WorkoutResponse | None: Page of workouts, or ``None`` when the body is empty.
         """
-        if isinstance(states, list):
-            states = ",".join(states)  # type: ignore
+        states_param: str = ",".join(states) if isinstance(states, list) else states
 
-        params = {"order": order, "page": page, "per_page": per_page, "states": states}
+        params = {"order": order, "page": page, "per_page": per_page, "states": states_param}
 
         data = self._session.make_request(method="GET", endpoint=self.endpoint, json=params)
         if data:
@@ -49,46 +53,63 @@ class TrueCoachWorkouts:
 
     def update_workout_item(
         self, workout_item_id: int, workout_item: PutWorkoutItemRequest
-    ) -> Optional[PutWorkoutItemResponse]:
-        """Update the state of a workout item.
+    ) -> PutWorkoutItemResponse | None:
+        """Apply a workout item update via PUT.
 
         Args:
-            workout_item_id (int): The ID of the workout item
-            workout_item (PutWorkoutItemRequest): The workout item to update
+            workout_item_id (int): True Coach workout item id.
+            workout_item (PutWorkoutItemRequest): Fields to persist.
 
         Returns:
-            PutWorkoutItemResponse: The updated workout item
+            PutWorkoutItemResponse | None: Updated item payload, or ``None`` if empty.
         """
         endpoint = f"workout_items/{workout_item_id}"
         data = self._session.make_request(
             method="PUT", endpoint=endpoint, json={"workout_item": workout_item.model_dump()}
         )
         if data:
-            try:
-                return PutWorkoutItemResponse(**data)
-            except Exception as e:
-                pprint(e)
-                raise
+            return PutWorkoutItemResponse(**data)
         return None
 
     def update_workout(self, workout_id: int, workout: dict[str, Any]) -> Any:
+        """Replace workout fields (generic PUT).
+
+        Args:
+            workout_id (int): Workout id.
+            workout (dict[str, Any]): JSON body.
+
+        Returns:
+            Any: Parsed response body when present; otherwise ``None``.
+        """
         endpoint = f"workouts/{workout_id}"
         data = self._session.make_request(method="PUT", endpoint=endpoint, json=workout)
         if data:
-            try:
-                return data
-            except Exception as e:
-                pprint(e)
-                raise
+            return data
         return None
 
     def mark_as_completed(self, workout_id: int) -> Any:
+        """Send the mark-as-completed state transition for a workout.
+
+        Args:
+            workout_id (int): Workout id.
+
+        Returns:
+            Any: API response body from ``update_workout``.
+        """
         return self.update_workout(
             workout_id=workout_id,
             workout={"workout": {"state_event": "mark_as_completed"}},
         )
 
     def mark_as_missed(self, workout_id: int) -> Any:
+        """Send the mark-as-missed state transition for a workout.
+
+        Args:
+            workout_id (int): Workout id.
+
+        Returns:
+            Any: API response body from ``update_workout``.
+        """
         return self.update_workout(
             workout_id=workout_id,
             workout={"workout": {"state_event": "mark_as_missed"}},

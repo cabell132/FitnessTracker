@@ -1,3 +1,5 @@
+"""LangChain prompt bodies for parsing exercises, sets, and workout item links."""
+
 from fitness_tracker.apis.hevy_app.types import MUSCLE_GROUPS
 
 CONTEXTUAL_PROMPT = """
@@ -129,7 +131,7 @@ PROMPT_HEVY_TO_TRUE_COACH_WORKOUT_ITEMS = CONTEXTUAL_PROMPT + """
 
     5. Manual Overrides for Domain-Specific Matches:
 
-    Use domain-specific overrides for cases where naming conventions differ but refer to the same exercise. 
+    Use domain-specific overrides for cases where naming conventions differ but refer to the same exercise.
     For example:
         'Decline Crunch (Weighted)' in hevy_app_list should map to 'Weighted Dumbbell Decline Bench Sit-Up' in true_coach_list.
 
