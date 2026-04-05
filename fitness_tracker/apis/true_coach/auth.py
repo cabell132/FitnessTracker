@@ -1,7 +1,6 @@
 """True Coach OAuth password grant and token file helpers."""
 
 import json
-import logging
 import os
 import time
 from pathlib import Path
@@ -11,7 +10,7 @@ from urllib.parse import urlencode
 import requests
 from dotenv import load_dotenv
 
-log = logging.getLogger("api.true_coach")
+from logs import WideEvent
 
 load_dotenv()
 
@@ -84,7 +83,6 @@ def _authorize_with_true_coach_api(s: requests.Session) -> TrueCoachOAuthToken:
     )
     response.raise_for_status()
     data = response.json()
-    log.debug("Retrieved access token from the True Coach API: %s", json.dumps(data))
     data["expires_at"] = time.time() + 36000
     TOKEN_PATH.write_text(json.dumps(data), encoding="utf-8")
     return TrueCoachOAuthToken(data)
@@ -108,9 +106,11 @@ def authorize() -> TrueCoachOAuthToken:
     Returns:
         TrueCoachOAuthToken: Token from cache or freshly obtained from the API.
     """
-    log.debug('Started authorizing to the API using "username and password"')
-    token = check_token_file()
-    if token:
-        return token
-    with requests.Session() as s:
-        return _authorize_with_true_coach_api(s)
+    with WideEvent(operation="authorize", api="true_coach") as event:
+        token = check_token_file()
+        if token:
+            event.set(auth_source="cache")
+            return token
+        event.set(auth_source="api")
+        with requests.Session() as s:
+            return _authorize_with_true_coach_api(s)

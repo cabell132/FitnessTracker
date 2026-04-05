@@ -7,13 +7,11 @@ from urllib.parse import urlencode
 import requests
 from dotenv import load_dotenv
 
-import logs
+from logs import WideEvent
 
 from fitness_tracker.apis.hevy_app.exceptions import HevyAppAPIError
 
 load_dotenv()
-
-logger = logs.get_logger(__name__)
 
 
 def _endpoint_without_url_scheme(endpoint: str) -> str:
@@ -109,38 +107,33 @@ class HevyAppSession:
         url = self.make_url(_endpoint_without_url_scheme(endpoint))
         headers = self._get_request_headers()
 
-        logger.debug("Making Hevy request to %s", url)
+        with WideEvent(operation="api_request", api="hevy", method=method, url=url) as event:
+            with requests.Session() as session:
+                try:
+                    response = session.request(
+                        method.upper(),
+                        url,
+                        headers=headers,
+                        timeout=10,
+                        verify=False,
+                        **kwargs,
+                    )
+                except Exception as e:
+                    msg = f"Error connecting to HevyApp API: {e}"
+                    raise HevyAppAPIError(msg, url=url) from e
 
-        with requests.Session() as session:
-            try:
-                response = session.request(
-                    method.upper(),
-                    url,
-                    headers=headers,
-                    timeout=10,
-                    verify=False,
-                    **kwargs,
+            event.set(status_code=response.status_code)
+
+            if not response.ok:
+                req_url = response.url or ""
+                msg = f"Error {response.status_code} for {req_url!r}"
+                if response.text:
+                    msg = f"{msg} body={response.text!r}"
+                raise HevyAppAPIError(
+                    msg,
+                    status_code=response.status_code,
+                    url=req_url,
                 )
-            except Exception as e:
-                msg = f"Error connecting to HevyApp API: {e}"
-                raise HevyAppAPIError(msg, url=url) from e
-
-        logger.debug(
-            "HevyApp API Request: status_code=%s, url=%s",
-            response.status_code,
-            url,
-        )
-
-        if not response.ok:
-            req_url = response.url or ""
-            msg = f"Error {response.status_code} for {req_url!r}"
-            if response.text:
-                msg = f"{msg} body={response.text!r}"
-            raise HevyAppAPIError(
-                msg,
-                status_code=response.status_code,
-                url=req_url,
-            )
-        if response.status_code == 204:
-            return None
-        return self.format_response(endpoint, response)
+            if response.status_code == 204:
+                return None
+            return self.format_response(endpoint, response)

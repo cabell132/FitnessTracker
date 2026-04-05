@@ -47,9 +47,7 @@ class Exercise(BaseModel):
 class WorkoutItemLink(BaseModel):
     """One Hevy ↔ True Coach workout item pairing from LLM linking."""
 
-    hevy_app_id: int | None = Field(
-        description="The id of the Hevy App workout item", default=None
-    )
+    hevy_app_id: int | None = Field(description="The id of the Hevy App workout item", default=None)
     true_coach_id: int | None = Field(
         description="The id of the TrueCoach workout item", default=None
     )
@@ -78,9 +76,7 @@ class Set(BaseModel):
     weight_kg: float | None = Field(
         default=None, description="The weight of the set in kg", example=10.0
     )
-    reps: int | None = Field(
-        default=None, description="The number of reps in the set", example=10
-    )
+    reps: int | None = Field(default=None, description="The number of reps in the set", example=10)
     distance_meters: int | None = Field(
         default=None, description="The distance in meters", example=100
     )

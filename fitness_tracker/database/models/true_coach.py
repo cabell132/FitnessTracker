@@ -165,7 +165,9 @@ class TrueCoachExerciseTags(BaseModel):
     tag_id = Column(Integer, ForeignKey("TrueCoachTag.id"), nullable=False)
 
     # Relationships
-    exercise: Mapped["TrueCoachExercise"] = relationship("TrueCoachExercise", overlaps="exercises,tags")
+    exercise: Mapped["TrueCoachExercise"] = relationship(
+        "TrueCoachExercise", overlaps="exercises,tags"
+    )
     tag: Mapped["TrueCoachTag"] = relationship("TrueCoachTag", overlaps="exercises,tags")
 
     def __repr__(self) -> str:

@@ -236,9 +236,7 @@ class TrueCoachService(BaseService):
                 TrueCoachExerciseTags(exercise_id=exercise_id, tag_id=instance.id)
             )
 
-    def add_primary_muscle_tags(
-        self, session: Session, exercise_id: int, tags: list[str]
-    ) -> None:
+    def add_primary_muscle_tags(self, session: Session, exercise_id: int, tags: list[str]) -> None:
         """Link primary-muscle tags to an exercise, creating tags when missing.
 
         Args:
@@ -314,9 +312,7 @@ class TrueCoachService(BaseService):
         )
         workout_item_repo.merge(instance)
 
-    def update_workout_item(
-        self, session: Session, workout_item: PutWorkoutItemRequest
-    ) -> None:
+    def update_workout_item(self, session: Session, workout_item: PutWorkoutItemRequest) -> None:
         """Insert or merge a workout item from a PUT payload.
 
         Args:
@@ -461,9 +457,7 @@ class TrueCoachService(BaseService):
         workout_item_repo = TrueCoachWorkoutItemRepository(session=session)
         return workout_item_repo.get(**kwargs)
 
-    def get_workout_items(
-        self, session: Session, **kwargs: Any
-    ) -> list[TrueCoachWorkoutItem]:
+    def get_workout_items(self, session: Session, **kwargs: Any) -> list[TrueCoachWorkoutItem]:
         """Load workout items matching the given filters.
 
         Args:

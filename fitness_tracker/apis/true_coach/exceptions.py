@@ -1,9 +1,5 @@
 """Exceptions raised by the True Coach API client."""
 
-import logs
-
-logger = logs.get_logger(__name__)
-
 
 class TrueCoachAPIError(Exception):
     """Structured error information for failed HTTP calls."""
@@ -12,7 +8,7 @@ class TrueCoachAPIError(Exception):
     status_code: int | None = None
 
     def __init__(self, message: str, url: str, status_code: int | None = None) -> None:
-        """Attach HTTP context and log the failure.
+        """Attach HTTP context to the exception instance.
 
         Args:
             message (str): Human-readable error summary.
@@ -22,10 +18,3 @@ class TrueCoachAPIError(Exception):
         super().__init__(message)
         self.status_code = status_code
         self.url = url
-
-        logger.error(
-            "True Coach API Error: %s (status_code=%s, url=%s)",
-            message,
-            status_code,
-            url,
-        )

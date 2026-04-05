@@ -1,6 +1,5 @@
 """Domain-specific LLM helpers built on :class:`~fitness_tracker.llm.open_ai_llm.OpenAILLM`."""
 
-import logging
 from typing import cast
 
 from fitness_tracker.llm.open_ai_llm import OpenAILLM
@@ -15,14 +14,6 @@ from fitness_tracker.llm.prompt_templates import (
     PROMPT_EXTRACT_INFO_SETS,
     PROMPT_HEVY_TO_TRUE_COACH_WORKOUT_ITEMS,
 )
-
-# Set the logging level for SQLAlchemy and Alembic to WARNING
-logging.getLogger("httpcore").setLevel(logging.WARNING)
-logging.getLogger("openai").setLevel(logging.WARNING)
-logging.getLogger("sqlalchemy").setLevel(logging.WARNING)
-logging.getLogger("urllib3").setLevel(logging.WARNING)
-logging.getLogger("httpx").setLevel(logging.WARNING)
-logging.basicConfig(level=logging.WARNING)
 
 
 class FitnessLLM(OpenAILLM):
@@ -54,7 +45,9 @@ class FitnessLLM(OpenAILLM):
         """
         return self.function_prompt(info, PROMPT_EXTRACT_INFO_SETS, PostRoutinesRequestSets)
 
-    def parse_completeted_sets(self, exercise_type: str, info: str, result: str) -> PostRoutinesRequestSets:
+    def parse_completeted_sets(
+        self, exercise_type: str, info: str, result: str
+    ) -> PostRoutinesRequestSets:
         """Parse completed workout commentary into structured sets.
 
         Args:

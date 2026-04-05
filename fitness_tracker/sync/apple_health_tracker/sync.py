@@ -52,7 +52,9 @@ class AppleHealthToFitnessTrackerSyncronizer:
         with path.open("w", encoding="utf-8") as f:
             json.dump({k: v.isoformat() for k, v in sync_datetimes.items()}, f)
 
-    def get_new_files_since(self, folder_path: str, target_datetime: datetime) -> list[FileMetadata]:
+    def get_new_files_since(
+        self, folder_path: str, target_datetime: datetime
+    ) -> list[FileMetadata]:
         """List Dropbox CSV files modified after the given time.
 
         Args:

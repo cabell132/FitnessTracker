@@ -1,6 +1,5 @@
 """Sync Hevy workouts into the internal tracker and link True Coach IDs."""
 
-import logging
 from datetime import datetime
 from pathlib import Path
 from typing import cast
@@ -9,12 +8,16 @@ from sqlalchemy.orm import Session
 from sqlalchemy.sql import text
 
 from fitness_tracker.apis import HevyAppClient
-from fitness_tracker.apis.hevy_app.types import DeletedWorkout, Exercise as HevyAppExercise, UpdatedWorkout, Workout
+from fitness_tracker.apis.hevy_app.types import (
+    DeletedWorkout,
+    Exercise as HevyAppExercise,
+    UpdatedWorkout,
+    Workout,
+)
 from fitness_tracker.database import Database
 from fitness_tracker.database.models import TrueCoachExercise
 from fitness_tracker.llm.fitness_llm import FitnessLLM
-
-logger = logging.getLogger(__name__)
+from logs import WideEvent
 
 
 def _parse_api_datetime(value: str) -> datetime:
@@ -52,20 +55,23 @@ class HevyToFitnessTrackerSyncronizer:
             session (Session): SQLAlchemy session.
             workout (UpdatedWorkout): Hevy workout event payload.
         """
-        self._database.hevy_app.add_workout(session, workout.workout)
-        true_coach_id = self.link_workout(session, workout.workout.id, workout.workout)
-        logger.info("True Coach ID for workout %s is %s", workout.workout.id, true_coach_id)
-        session.commit()
-        if true_coach_id:
-            self.link_workout_items(session, true_coach_id)
-            self.update_exercise(session, true_coach_id)
-            self.update_sets(session, true_coach_id)
-            self.insert_sets(session, true_coach_id)
-            self.update_exercises(session, true_coach_id)
-        else:
-            logger.info("Could not find True Coach ID for workout %s", workout.workout.id)
-
-        self.update_metrics(session)
+        with WideEvent(
+            operation="update_workout",
+            sync_source="hevy",
+            sync_target="tracker",
+            workout_id=workout.workout.id,
+        ) as event:
+            self._database.hevy_app.add_workout(session, workout.workout)
+            true_coach_id = self.link_workout(session, workout.workout.id, workout.workout)
+            event.set(true_coach_id=true_coach_id)
+            session.commit()
+            if true_coach_id:
+                self.link_workout_items(session, true_coach_id)
+                self.update_exercise(session, true_coach_id)
+                self.update_sets(session, true_coach_id)
+                self.insert_sets(session, true_coach_id)
+                self.update_exercises(session, true_coach_id)
+            self.update_metrics(session)
 
     def delete_workout(self, session: Session, event: DeletedWorkout) -> None:
         """Delete a Hevy-linked workout in the tracker.
@@ -88,7 +94,6 @@ class HevyToFitnessTrackerSyncronizer:
             int | None: Parsed True Coach workout id when valid digits were found.
         """
         true_coach_id = workout.title.split("\n")[-1]
-        logger.debug("Parsed True Coach id candidate: %s", true_coach_id)
         if not true_coach_id.isdigit():
             true_coach_id = workout.title.split(" ")[-1]
             if not true_coach_id.isdigit():
@@ -281,7 +286,6 @@ class HevyToFitnessTrackerSyncronizer:
             session, hevy_app_id=hevy_exercise.exercise_template_id
         )
         if instance and instance.true_coach_id:
-            logger.info("Exercise %s has a true_coach_id", hevy_exercise.title)
             return
 
         idx = hevy_exercise.index
@@ -318,19 +322,29 @@ class HevyToFitnessTrackerSyncronizer:
         Returns:
             list[UpdatedWorkout | DeletedWorkout]: Events applied (oldest first).
         """
-        res = self._source.workouts.get_workout_events(since=since)
-        if res:
-            if res.page_count > 1:
-                for page in range(2, res.page_count + 1):
-                    new_res = self._source.workouts.get_workout_events(since=since, page=page)
-                    if new_res:
-                        for event in new_res.events:
-                            res.events.append(event)
+        with WideEvent(
+            operation="sync_workouts",
+            sync_source="hevy",
+            sync_target="tracker",
+        ) as evt:
+            res = self._source.workouts.get_workout_events(since=since)
+            if res:
+                if res.page_count > 1:
+                    for page in range(2, res.page_count + 1):
+                        new_res = self._source.workouts.get_workout_events(
+                            since=since,
+                            page=page,
+                        )
+                        if new_res:
+                            for event in new_res.events:
+                                res.events.append(event)
 
-            self.sync_events(res.events[::-1])
+                evt.set(event_count=len(res.events))
+                self.sync_events(res.events[::-1])
 
-            return res.events[::-1]
-        return []
+                return res.events[::-1]
+            evt.set(event_count=0)
+            return []
 
     def update_metrics(self, session: Session) -> None:
         """Insert calorie metrics derived from Hevy sync.

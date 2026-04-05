@@ -107,7 +107,9 @@ PROMPT_EXTRACT_COMPLETED_SETS = (
     """
 )
 
-PROMPT_HEVY_TO_TRUE_COACH_WORKOUT_ITEMS = CONTEXTUAL_PROMPT + """
+PROMPT_HEVY_TO_TRUE_COACH_WORKOUT_ITEMS = (
+    CONTEXTUAL_PROMPT
+    + """
 
     You are tasked with creating a mapping between two lists of exercises, hevy_app_list and true_coach_list, based on their similarity. Your output should ensure accuracy and adherence to the rules outlined below.
 
@@ -176,3 +178,4 @@ PROMPT_HEVY_TO_TRUE_COACH_WORKOUT_ITEMS = CONTEXTUAL_PROMPT + """
 
     Remember to format the output as a JSON object.
     """
+)

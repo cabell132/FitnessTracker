@@ -155,9 +155,7 @@ class PostRoutinesRequestSet(BaseModel):
     weight_kg: float | None = Field(
         default=None, description="The weight of the set in kg", example=10.0
     )
-    reps: int | None = Field(
-        default=None, description="The number of reps in the set", example=10
-    )
+    reps: int | None = Field(default=None, description="The number of reps in the set", example=10)
     distance_meters: int | None = Field(
         default=None, description="The distance in meters", example=100
     )
@@ -206,9 +204,7 @@ class PostWorkoutsRequestSet(BaseModel):
     weight_kg: float | None = Field(
         default=None, description="The weight of the set in kg", example=10.0
     )
-    reps: int | None = Field(
-        default=None, description="The number of reps in the set", example=10
-    )
+    reps: int | None = Field(default=None, description="The number of reps in the set", example=10)
     distance_meters: int | None = Field(
         default=None, description="The distance in meters", example=100
     )

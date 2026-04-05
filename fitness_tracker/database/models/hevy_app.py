@@ -19,8 +19,11 @@ from sqlalchemy.sql import func
 from fitness_tracker.database.models.base import BaseModel
 
 if TYPE_CHECKING:
-
-    from fitness_tracker.database.models.true_coach import TrueCoachWorkout, TrueCoachExercise, TrueCoachWorkoutItem
+    from fitness_tracker.database.models.true_coach import (
+        TrueCoachWorkout,
+        TrueCoachExercise,
+        TrueCoachWorkoutItem,
+    )
 
 
 # Association table for many-to-many relationship between Exercise and Tag

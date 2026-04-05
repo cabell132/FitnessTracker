@@ -28,9 +28,7 @@ def get_workout_order(description: str) -> dict[int, dict[str, str | int | None]
         raise ValueError(msg)
 
     exercises: list[str] = [
-        line.strip()
-        for line in name_and_info.decode_contents().split("<br/>")
-        if line.strip()
+        line.strip() for line in name_and_info.decode_contents().split("<br/>") if line.strip()
     ]
 
     exercises = [BeautifulSoup(line, "html.parser").get_text().strip() for line in exercises]

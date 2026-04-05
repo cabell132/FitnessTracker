@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import logging
-
 from typing import cast
 
 from fitness_tracker.apis import TrueCoachClient
@@ -17,8 +15,7 @@ from fitness_tracker.database.models import (
     TrueCoachWorkoutItem,
 )
 from fitness_tracker.sync.hevy_true_coach.utils import mapping
-
-logger = logging.getLogger(__name__)
+from logs import WideEvent
 
 
 class HevyToTrueCoachSyncronizer:
@@ -44,8 +41,19 @@ class HevyToTrueCoachSyncronizer:
             TypeError: If the Hevy workout or linked True Coach workout is missing.
             ValueError: If Hevy/True Coach item pairing is inconsistent.
         """
-        with self._database.hevy_app.get_session() as session:
-            hevy_app_workout = self._database.hevy_app.get_workout(session, id=hevy_workout_id)
+        with (
+            WideEvent(
+                operation="sync_workout",
+                sync_source="hevy",
+                sync_target="true_coach",
+                hevy_workout_id=hevy_workout_id,
+            ) as evt,
+            self._database.hevy_app.get_session() as session,
+        ):
+            hevy_app_workout = self._database.hevy_app.get_workout(
+                session,
+                id=hevy_workout_id,
+            )
             if not isinstance(hevy_app_workout, HevyAppWorkout):
                 msg = f"Workout with id {hevy_workout_id} not found"
                 raise TypeError(msg)
@@ -55,7 +63,11 @@ class HevyToTrueCoachSyncronizer:
                 msg = f"True coach workout not found for workout with id {hevy_workout_id}"
                 raise TypeError(msg)
 
-            hevy_app_workout_items: list[HevyAppWorkoutItem] = list(hevy_app_workout.workout_items)
+            hevy_app_workout_items: list[HevyAppWorkoutItem] = list(
+                hevy_app_workout.workout_items,
+            )
+            items_synced = 0
+            items_skipped = 0
 
             for item in hevy_app_workout_items:
                 exercise = item.exercise
@@ -82,21 +94,33 @@ class HevyToTrueCoachSyncronizer:
                             state="completed",
                             state_event="mark_as_completed",
                             position=tc_pos if tc_pos is not None else 0,
-                            exercise_id=cast(int | None, true_coach_workout_item.exercise_id),
-                            assessment_id=cast(int | None, true_coach_workout_item.assessment_id),
+                            exercise_id=cast(
+                                int | None,
+                                true_coach_workout_item.exercise_id,
+                            ),
+                            assessment_id=cast(
+                                int | None,
+                                true_coach_workout_item.assessment_id,
+                            ),
                         )
 
                         self._target.workouts.update_workout_item(
-                            update_workout_item.id, update_workout_item
+                            update_workout_item.id,
+                            update_workout_item,
                         )
 
-                        self._database.true_coach.update_workout_item(session, update_workout_item)
-                    else:
-                        logger.warning(
-                            "True coach workout item not found for workout item with id %s",
-                            item.id,
+                        self._database.true_coach.update_workout_item(
+                            session,
+                            update_workout_item,
                         )
+                        items_synced += 1
+                    else:
+                        items_skipped += 1
 
             self._target.workouts.mark_as_completed(cast(int, true_coach_workout.id))
-
+            evt.set(
+                item_count=len(hevy_app_workout_items),
+                items_synced=items_synced,
+                items_skipped=items_skipped,
+            )
             session.commit()

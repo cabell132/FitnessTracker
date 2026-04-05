@@ -107,9 +107,7 @@ class TrueCoachToHevySyncronizer:
 
                     if hevy_app_exercise.name != "#####PLACEHOLDER#####":
                         sets = self._llm.parse_the_sets(
-                            info=str(
-                                {"exercise_type": hevy_app_exercise.type, "info": item.info}
-                            )
+                            info=str({"exercise_type": hevy_app_exercise.type, "info": item.info})
                         ).sets
                         if not sets:
                             sets = utils.parse_sets(str(item.info or ""))

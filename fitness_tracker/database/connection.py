@@ -1,7 +1,5 @@
 """Database facade wiring SQLAlchemy engine to domain services."""
 
-import logging
-
 from sqlalchemy.engine import Engine
 
 from fitness_tracker.database.models.base import BaseModel
@@ -11,10 +9,6 @@ from fitness_tracker.database.services import (
     HevyAppService,
     TrueCoachService,
 )
-
-# Configure logging
-logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger(__name__)
 
 
 class Database:
@@ -34,8 +28,6 @@ class Database:
             engine (Engine): SQLAlchemy engine for the fitness tracker database.
         """
         self.engine = engine
-        logger.debug("Database engine: %s", self.engine)
-
         self.true_coach = TrueCoachService(engine)
         self.hevy_app = HevyAppService(engine)
         self.tracker = FitnessTrackerService(engine)

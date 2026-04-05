@@ -1,12 +1,9 @@
-from logging import CRITICAL, DEBUG, ERROR, INFO, WARNING
+"""Structured logging with wide events for the fitness tracker."""
 
-from .log import get_logger
+from logs.log import logger
+from logs.wide_event import WideEvent
 
 __all__ = [
-    "get_logger",
-    "DEBUG",
-    "INFO",
-    "WARNING",
-    "ERROR",
-    "CRITICAL",
+    "WideEvent",
+    "logger",
 ]

@@ -1,14 +1,13 @@
 """Generic SQLAlchemy repository base for ORM models."""
 
+from __future__ import annotations
+
 from collections.abc import Sequence
 from typing import Any, Generic, TypeVar
 
-import logs
 from fitness_tracker.database.models.base import BaseModel
 from sqlalchemy.orm import Query, Session
 from sqlalchemy.sql import func
-
-logger = logs.get_logger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -89,11 +88,7 @@ class BaseRepository(Generic[T]):  # noqa: UP046
             Sequence[bool]: Parallel booleans for each (column, value) pair expanded
                 in key order, then value order.
         """
-        return [
-            self.exists(**{key: value})
-            for key, values in kwargs.items()
-            for value in values
-        ]
+        return [self.exists(**{key: value}) for key, values in kwargs.items() for value in values]
 
     def add(self, obj: T) -> None:
         """Add a record to the database.
@@ -105,7 +100,6 @@ class BaseRepository(Generic[T]):  # noqa: UP046
             None: Nothing is returned.
         """
         self.session.add(obj)
-        logger.debug("Added %s to the database", obj)
 
     def merge(self, obj: T) -> None:
         """Merge a detached instance into the current session.
@@ -144,7 +138,6 @@ class BaseRepository(Generic[T]):  # noqa: UP046
             None: Nothing is returned.
         """
         self.session.delete(obj)
-        logger.debug("Deleted %s from the database", obj)
 
     def delete_all(self, **kwargs: Any) -> None:
         """Delete every row matching the given equality filters.

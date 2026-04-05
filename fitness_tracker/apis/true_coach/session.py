@@ -4,14 +4,12 @@ from typing import Any
 
 import requests
 
-import logs
+from logs import WideEvent
 
 from fitness_tracker.apis.true_coach.auth import TrueCoachOAuthToken, authorize, make_url
 from fitness_tracker.apis.true_coach.exceptions import TrueCoachAPIError
 
 USER_AGENT = "beets/4 +https://beets.io/"
-
-logger = logs.get_logger(__name__)
 
 
 class TrueCoachSession:
@@ -88,36 +86,32 @@ class TrueCoachSession:
         if norm_endpoint.startswith("https://"):
             norm_endpoint = norm_endpoint.replace("https://", "")
         url = make_url(norm_endpoint)
-        logger.debug("Making request to %s", url)
 
-        with requests.Session() as session:
-            try:
-                response = session.request(
-                    method.upper(),
-                    url,
-                    headers=headers,
-                    timeout=10,
-                    verify=False,
-                    **kwargs,
+        with WideEvent(operation="api_request", api="true_coach", method=method, url=url) as event:
+            with requests.Session() as session:
+                try:
+                    response = session.request(
+                        method.upper(),
+                        url,
+                        headers=headers,
+                        timeout=10,
+                        verify=False,
+                        **kwargs,
+                    )
+                except Exception as e:
+                    msg = f"Error connecting to TrueCoach API: {e}"
+                    raise TrueCoachAPIError(msg, url=url) from e
+
+            event.set(status_code=response.status_code)
+
+            if not response.ok:
+                req_url = response.url or ""
+                msg = f"Error {response.status_code} for {req_url!r}"
+                raise TrueCoachAPIError(
+                    msg,
+                    status_code=response.status_code,
+                    url=req_url,
                 )
-            except Exception as e:
-                msg = f"Error connecting to TrueCoach API: {e}"
-                raise TrueCoachAPIError(msg, url=url) from e
-
-        logger.debug(
-            "TrueCoach API Request: status_code=%s, url=%s",
-            response.status_code,
-            url,
-        )
-
-        if not response.ok:
-            req_url = response.url or ""
-            msg = f"Error {response.status_code} for {req_url!r}"
-            raise TrueCoachAPIError(
-                msg,
-                status_code=response.status_code,
-                url=req_url,
-            )
-        if response.status_code == 204:
-            return None
-        return self.format_response(endpoint, response)
+            if response.status_code == 204:
+                return None
+            return self.format_response(endpoint, response)

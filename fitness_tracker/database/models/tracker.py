@@ -65,8 +65,12 @@ class Workout(BaseModel):
     workout_items: Mapped[list["WorkoutItem"]] = relationship(
         "WorkoutItem", back_populates="workout"
     )
-    hevy_app: Mapped[Optional["HevyAppWorkout"]] = relationship("HevyAppWorkout", overlaps="hevy_app,true_coach")
-    true_coach: Mapped[Optional["TrueCoachWorkout"]] = relationship("TrueCoachWorkout", overlaps="hevy_app,tracker,true_coach")
+    hevy_app: Mapped[Optional["HevyAppWorkout"]] = relationship(
+        "HevyAppWorkout", overlaps="hevy_app,true_coach"
+    )
+    true_coach: Mapped[Optional["TrueCoachWorkout"]] = relationship(
+        "TrueCoachWorkout", overlaps="hevy_app,tracker,true_coach"
+    )
 
     # Constraints
     __table_args__ = (
@@ -145,8 +149,12 @@ class Exercise(BaseModel):
     true_coach_id = Column(Integer, ForeignKey("TrueCoachExercise.id"), nullable=True)
 
     # Relationships
-    hevy_app: Mapped["HevyAppExercise"] = relationship("HevyAppExercise", overlaps="hevy_app,true_coach")
-    true_coach: Mapped["TrueCoachExercise"] = relationship("TrueCoachExercise", overlaps="hevy_app,tracker,true_coach")
+    hevy_app: Mapped["HevyAppExercise"] = relationship(
+        "HevyAppExercise", overlaps="hevy_app,true_coach"
+    )
+    true_coach: Mapped["TrueCoachExercise"] = relationship(
+        "TrueCoachExercise", overlaps="hevy_app,tracker,true_coach"
+    )
 
     # Constraints
     __table_args__ = (

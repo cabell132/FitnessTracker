@@ -77,3 +77,11 @@ deploy.bat
 
 # db files
 *.db
+
+# Log files (runtime output)
+logs/*.log
+
+# Sandbox state (auto-generated)
+.afk/
+.ralph/
+.pipeline/

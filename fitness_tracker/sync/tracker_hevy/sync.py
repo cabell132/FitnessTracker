@@ -127,7 +127,9 @@ class TrackerToHevySyncronizer:
                         start_time=workout.start_date.isoformat()
                         if workout.start_date is not None
                         else "",
-                        end_time=workout.end_date.isoformat() if workout.end_date is not None else "",
+                        end_time=workout.end_date.isoformat()
+                        if workout.end_date is not None
+                        else "",
                         exercises=exercises,
                     )
                 )

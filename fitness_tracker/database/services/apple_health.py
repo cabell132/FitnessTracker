@@ -159,9 +159,7 @@ class AppleHealthService(BaseService):
                     start_date = datetime.strptime(row["Start"], "%Y-%m-%d %H:%M").replace(
                         tzinfo=UTC
                     )
-                    end_date = datetime.strptime(row["End"], "%Y-%m-%d %H:%M").replace(
-                        tzinfo=UTC
-                    )
+                    end_date = datetime.strptime(row["End"], "%Y-%m-%d %H:%M").replace(tzinfo=UTC)
                     self.add_workout(
                         session=session,
                         workout_type_id=cast(int, workout_type.id),
