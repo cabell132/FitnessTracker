@@ -1,4 +1,4 @@
-#!/bin/bash
+ye#!/bin/bash
 # PostToolUse hook: Run pydoclint on the edited Python file (skip test files)
 
 input=$(cat)

@@ -1,4 +1,4 @@
-#!/bin/bash
+r#!/bin/bash
 # PreToolUse hook: Block dangerous git operations
 # Exit 2 = block with message, Exit 0 = allow
 

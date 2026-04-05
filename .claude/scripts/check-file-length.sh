@@ -1,4 +1,4 @@
-#!/bin/bash
+C#!/bin/bash
 # PostToolUse hook: Block Python files exceeding 300 code lines
 # Code lines = total minus docstrings, comments, and blank lines
 # Hard cap: 500 total lines regardless

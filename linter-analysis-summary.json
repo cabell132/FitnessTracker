@@ -1,0 +1,3645 @@
+{
+  "meta": {
+    "source_report": "linter-analysis-output.txt",
+    "generated_utc": "2026-04-04T10:44:33.161507+00:00"
+  },
+  "totals_by_linter": {
+    "ruff_check": {
+      "issues": 673,
+      "files_touched": 62
+    },
+    "ruff_format": {
+      "issues": 33,
+      "files_touched": 33
+    },
+    "ty": {
+      "issues": 85,
+      "files_touched": 19
+    },
+    "pydoclint": {
+      "issues": 383,
+      "files_touched": 35
+    },
+    "pip_audit": {
+      "issues": 11,
+      "files_touched": 11
+    },
+    "sloppylint": {
+      "issues": 5,
+      "files_touched": 5
+    },
+    "slop_detector": {
+      "issues": 11,
+      "files_touched": 7
+    }
+  },
+  "grand_total_issues": 1201,
+  "per_linter_file_counts": {
+    "ruff_check": {
+      "fitness_tracker/apis/__init__.py": 3,
+      "fitness_tracker/apis/base.py": 2,
+      "fitness_tracker/apis/hevy_app/__init__.py": 2,
+      "fitness_tracker/apis/hevy_app/client.py": 3,
+      "fitness_tracker/apis/hevy_app/exceptions.py": 6,
+      "fitness_tracker/apis/hevy_app/exercises.py": 5,
+      "fitness_tracker/apis/hevy_app/routines.py": 12,
+      "fitness_tracker/apis/hevy_app/session.py": 21,
+      "fitness_tracker/apis/hevy_app/types.py": 44,
+      "fitness_tracker/apis/hevy_app/web_session.py": 18,
+      "fitness_tracker/apis/hevy_app/workouts.py": 18,
+      "fitness_tracker/apis/true_coach/__init__.py": 2,
+      "fitness_tracker/apis/true_coach/assessments.py": 4,
+      "fitness_tracker/apis/true_coach/auth.py": 25,
+      "fitness_tracker/apis/true_coach/client.py": 5,
+      "fitness_tracker/apis/true_coach/exceptions.py": 6,
+      "fitness_tracker/apis/true_coach/exercises.py": 10,
+      "fitness_tracker/apis/true_coach/session.py": 22,
+      "fitness_tracker/apis/true_coach/types.py": 55,
+      "fitness_tracker/apis/true_coach/workouts.py": 12,
+      "fitness_tracker/database/__init__.py": 2,
+      "fitness_tracker/database/connection.py": 7,
+      "fitness_tracker/database/models/__init__.py": 5,
+      "fitness_tracker/database/models/apple_health.py": 6,
+      "fitness_tracker/database/models/base.py": 14,
+      "fitness_tracker/database/models/hevy_app.py": 12,
+      "fitness_tracker/database/models/tracker.py": 1,
+      "fitness_tracker/database/models/true_coach.py": 17,
+      "fitness_tracker/database/repository/__init__.py": 4,
+      "fitness_tracker/database/repository/apple_health.py": 1,
+      "fitness_tracker/database/repository/base.py": 7,
+      "fitness_tracker/database/repository/hevy_app.py": 39,
+      "fitness_tracker/database/repository/tracker.py": 1,
+      "fitness_tracker/database/repository/true_coach.py": 5,
+      "fitness_tracker/database/services/__init__.py": 1,
+      "fitness_tracker/database/services/apple_health.py": 11,
+      "fitness_tracker/database/services/base.py": 7,
+      "fitness_tracker/database/services/hevy_app.py": 30,
+      "fitness_tracker/database/services/tracker.py": 8,
+      "fitness_tracker/database/services/true_coach.py": 35,
+      "fitness_tracker/llm/__init__.py": 3,
+      "fitness_tracker/llm/fitness_llm.py": 18,
+      "fitness_tracker/llm/open_ai_llm.py": 6,
+      "fitness_tracker/llm/prompt_models.py": 13,
+      "fitness_tracker/llm/prompt_templates.py": 4,
+      "fitness_tracker/sync/__init__.py": 3,
+      "fitness_tracker/sync/apple_health_tracker/sync.py": 19,
+      "fitness_tracker/sync/apple_health_tracker/utils.py": 2,
+      "fitness_tracker/sync/base.py": 1,
+      "fitness_tracker/sync/hevy_tracker/sync.py": 24,
+      "fitness_tracker/sync/hevy_tracker/utils.py": 2,
+      "fitness_tracker/sync/hevy_true_coach/sync.py": 4,
+      "fitness_tracker/sync/hevy_true_coach/utils.py": 5,
+      "fitness_tracker/sync/sync.py": 1,
+      "fitness_tracker/sync/tracker_hevy/sync.py": 12,
+      "fitness_tracker/sync/tracker_hevy/utils.py": 17,
+      "fitness_tracker/sync/tracker_true_coach/sync.py": 3,
+      "fitness_tracker/sync/tracker_true_coach/utils.py": 17,
+      "fitness_tracker/sync/true_coach_hevy/sync.py": 10,
+      "fitness_tracker/sync/true_coach_hevy/utils.py": 12,
+      "fitness_tracker/sync/true_coach_tracker/sync.py": 7,
+      "fitness_tracker/sync/true_coach_tracker/utils.py": 2
+    },
+    "ruff_format": {
+      "fitness_tracker/apis/__init__.py": 1,
+      "fitness_tracker/apis/hevy_app/__init__.py": 1,
+      "fitness_tracker/apis/hevy_app/exceptions.py": 1,
+      "fitness_tracker/apis/hevy_app/session.py": 1,
+      "fitness_tracker/apis/hevy_app/types.py": 1,
+      "fitness_tracker/apis/true_coach/__init__.py": 1,
+      "fitness_tracker/apis/true_coach/assessments.py": 1,
+      "fitness_tracker/apis/true_coach/auth.py": 1,
+      "fitness_tracker/apis/true_coach/client.py": 1,
+      "fitness_tracker/apis/true_coach/exceptions.py": 1,
+      "fitness_tracker/apis/true_coach/exercises.py": 1,
+      "fitness_tracker/apis/true_coach/session.py": 1,
+      "fitness_tracker/database/__init__.py": 1,
+      "fitness_tracker/database/models/__init__.py": 1,
+      "fitness_tracker/database/models/apple_health.py": 1,
+      "fitness_tracker/database/models/base.py": 1,
+      "fitness_tracker/database/models/hevy_app.py": 1,
+      "fitness_tracker/database/models/tracker.py": 1,
+      "fitness_tracker/database/models/true_coach.py": 1,
+      "fitness_tracker/database/repository/apple_health.py": 1,
+      "fitness_tracker/database/repository/hevy_app.py": 1,
+      "fitness_tracker/database/services/base.py": 1,
+      "fitness_tracker/database/services/tracker.py": 1,
+      "fitness_tracker/llm/__init__.py": 1,
+      "fitness_tracker/llm/fitness_llm.py": 1,
+      "fitness_tracker/llm/open_ai_llm.py": 1,
+      "fitness_tracker/llm/prompt_templates.py": 1,
+      "fitness_tracker/sync/__init__.py": 1,
+      "fitness_tracker/sync/hevy_tracker/sync.py": 1,
+      "fitness_tracker/sync/tracker_hevy/sync.py": 1,
+      "fitness_tracker/sync/tracker_hevy/utils.py": 1,
+      "fitness_tracker/sync/tracker_true_coach/utils.py": 1,
+      "fitness_tracker/sync/true_coach_tracker/sync.py": 1
+    },
+    "ty": {
+      "fitness_tracker/apis/hevy_app/routines.py": 1,
+      "fitness_tracker/apis/hevy_app/session.py": 2,
+      "fitness_tracker/apis/hevy_app/web_session.py": 2,
+      "fitness_tracker/apis/true_coach/session.py": 2,
+      "fitness_tracker/database/models/base.py": 5,
+      "fitness_tracker/database/repository/base.py": 7,
+      "fitness_tracker/database/services/apple_health.py": 2,
+      "fitness_tracker/database/services/hevy_app.py": 1,
+      "fitness_tracker/database/services/true_coach.py": 6,
+      "fitness_tracker/llm/open_ai_llm.py": 3,
+      "fitness_tracker/sync/hevy_tracker/sync.py": 8,
+      "fitness_tracker/sync/hevy_true_coach/sync.py": 4,
+      "fitness_tracker/sync/hevy_true_coach/utils.py": 5,
+      "fitness_tracker/sync/tracker_hevy/sync.py": 10,
+      "fitness_tracker/sync/tracker_hevy/utils.py": 4,
+      "fitness_tracker/sync/tracker_true_coach/sync.py": 7,
+      "fitness_tracker/sync/tracker_true_coach/utils.py": 4,
+      "fitness_tracker/sync/true_coach_hevy/sync.py": 8,
+      "fitness_tracker/sync/true_coach_hevy/utils.py": 4
+    },
+    "pydoclint": {
+      "fitness_tracker/apis/hevy_app/exceptions.py": 2,
+      "fitness_tracker/apis/hevy_app/exercises.py": 7,
+      "fitness_tracker/apis/hevy_app/routines.py": 13,
+      "fitness_tracker/apis/hevy_app/session.py": 17,
+      "fitness_tracker/apis/hevy_app/web_session.py": 17,
+      "fitness_tracker/apis/hevy_app/workouts.py": 16,
+      "fitness_tracker/apis/true_coach/assessments.py": 10,
+      "fitness_tracker/apis/true_coach/auth.py": 14,
+      "fitness_tracker/apis/true_coach/exceptions.py": 2,
+      "fitness_tracker/apis/true_coach/exercises.py": 4,
+      "fitness_tracker/apis/true_coach/session.py": 15,
+      "fitness_tracker/apis/true_coach/workouts.py": 6,
+      "fitness_tracker/database/connection.py": 3,
+      "fitness_tracker/database/models/base.py": 22,
+      "fitness_tracker/database/models/hevy_app.py": 2,
+      "fitness_tracker/database/models/tracker.py": 2,
+      "fitness_tracker/database/repository/apple_health.py": 8,
+      "fitness_tracker/database/repository/base.py": 31,
+      "fitness_tracker/database/repository/hevy_app.py": 10,
+      "fitness_tracker/database/repository/true_coach.py": 14,
+      "fitness_tracker/database/services/apple_health.py": 22,
+      "fitness_tracker/database/services/base.py": 4,
+      "fitness_tracker/database/services/hevy_app.py": 28,
+      "fitness_tracker/database/services/tracker.py": 16,
+      "fitness_tracker/database/services/true_coach.py": 48,
+      "fitness_tracker/llm/fitness_llm.py": 3,
+      "fitness_tracker/llm/open_ai_llm.py": 6,
+      "fitness_tracker/sync/apple_health_tracker/sync.py": 5,
+      "fitness_tracker/sync/hevy_tracker/sync.py": 17,
+      "fitness_tracker/sync/hevy_true_coach/sync.py": 5,
+      "fitness_tracker/sync/sync.py": 2,
+      "fitness_tracker/sync/tracker_hevy/sync.py": 2,
+      "fitness_tracker/sync/tracker_true_coach/sync.py": 4,
+      "fitness_tracker/sync/true_coach_hevy/sync.py": 2,
+      "fitness_tracker/sync/true_coach_tracker/sync.py": 4
+    },
+    "pip_audit": {
+      "(dependency) filelock": 1,
+      "(dependency) langchain-core": 1,
+      "(dependency) langgraph": 1,
+      "(dependency) langgraph-checkpoint": 1,
+      "(dependency) langsmith": 1,
+      "(dependency) orjson": 1,
+      "(dependency) pillow": 1,
+      "(dependency) pygments": 1,
+      "(dependency) requests": 1,
+      "(dependency) urllib3": 1,
+      "(dependency) virtualenv": 1
+    },
+    "sloppylint": {
+      "fitness_tracker/apis/true_coach/auth.py": 1,
+      "fitness_tracker/apis/true_coach/exercises.py": 1,
+      "fitness_tracker/database/repository/base.py": 1,
+      "fitness_tracker/database/services/base.py": 1,
+      "fitness_tracker/sync/hevy_true_coach/sync.py": 1
+    },
+    "slop_detector": {
+      "(slop-detector) base.py": 2,
+      "(slop-detector) apple_health.py": 1,
+      "(slop-detector) hevy_app.py": 1,
+      "(slop-detector) tracker.py": 1,
+      "(slop-detector) true_coach.py": 1,
+      "(slop-detector) utils.py": 4,
+      "(slop-detector) sync.py": 1
+    }
+  },
+  "trees_by_linter": {
+    "ruff_check": {
+      "name": ".",
+      "total": 673,
+      "direct_files": {},
+      "subdirs": {
+        "fitness_tracker": {
+          "name": "fitness_tracker",
+          "total": 673,
+          "direct_files": {},
+          "subdirs": {
+            "apis": {
+              "name": "apis",
+              "total": 275,
+              "direct_files": {
+                "__init__.py": 3,
+                "base.py": 2
+              },
+              "subdirs": {
+                "hevy_app": {
+                  "name": "hevy_app",
+                  "total": 129,
+                  "direct_files": {
+                    "__init__.py": 2,
+                    "client.py": 3,
+                    "exceptions.py": 6,
+                    "exercises.py": 5,
+                    "routines.py": 12,
+                    "session.py": 21,
+                    "types.py": 44,
+                    "web_session.py": 18,
+                    "workouts.py": 18
+                  },
+                  "subdirs": {}
+                },
+                "true_coach": {
+                  "name": "true_coach",
+                  "total": 141,
+                  "direct_files": {
+                    "__init__.py": 2,
+                    "assessments.py": 4,
+                    "auth.py": 25,
+                    "client.py": 5,
+                    "exceptions.py": 6,
+                    "exercises.py": 10,
+                    "session.py": 22,
+                    "types.py": 55,
+                    "workouts.py": 12
+                  },
+                  "subdirs": {}
+                }
+              }
+            },
+            "database": {
+              "name": "database",
+              "total": 213,
+              "direct_files": {
+                "__init__.py": 2,
+                "connection.py": 7
+              },
+              "subdirs": {
+                "models": {
+                  "name": "models",
+                  "total": 55,
+                  "direct_files": {
+                    "__init__.py": 5,
+                    "apple_health.py": 6,
+                    "base.py": 14,
+                    "hevy_app.py": 12,
+                    "tracker.py": 1,
+                    "true_coach.py": 17
+                  },
+                  "subdirs": {}
+                },
+                "repository": {
+                  "name": "repository",
+                  "total": 57,
+                  "direct_files": {
+                    "__init__.py": 4,
+                    "apple_health.py": 1,
+                    "base.py": 7,
+                    "hevy_app.py": 39,
+                    "tracker.py": 1,
+                    "true_coach.py": 5
+                  },
+                  "subdirs": {}
+                },
+                "services": {
+                  "name": "services",
+                  "total": 92,
+                  "direct_files": {
+                    "__init__.py": 1,
+                    "apple_health.py": 11,
+                    "base.py": 7,
+                    "hevy_app.py": 30,
+                    "tracker.py": 8,
+                    "true_coach.py": 35
+                  },
+                  "subdirs": {}
+                }
+              }
+            },
+            "llm": {
+              "name": "llm",
+              "total": 44,
+              "direct_files": {
+                "__init__.py": 3,
+                "fitness_llm.py": 18,
+                "open_ai_llm.py": 6,
+                "prompt_models.py": 13,
+                "prompt_templates.py": 4
+              },
+              "subdirs": {}
+            },
+            "sync": {
+              "name": "sync",
+              "total": 141,
+              "direct_files": {
+                "__init__.py": 3,
+                "base.py": 1,
+                "sync.py": 1
+              },
+              "subdirs": {
+                "apple_health_tracker": {
+                  "name": "apple_health_tracker",
+                  "total": 21,
+                  "direct_files": {
+                    "sync.py": 19,
+                    "utils.py": 2
+                  },
+                  "subdirs": {}
+                },
+                "hevy_tracker": {
+                  "name": "hevy_tracker",
+                  "total": 26,
+                  "direct_files": {
+                    "sync.py": 24,
+                    "utils.py": 2
+                  },
+                  "subdirs": {}
+                },
+                "hevy_true_coach": {
+                  "name": "hevy_true_coach",
+                  "total": 9,
+                  "direct_files": {
+                    "sync.py": 4,
+                    "utils.py": 5
+                  },
+                  "subdirs": {}
+                },
+                "tracker_hevy": {
+                  "name": "tracker_hevy",
+                  "total": 29,
+                  "direct_files": {
+                    "sync.py": 12,
+                    "utils.py": 17
+                  },
+                  "subdirs": {}
+                },
+                "tracker_true_coach": {
+                  "name": "tracker_true_coach",
+                  "total": 20,
+                  "direct_files": {
+                    "sync.py": 3,
+                    "utils.py": 17
+                  },
+                  "subdirs": {}
+                },
+                "true_coach_hevy": {
+                  "name": "true_coach_hevy",
+                  "total": 22,
+                  "direct_files": {
+                    "sync.py": 10,
+                    "utils.py": 12
+                  },
+                  "subdirs": {}
+                },
+                "true_coach_tracker": {
+                  "name": "true_coach_tracker",
+                  "total": 9,
+                  "direct_files": {
+                    "sync.py": 7,
+                    "utils.py": 2
+                  },
+                  "subdirs": {}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "ruff_format": {
+      "name": ".",
+      "total": 33,
+      "direct_files": {},
+      "subdirs": {
+        "fitness_tracker": {
+          "name": "fitness_tracker",
+          "total": 33,
+          "direct_files": {},
+          "subdirs": {
+            "apis": {
+              "name": "apis",
+              "total": 12,
+              "direct_files": {
+                "__init__.py": 1
+              },
+              "subdirs": {
+                "hevy_app": {
+                  "name": "hevy_app",
+                  "total": 4,
+                  "direct_files": {
+                    "__init__.py": 1,
+                    "exceptions.py": 1,
+                    "session.py": 1,
+                    "types.py": 1
+                  },
+                  "subdirs": {}
+                },
+                "true_coach": {
+                  "name": "true_coach",
+                  "total": 7,
+                  "direct_files": {
+                    "__init__.py": 1,
+                    "assessments.py": 1,
+                    "auth.py": 1,
+                    "client.py": 1,
+                    "exceptions.py": 1,
+                    "exercises.py": 1,
+                    "session.py": 1
+                  },
+                  "subdirs": {}
+                }
+              }
+            },
+            "database": {
+              "name": "database",
+              "total": 11,
+              "direct_files": {
+                "__init__.py": 1
+              },
+              "subdirs": {
+                "models": {
+                  "name": "models",
+                  "total": 6,
+                  "direct_files": {
+                    "__init__.py": 1,
+                    "apple_health.py": 1,
+                    "base.py": 1,
+                    "hevy_app.py": 1,
+                    "tracker.py": 1,
+                    "true_coach.py": 1
+                  },
+                  "subdirs": {}
+                },
+                "repository": {
+                  "name": "repository",
+                  "total": 2,
+                  "direct_files": {
+                    "apple_health.py": 1,
+                    "hevy_app.py": 1
+                  },
+                  "subdirs": {}
+                },
+                "services": {
+                  "name": "services",
+                  "total": 2,
+                  "direct_files": {
+                    "base.py": 1,
+                    "tracker.py": 1
+                  },
+                  "subdirs": {}
+                }
+              }
+            },
+            "llm": {
+              "name": "llm",
+              "total": 4,
+              "direct_files": {
+                "__init__.py": 1,
+                "fitness_llm.py": 1,
+                "open_ai_llm.py": 1,
+                "prompt_templates.py": 1
+              },
+              "subdirs": {}
+            },
+            "sync": {
+              "name": "sync",
+              "total": 6,
+              "direct_files": {
+                "__init__.py": 1
+              },
+              "subdirs": {
+                "hevy_tracker": {
+                  "name": "hevy_tracker",
+                  "total": 1,
+                  "direct_files": {
+                    "sync.py": 1
+                  },
+                  "subdirs": {}
+                },
+                "tracker_hevy": {
+                  "name": "tracker_hevy",
+                  "total": 2,
+                  "direct_files": {
+                    "sync.py": 1,
+                    "utils.py": 1
+                  },
+                  "subdirs": {}
+                },
+                "tracker_true_coach": {
+                  "name": "tracker_true_coach",
+                  "total": 1,
+                  "direct_files": {
+                    "utils.py": 1
+                  },
+                  "subdirs": {}
+                },
+                "true_coach_tracker": {
+                  "name": "true_coach_tracker",
+                  "total": 1,
+                  "direct_files": {
+                    "sync.py": 1
+                  },
+                  "subdirs": {}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "ty": {
+      "name": ".",
+      "total": 85,
+      "direct_files": {},
+      "subdirs": {
+        "fitness_tracker": {
+          "name": "fitness_tracker",
+          "total": 85,
+          "direct_files": {},
+          "subdirs": {
+            "apis": {
+              "name": "apis",
+              "total": 7,
+              "direct_files": {},
+              "subdirs": {
+                "hevy_app": {
+                  "name": "hevy_app",
+                  "total": 5,
+                  "direct_files": {
+                    "routines.py": 1,
+                    "session.py": 2,
+                    "web_session.py": 2
+                  },
+                  "subdirs": {}
+                },
+                "true_coach": {
+                  "name": "true_coach",
+                  "total": 2,
+                  "direct_files": {
+                    "session.py": 2
+                  },
+                  "subdirs": {}
+                }
+              }
+            },
+            "database": {
+              "name": "database",
+              "total": 21,
+              "direct_files": {},
+              "subdirs": {
+                "models": {
+                  "name": "models",
+                  "total": 5,
+                  "direct_files": {
+                    "base.py": 5
+                  },
+                  "subdirs": {}
+                },
+                "repository": {
+                  "name": "repository",
+                  "total": 7,
+                  "direct_files": {
+                    "base.py": 7
+                  },
+                  "subdirs": {}
+                },
+                "services": {
+                  "name": "services",
+                  "total": 9,
+                  "direct_files": {
+                    "apple_health.py": 2,
+                    "hevy_app.py": 1,
+                    "true_coach.py": 6
+                  },
+                  "subdirs": {}
+                }
+              }
+            },
+            "llm": {
+              "name": "llm",
+              "total": 3,
+              "direct_files": {
+                "open_ai_llm.py": 3
+              },
+              "subdirs": {}
+            },
+            "sync": {
+              "name": "sync",
+              "total": 54,
+              "direct_files": {},
+              "subdirs": {
+                "hevy_tracker": {
+                  "name": "hevy_tracker",
+                  "total": 8,
+                  "direct_files": {
+                    "sync.py": 8
+                  },
+                  "subdirs": {}
+                },
+                "hevy_true_coach": {
+                  "name": "hevy_true_coach",
+                  "total": 9,
+                  "direct_files": {
+                    "sync.py": 4,
+                    "utils.py": 5
+                  },
+                  "subdirs": {}
+                },
+                "tracker_hevy": {
+                  "name": "tracker_hevy",
+                  "total": 14,
+                  "direct_files": {
+                    "sync.py": 10,
+                    "utils.py": 4
+                  },
+                  "subdirs": {}
+                },
+                "tracker_true_coach": {
+                  "name": "tracker_true_coach",
+                  "total": 11,
+                  "direct_files": {
+                    "sync.py": 7,
+                    "utils.py": 4
+                  },
+                  "subdirs": {}
+                },
+                "true_coach_hevy": {
+                  "name": "true_coach_hevy",
+                  "total": 12,
+                  "direct_files": {
+                    "sync.py": 8,
+                    "utils.py": 4
+                  },
+                  "subdirs": {}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "pydoclint": {
+      "name": ".",
+      "total": 383,
+      "direct_files": {},
+      "subdirs": {
+        "fitness_tracker": {
+          "name": "fitness_tracker",
+          "total": 383,
+          "direct_files": {},
+          "subdirs": {
+            "apis": {
+              "name": "apis",
+              "total": 123,
+              "direct_files": {},
+              "subdirs": {
+                "hevy_app": {
+                  "name": "hevy_app",
+                  "total": 72,
+                  "direct_files": {
+                    "exceptions.py": 2,
+                    "exercises.py": 7,
+                    "routines.py": 13,
+                    "session.py": 17,
+                    "web_session.py": 17,
+                    "workouts.py": 16
+                  },
+                  "subdirs": {}
+                },
+                "true_coach": {
+                  "name": "true_coach",
+                  "total": 51,
+                  "direct_files": {
+                    "assessments.py": 10,
+                    "auth.py": 14,
+                    "exceptions.py": 2,
+                    "exercises.py": 4,
+                    "session.py": 15,
+                    "workouts.py": 6
+                  },
+                  "subdirs": {}
+                }
+              }
+            },
+            "database": {
+              "name": "database",
+              "total": 210,
+              "direct_files": {
+                "connection.py": 3
+              },
+              "subdirs": {
+                "models": {
+                  "name": "models",
+                  "total": 26,
+                  "direct_files": {
+                    "base.py": 22,
+                    "hevy_app.py": 2,
+                    "tracker.py": 2
+                  },
+                  "subdirs": {}
+                },
+                "repository": {
+                  "name": "repository",
+                  "total": 63,
+                  "direct_files": {
+                    "apple_health.py": 8,
+                    "base.py": 31,
+                    "hevy_app.py": 10,
+                    "true_coach.py": 14
+                  },
+                  "subdirs": {}
+                },
+                "services": {
+                  "name": "services",
+                  "total": 118,
+                  "direct_files": {
+                    "apple_health.py": 22,
+                    "base.py": 4,
+                    "hevy_app.py": 28,
+                    "tracker.py": 16,
+                    "true_coach.py": 48
+                  },
+                  "subdirs": {}
+                }
+              }
+            },
+            "llm": {
+              "name": "llm",
+              "total": 9,
+              "direct_files": {
+                "fitness_llm.py": 3,
+                "open_ai_llm.py": 6
+              },
+              "subdirs": {}
+            },
+            "sync": {
+              "name": "sync",
+              "total": 41,
+              "direct_files": {
+                "sync.py": 2
+              },
+              "subdirs": {
+                "apple_health_tracker": {
+                  "name": "apple_health_tracker",
+                  "total": 5,
+                  "direct_files": {
+                    "sync.py": 5
+                  },
+                  "subdirs": {}
+                },
+                "hevy_tracker": {
+                  "name": "hevy_tracker",
+                  "total": 17,
+                  "direct_files": {
+                    "sync.py": 17
+                  },
+                  "subdirs": {}
+                },
+                "hevy_true_coach": {
+                  "name": "hevy_true_coach",
+                  "total": 5,
+                  "direct_files": {
+                    "sync.py": 5
+                  },
+                  "subdirs": {}
+                },
+                "tracker_hevy": {
+                  "name": "tracker_hevy",
+                  "total": 2,
+                  "direct_files": {
+                    "sync.py": 2
+                  },
+                  "subdirs": {}
+                },
+                "tracker_true_coach": {
+                  "name": "tracker_true_coach",
+                  "total": 4,
+                  "direct_files": {
+                    "sync.py": 4
+                  },
+                  "subdirs": {}
+                },
+                "true_coach_hevy": {
+                  "name": "true_coach_hevy",
+                  "total": 2,
+                  "direct_files": {
+                    "sync.py": 2
+                  },
+                  "subdirs": {}
+                },
+                "true_coach_tracker": {
+                  "name": "true_coach_tracker",
+                  "total": 4,
+                  "direct_files": {
+                    "sync.py": 4
+                  },
+                  "subdirs": {}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "pip_audit": {
+      "name": ".",
+      "total": 11,
+      "direct_files": {
+        "(dependency) filelock": 1,
+        "(dependency) langchain-core": 1,
+        "(dependency) langgraph": 1,
+        "(dependency) langgraph-checkpoint": 1,
+        "(dependency) langsmith": 1,
+        "(dependency) orjson": 1,
+        "(dependency) pillow": 1,
+        "(dependency) pygments": 1,
+        "(dependency) requests": 1,
+        "(dependency) urllib3": 1,
+        "(dependency) virtualenv": 1
+      },
+      "subdirs": {}
+    },
+    "sloppylint": {
+      "name": ".",
+      "total": 5,
+      "direct_files": {},
+      "subdirs": {
+        "fitness_tracker": {
+          "name": "fitness_tracker",
+          "total": 5,
+          "direct_files": {},
+          "subdirs": {
+            "apis": {
+              "name": "apis",
+              "total": 2,
+              "direct_files": {},
+              "subdirs": {
+                "true_coach": {
+                  "name": "true_coach",
+                  "total": 2,
+                  "direct_files": {
+                    "auth.py": 1,
+                    "exercises.py": 1
+                  },
+                  "subdirs": {}
+                }
+              }
+            },
+            "database": {
+              "name": "database",
+              "total": 2,
+              "direct_files": {},
+              "subdirs": {
+                "repository": {
+                  "name": "repository",
+                  "total": 1,
+                  "direct_files": {
+                    "base.py": 1
+                  },
+                  "subdirs": {}
+                },
+                "services": {
+                  "name": "services",
+                  "total": 1,
+                  "direct_files": {
+                    "base.py": 1
+                  },
+                  "subdirs": {}
+                }
+              }
+            },
+            "sync": {
+              "name": "sync",
+              "total": 1,
+              "direct_files": {},
+              "subdirs": {
+                "hevy_true_coach": {
+                  "name": "hevy_true_coach",
+                  "total": 1,
+                  "direct_files": {
+                    "sync.py": 1
+                  },
+                  "subdirs": {}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "slop_detector": {
+      "name": ".",
+      "total": 11,
+      "direct_files": {
+        "(slop-detector) apple_health.py": 1,
+        "(slop-detector) base.py": 2,
+        "(slop-detector) hevy_app.py": 1,
+        "(slop-detector) sync.py": 1,
+        "(slop-detector) tracker.py": 1,
+        "(slop-detector) true_coach.py": 1,
+        "(slop-detector) utils.py": 4
+      },
+      "subdirs": {}
+    }
+  },
+  "combined_tree": {
+    "name": ".",
+    "total": 1201,
+    "direct_files": {
+      "(dependency) filelock": 1,
+      "(dependency) langchain-core": 1,
+      "(dependency) langgraph": 1,
+      "(dependency) langgraph-checkpoint": 1,
+      "(dependency) langsmith": 1,
+      "(dependency) orjson": 1,
+      "(dependency) pillow": 1,
+      "(dependency) pygments": 1,
+      "(dependency) requests": 1,
+      "(dependency) urllib3": 1,
+      "(dependency) virtualenv": 1,
+      "(slop-detector) apple_health.py": 1,
+      "(slop-detector) base.py": 2,
+      "(slop-detector) hevy_app.py": 1,
+      "(slop-detector) sync.py": 1,
+      "(slop-detector) tracker.py": 1,
+      "(slop-detector) true_coach.py": 1,
+      "(slop-detector) utils.py": 4
+    },
+    "subdirs": {
+      "fitness_tracker": {
+        "name": "fitness_tracker",
+        "total": 1179,
+        "direct_files": {},
+        "subdirs": {
+          "apis": {
+            "name": "apis",
+            "total": 419,
+            "direct_files": {
+              "__init__.py": 4,
+              "base.py": 2
+            },
+            "subdirs": {
+              "hevy_app": {
+                "name": "hevy_app",
+                "total": 210,
+                "direct_files": {
+                  "__init__.py": 3,
+                  "client.py": 3,
+                  "exceptions.py": 9,
+                  "exercises.py": 12,
+                  "routines.py": 26,
+                  "session.py": 41,
+                  "types.py": 45,
+                  "web_session.py": 37,
+                  "workouts.py": 34
+                },
+                "subdirs": {}
+              },
+              "true_coach": {
+                "name": "true_coach",
+                "total": 203,
+                "direct_files": {
+                  "__init__.py": 3,
+                  "assessments.py": 15,
+                  "auth.py": 41,
+                  "client.py": 6,
+                  "exceptions.py": 9,
+                  "exercises.py": 16,
+                  "session.py": 40,
+                  "types.py": 55,
+                  "workouts.py": 18
+                },
+                "subdirs": {}
+              }
+            }
+          },
+          "database": {
+            "name": "database",
+            "total": 457,
+            "direct_files": {
+              "__init__.py": 3,
+              "connection.py": 10
+            },
+            "subdirs": {
+              "models": {
+                "name": "models",
+                "total": 92,
+                "direct_files": {
+                  "__init__.py": 6,
+                  "apple_health.py": 7,
+                  "base.py": 42,
+                  "hevy_app.py": 15,
+                  "tracker.py": 4,
+                  "true_coach.py": 18
+                },
+                "subdirs": {}
+              },
+              "repository": {
+                "name": "repository",
+                "total": 130,
+                "direct_files": {
+                  "__init__.py": 4,
+                  "apple_health.py": 10,
+                  "base.py": 46,
+                  "hevy_app.py": 50,
+                  "tracker.py": 1,
+                  "true_coach.py": 19
+                },
+                "subdirs": {}
+              },
+              "services": {
+                "name": "services",
+                "total": 222,
+                "direct_files": {
+                  "__init__.py": 1,
+                  "apple_health.py": 35,
+                  "base.py": 13,
+                  "hevy_app.py": 59,
+                  "tracker.py": 25,
+                  "true_coach.py": 89
+                },
+                "subdirs": {}
+              }
+            }
+          },
+          "llm": {
+            "name": "llm",
+            "total": 60,
+            "direct_files": {
+              "__init__.py": 4,
+              "fitness_llm.py": 22,
+              "open_ai_llm.py": 16,
+              "prompt_models.py": 13,
+              "prompt_templates.py": 5
+            },
+            "subdirs": {}
+          },
+          "sync": {
+            "name": "sync",
+            "total": 243,
+            "direct_files": {
+              "__init__.py": 4,
+              "base.py": 1,
+              "sync.py": 3
+            },
+            "subdirs": {
+              "apple_health_tracker": {
+                "name": "apple_health_tracker",
+                "total": 26,
+                "direct_files": {
+                  "sync.py": 24,
+                  "utils.py": 2
+                },
+                "subdirs": {}
+              },
+              "hevy_tracker": {
+                "name": "hevy_tracker",
+                "total": 52,
+                "direct_files": {
+                  "sync.py": 50,
+                  "utils.py": 2
+                },
+                "subdirs": {}
+              },
+              "hevy_true_coach": {
+                "name": "hevy_true_coach",
+                "total": 24,
+                "direct_files": {
+                  "sync.py": 14,
+                  "utils.py": 10
+                },
+                "subdirs": {}
+              },
+              "tracker_hevy": {
+                "name": "tracker_hevy",
+                "total": 47,
+                "direct_files": {
+                  "sync.py": 25,
+                  "utils.py": 22
+                },
+                "subdirs": {}
+              },
+              "tracker_true_coach": {
+                "name": "tracker_true_coach",
+                "total": 36,
+                "direct_files": {
+                  "sync.py": 14,
+                  "utils.py": 22
+                },
+                "subdirs": {}
+              },
+              "true_coach_hevy": {
+                "name": "true_coach_hevy",
+                "total": 36,
+                "direct_files": {
+                  "sync.py": 20,
+                  "utils.py": 16
+                },
+                "subdirs": {}
+              },
+              "true_coach_tracker": {
+                "name": "true_coach_tracker",
+                "total": 14,
+                "direct_files": {
+                  "sync.py": 12,
+                  "utils.py": 2
+                },
+                "subdirs": {}
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "rollups": {
+    "combined": [
+      {
+        "path": "fitness_tracker",
+        "issues": 1179,
+        "kind": "directory",
+        "n_subdirs": 4,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/apis",
+        "issues": 419,
+        "kind": "directory",
+        "n_subdirs": 2,
+        "n_files_here": 2
+      },
+      {
+        "path": "fitness_tracker/apis/hevy_app",
+        "issues": 210,
+        "kind": "directory",
+        "n_subdirs": 0,
+        "n_files_here": 9
+      },
+      {
+        "path": "fitness_tracker/apis/hevy_app/__init__.py",
+        "issues": 3,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/apis/hevy_app/client.py",
+        "issues": 3,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/apis/hevy_app/exceptions.py",
+        "issues": 9,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/apis/hevy_app/exercises.py",
+        "issues": 12,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/apis/hevy_app/routines.py",
+        "issues": 26,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/apis/hevy_app/session.py",
+        "issues": 41,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/apis/hevy_app/types.py",
+        "issues": 45,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/apis/hevy_app/web_session.py",
+        "issues": 37,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/apis/hevy_app/workouts.py",
+        "issues": 34,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/apis/true_coach",
+        "issues": 203,
+        "kind": "directory",
+        "n_subdirs": 0,
+        "n_files_here": 9
+      },
+      {
+        "path": "fitness_tracker/apis/true_coach/__init__.py",
+        "issues": 3,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/apis/true_coach/assessments.py",
+        "issues": 15,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/apis/true_coach/auth.py",
+        "issues": 41,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/apis/true_coach/client.py",
+        "issues": 6,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/apis/true_coach/exceptions.py",
+        "issues": 9,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/apis/true_coach/exercises.py",
+        "issues": 16,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/apis/true_coach/session.py",
+        "issues": 40,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/apis/true_coach/types.py",
+        "issues": 55,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/apis/true_coach/workouts.py",
+        "issues": 18,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/apis/__init__.py",
+        "issues": 4,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/apis/base.py",
+        "issues": 2,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/database",
+        "issues": 457,
+        "kind": "directory",
+        "n_subdirs": 3,
+        "n_files_here": 2
+      },
+      {
+        "path": "fitness_tracker/database/models",
+        "issues": 92,
+        "kind": "directory",
+        "n_subdirs": 0,
+        "n_files_here": 6
+      },
+      {
+        "path": "fitness_tracker/database/models/__init__.py",
+        "issues": 6,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/database/models/apple_health.py",
+        "issues": 7,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/database/models/base.py",
+        "issues": 42,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/database/models/hevy_app.py",
+        "issues": 15,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/database/models/tracker.py",
+        "issues": 4,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/database/models/true_coach.py",
+        "issues": 18,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/database/repository",
+        "issues": 130,
+        "kind": "directory",
+        "n_subdirs": 0,
+        "n_files_here": 6
+      },
+      {
+        "path": "fitness_tracker/database/repository/__init__.py",
+        "issues": 4,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/database/repository/apple_health.py",
+        "issues": 10,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/database/repository/base.py",
+        "issues": 46,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/database/repository/hevy_app.py",
+        "issues": 50,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/database/repository/tracker.py",
+        "issues": 1,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/database/repository/true_coach.py",
+        "issues": 19,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/database/services",
+        "issues": 222,
+        "kind": "directory",
+        "n_subdirs": 0,
+        "n_files_here": 6
+      },
+      {
+        "path": "fitness_tracker/database/services/__init__.py",
+        "issues": 1,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/database/services/apple_health.py",
+        "issues": 35,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/database/services/base.py",
+        "issues": 13,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/database/services/hevy_app.py",
+        "issues": 59,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/database/services/tracker.py",
+        "issues": 25,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/database/services/true_coach.py",
+        "issues": 89,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/database/__init__.py",
+        "issues": 3,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/database/connection.py",
+        "issues": 10,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/llm",
+        "issues": 60,
+        "kind": "directory",
+        "n_subdirs": 0,
+        "n_files_here": 5
+      },
+      {
+        "path": "fitness_tracker/llm/__init__.py",
+        "issues": 4,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/llm/fitness_llm.py",
+        "issues": 22,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/llm/open_ai_llm.py",
+        "issues": 16,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/llm/prompt_models.py",
+        "issues": 13,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/llm/prompt_templates.py",
+        "issues": 5,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/sync",
+        "issues": 243,
+        "kind": "directory",
+        "n_subdirs": 7,
+        "n_files_here": 3
+      },
+      {
+        "path": "fitness_tracker/sync/apple_health_tracker",
+        "issues": 26,
+        "kind": "directory",
+        "n_subdirs": 0,
+        "n_files_here": 2
+      },
+      {
+        "path": "fitness_tracker/sync/apple_health_tracker/sync.py",
+        "issues": 24,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/sync/apple_health_tracker/utils.py",
+        "issues": 2,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/sync/hevy_tracker",
+        "issues": 52,
+        "kind": "directory",
+        "n_subdirs": 0,
+        "n_files_here": 2
+      },
+      {
+        "path": "fitness_tracker/sync/hevy_tracker/sync.py",
+        "issues": 50,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/sync/hevy_tracker/utils.py",
+        "issues": 2,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/sync/hevy_true_coach",
+        "issues": 24,
+        "kind": "directory",
+        "n_subdirs": 0,
+        "n_files_here": 2
+      },
+      {
+        "path": "fitness_tracker/sync/hevy_true_coach/sync.py",
+        "issues": 14,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/sync/hevy_true_coach/utils.py",
+        "issues": 10,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/sync/tracker_hevy",
+        "issues": 47,
+        "kind": "directory",
+        "n_subdirs": 0,
+        "n_files_here": 2
+      },
+      {
+        "path": "fitness_tracker/sync/tracker_hevy/sync.py",
+        "issues": 25,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/sync/tracker_hevy/utils.py",
+        "issues": 22,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/sync/tracker_true_coach",
+        "issues": 36,
+        "kind": "directory",
+        "n_subdirs": 0,
+        "n_files_here": 2
+      },
+      {
+        "path": "fitness_tracker/sync/tracker_true_coach/sync.py",
+        "issues": 14,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/sync/tracker_true_coach/utils.py",
+        "issues": 22,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/sync/true_coach_hevy",
+        "issues": 36,
+        "kind": "directory",
+        "n_subdirs": 0,
+        "n_files_here": 2
+      },
+      {
+        "path": "fitness_tracker/sync/true_coach_hevy/sync.py",
+        "issues": 20,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/sync/true_coach_hevy/utils.py",
+        "issues": 16,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/sync/true_coach_tracker",
+        "issues": 14,
+        "kind": "directory",
+        "n_subdirs": 0,
+        "n_files_here": 2
+      },
+      {
+        "path": "fitness_tracker/sync/true_coach_tracker/sync.py",
+        "issues": 12,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/sync/true_coach_tracker/utils.py",
+        "issues": 2,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/sync/__init__.py",
+        "issues": 4,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/sync/base.py",
+        "issues": 1,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "fitness_tracker/sync/sync.py",
+        "issues": 3,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "(dependency) filelock",
+        "issues": 1,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "(dependency) langchain-core",
+        "issues": 1,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "(dependency) langgraph",
+        "issues": 1,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "(dependency) langgraph-checkpoint",
+        "issues": 1,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "(dependency) langsmith",
+        "issues": 1,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "(dependency) orjson",
+        "issues": 1,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "(dependency) pillow",
+        "issues": 1,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "(dependency) pygments",
+        "issues": 1,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "(dependency) requests",
+        "issues": 1,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "(dependency) urllib3",
+        "issues": 1,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "(dependency) virtualenv",
+        "issues": 1,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "(slop-detector) apple_health.py",
+        "issues": 1,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "(slop-detector) base.py",
+        "issues": 2,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "(slop-detector) hevy_app.py",
+        "issues": 1,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "(slop-detector) sync.py",
+        "issues": 1,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "(slop-detector) tracker.py",
+        "issues": 1,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "(slop-detector) true_coach.py",
+        "issues": 1,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      },
+      {
+        "path": "(slop-detector) utils.py",
+        "issues": 4,
+        "kind": "file",
+        "n_subdirs": 0,
+        "n_files_here": 0
+      }
+    ],
+    "by_linter": {
+      "ruff_check": [
+        {
+          "path": "fitness_tracker",
+          "issues": 673,
+          "kind": "directory",
+          "n_subdirs": 4,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis",
+          "issues": 275,
+          "kind": "directory",
+          "n_subdirs": 2,
+          "n_files_here": 2
+        },
+        {
+          "path": "fitness_tracker/apis/hevy_app",
+          "issues": 129,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 9
+        },
+        {
+          "path": "fitness_tracker/apis/hevy_app/__init__.py",
+          "issues": 2,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis/hevy_app/client.py",
+          "issues": 3,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis/hevy_app/exceptions.py",
+          "issues": 6,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis/hevy_app/exercises.py",
+          "issues": 5,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis/hevy_app/routines.py",
+          "issues": 12,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis/hevy_app/session.py",
+          "issues": 21,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis/hevy_app/types.py",
+          "issues": 44,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis/hevy_app/web_session.py",
+          "issues": 18,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis/hevy_app/workouts.py",
+          "issues": 18,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis/true_coach",
+          "issues": 141,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 9
+        },
+        {
+          "path": "fitness_tracker/apis/true_coach/__init__.py",
+          "issues": 2,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis/true_coach/assessments.py",
+          "issues": 4,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis/true_coach/auth.py",
+          "issues": 25,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis/true_coach/client.py",
+          "issues": 5,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis/true_coach/exceptions.py",
+          "issues": 6,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis/true_coach/exercises.py",
+          "issues": 10,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis/true_coach/session.py",
+          "issues": 22,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis/true_coach/types.py",
+          "issues": 55,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis/true_coach/workouts.py",
+          "issues": 12,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis/__init__.py",
+          "issues": 3,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis/base.py",
+          "issues": 2,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database",
+          "issues": 213,
+          "kind": "directory",
+          "n_subdirs": 3,
+          "n_files_here": 2
+        },
+        {
+          "path": "fitness_tracker/database/models",
+          "issues": 55,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 6
+        },
+        {
+          "path": "fitness_tracker/database/models/__init__.py",
+          "issues": 5,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database/models/apple_health.py",
+          "issues": 6,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database/models/base.py",
+          "issues": 14,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database/models/hevy_app.py",
+          "issues": 12,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database/models/tracker.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database/models/true_coach.py",
+          "issues": 17,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database/repository",
+          "issues": 57,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 6
+        },
+        {
+          "path": "fitness_tracker/database/repository/__init__.py",
+          "issues": 4,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database/repository/apple_health.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database/repository/base.py",
+          "issues": 7,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database/repository/hevy_app.py",
+          "issues": 39,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database/repository/tracker.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database/repository/true_coach.py",
+          "issues": 5,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database/services",
+          "issues": 92,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 6
+        },
+        {
+          "path": "fitness_tracker/database/services/__init__.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database/services/apple_health.py",
+          "issues": 11,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database/services/base.py",
+          "issues": 7,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database/services/hevy_app.py",
+          "issues": 30,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database/services/tracker.py",
+          "issues": 8,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database/services/true_coach.py",
+          "issues": 35,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database/__init__.py",
+          "issues": 2,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database/connection.py",
+          "issues": 7,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/llm",
+          "issues": 44,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 5
+        },
+        {
+          "path": "fitness_tracker/llm/__init__.py",
+          "issues": 3,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/llm/fitness_llm.py",
+          "issues": 18,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/llm/open_ai_llm.py",
+          "issues": 6,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/llm/prompt_models.py",
+          "issues": 13,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/llm/prompt_templates.py",
+          "issues": 4,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/sync",
+          "issues": 141,
+          "kind": "directory",
+          "n_subdirs": 7,
+          "n_files_here": 3
+        },
+        {
+          "path": "fitness_tracker/sync/apple_health_tracker",
+          "issues": 21,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 2
+        },
+        {
+          "path": "fitness_tracker/sync/apple_health_tracker/sync.py",
+          "issues": 19,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/sync/apple_health_tracker/utils.py",
+          "issues": 2,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/sync/hevy_tracker",
+          "issues": 26,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 2
+        },
+        {
+          "path": "fitness_tracker/sync/hevy_tracker/sync.py",
+          "issues": 24,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/sync/hevy_tracker/utils.py",
+          "issues": 2,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/sync/hevy_true_coach",
+          "issues": 9,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 2
+        },
+        {
+          "path": "fitness_tracker/sync/hevy_true_coach/sync.py",
+          "issues": 4,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/sync/hevy_true_coach/utils.py",
+          "issues": 5,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/sync/tracker_hevy",
+          "issues": 29,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 2
+        },
+        {
+          "path": "fitness_tracker/sync/tracker_hevy/sync.py",
+          "issues": 12,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/sync/tracker_hevy/utils.py",
+          "issues": 17,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/sync/tracker_true_coach",
+          "issues": 20,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 2
+        },
+        {
+          "path": "fitness_tracker/sync/tracker_true_coach/sync.py",
+          "issues": 3,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/sync/tracker_true_coach/utils.py",
+          "issues": 17,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/sync/true_coach_hevy",
+          "issues": 22,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 2
+        },
+        {
+          "path": "fitness_tracker/sync/true_coach_hevy/sync.py",
+          "issues": 10,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/sync/true_coach_hevy/utils.py",
+          "issues": 12,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/sync/true_coach_tracker",
+          "issues": 9,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 2
+        },
+        {
+          "path": "fitness_tracker/sync/true_coach_tracker/sync.py",
+          "issues": 7,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/sync/true_coach_tracker/utils.py",
+          "issues": 2,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/sync/__init__.py",
+          "issues": 3,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/sync/base.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/sync/sync.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        }
+      ],
+      "ruff_format": [
+        {
+          "path": "fitness_tracker",
+          "issues": 33,
+          "kind": "directory",
+          "n_subdirs": 4,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis",
+          "issues": 12,
+          "kind": "directory",
+          "n_subdirs": 2,
+          "n_files_here": 1
+        },
+        {
+          "path": "fitness_tracker/apis/hevy_app",
+          "issues": 4,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 4
+        },
+        {
+          "path": "fitness_tracker/apis/hevy_app/__init__.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis/hevy_app/exceptions.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis/hevy_app/session.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis/hevy_app/types.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis/true_coach",
+          "issues": 7,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 7
+        },
+        {
+          "path": "fitness_tracker/apis/true_coach/__init__.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis/true_coach/assessments.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis/true_coach/auth.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis/true_coach/client.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis/true_coach/exceptions.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis/true_coach/exercises.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis/true_coach/session.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis/__init__.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database",
+          "issues": 11,
+          "kind": "directory",
+          "n_subdirs": 3,
+          "n_files_here": 1
+        },
+        {
+          "path": "fitness_tracker/database/models",
+          "issues": 6,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 6
+        },
+        {
+          "path": "fitness_tracker/database/models/__init__.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database/models/apple_health.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database/models/base.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database/models/hevy_app.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database/models/tracker.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database/models/true_coach.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database/repository",
+          "issues": 2,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 2
+        },
+        {
+          "path": "fitness_tracker/database/repository/apple_health.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database/repository/hevy_app.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database/services",
+          "issues": 2,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 2
+        },
+        {
+          "path": "fitness_tracker/database/services/base.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database/services/tracker.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database/__init__.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/llm",
+          "issues": 4,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 4
+        },
+        {
+          "path": "fitness_tracker/llm/__init__.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/llm/fitness_llm.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/llm/open_ai_llm.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/llm/prompt_templates.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/sync",
+          "issues": 6,
+          "kind": "directory",
+          "n_subdirs": 4,
+          "n_files_here": 1
+        },
+        {
+          "path": "fitness_tracker/sync/hevy_tracker",
+          "issues": 1,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 1
+        },
+        {
+          "path": "fitness_tracker/sync/hevy_tracker/sync.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/sync/tracker_hevy",
+          "issues": 2,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 2
+        },
+        {
+          "path": "fitness_tracker/sync/tracker_hevy/sync.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/sync/tracker_hevy/utils.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/sync/tracker_true_coach",
+          "issues": 1,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 1
+        },
+        {
+          "path": "fitness_tracker/sync/tracker_true_coach/utils.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/sync/true_coach_tracker",
+          "issues": 1,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 1
+        },
+        {
+          "path": "fitness_tracker/sync/true_coach_tracker/sync.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/sync/__init__.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        }
+      ],
+      "ty": [
+        {
+          "path": "fitness_tracker",
+          "issues": 85,
+          "kind": "directory",
+          "n_subdirs": 4,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis",
+          "issues": 7,
+          "kind": "directory",
+          "n_subdirs": 2,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis/hevy_app",
+          "issues": 5,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 3
+        },
+        {
+          "path": "fitness_tracker/apis/hevy_app/routines.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis/hevy_app/session.py",
+          "issues": 2,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis/hevy_app/web_session.py",
+          "issues": 2,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis/true_coach",
+          "issues": 2,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 1
+        },
+        {
+          "path": "fitness_tracker/apis/true_coach/session.py",
+          "issues": 2,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database",
+          "issues": 21,
+          "kind": "directory",
+          "n_subdirs": 3,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database/models",
+          "issues": 5,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 1
+        },
+        {
+          "path": "fitness_tracker/database/models/base.py",
+          "issues": 5,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database/repository",
+          "issues": 7,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 1
+        },
+        {
+          "path": "fitness_tracker/database/repository/base.py",
+          "issues": 7,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database/services",
+          "issues": 9,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 3
+        },
+        {
+          "path": "fitness_tracker/database/services/apple_health.py",
+          "issues": 2,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database/services/hevy_app.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database/services/true_coach.py",
+          "issues": 6,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/llm",
+          "issues": 3,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 1
+        },
+        {
+          "path": "fitness_tracker/llm/open_ai_llm.py",
+          "issues": 3,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/sync",
+          "issues": 54,
+          "kind": "directory",
+          "n_subdirs": 5,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/sync/hevy_tracker",
+          "issues": 8,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 1
+        },
+        {
+          "path": "fitness_tracker/sync/hevy_tracker/sync.py",
+          "issues": 8,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/sync/hevy_true_coach",
+          "issues": 9,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 2
+        },
+        {
+          "path": "fitness_tracker/sync/hevy_true_coach/sync.py",
+          "issues": 4,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/sync/hevy_true_coach/utils.py",
+          "issues": 5,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/sync/tracker_hevy",
+          "issues": 14,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 2
+        },
+        {
+          "path": "fitness_tracker/sync/tracker_hevy/sync.py",
+          "issues": 10,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/sync/tracker_hevy/utils.py",
+          "issues": 4,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/sync/tracker_true_coach",
+          "issues": 11,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 2
+        },
+        {
+          "path": "fitness_tracker/sync/tracker_true_coach/sync.py",
+          "issues": 7,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/sync/tracker_true_coach/utils.py",
+          "issues": 4,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/sync/true_coach_hevy",
+          "issues": 12,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 2
+        },
+        {
+          "path": "fitness_tracker/sync/true_coach_hevy/sync.py",
+          "issues": 8,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/sync/true_coach_hevy/utils.py",
+          "issues": 4,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        }
+      ],
+      "pydoclint": [
+        {
+          "path": "fitness_tracker",
+          "issues": 383,
+          "kind": "directory",
+          "n_subdirs": 4,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis",
+          "issues": 123,
+          "kind": "directory",
+          "n_subdirs": 2,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis/hevy_app",
+          "issues": 72,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 6
+        },
+        {
+          "path": "fitness_tracker/apis/hevy_app/exceptions.py",
+          "issues": 2,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis/hevy_app/exercises.py",
+          "issues": 7,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis/hevy_app/routines.py",
+          "issues": 13,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis/hevy_app/session.py",
+          "issues": 17,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis/hevy_app/web_session.py",
+          "issues": 17,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis/hevy_app/workouts.py",
+          "issues": 16,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis/true_coach",
+          "issues": 51,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 6
+        },
+        {
+          "path": "fitness_tracker/apis/true_coach/assessments.py",
+          "issues": 10,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis/true_coach/auth.py",
+          "issues": 14,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis/true_coach/exceptions.py",
+          "issues": 2,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis/true_coach/exercises.py",
+          "issues": 4,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis/true_coach/session.py",
+          "issues": 15,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis/true_coach/workouts.py",
+          "issues": 6,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database",
+          "issues": 210,
+          "kind": "directory",
+          "n_subdirs": 3,
+          "n_files_here": 1
+        },
+        {
+          "path": "fitness_tracker/database/models",
+          "issues": 26,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 3
+        },
+        {
+          "path": "fitness_tracker/database/models/base.py",
+          "issues": 22,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database/models/hevy_app.py",
+          "issues": 2,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database/models/tracker.py",
+          "issues": 2,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database/repository",
+          "issues": 63,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 4
+        },
+        {
+          "path": "fitness_tracker/database/repository/apple_health.py",
+          "issues": 8,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database/repository/base.py",
+          "issues": 31,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database/repository/hevy_app.py",
+          "issues": 10,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database/repository/true_coach.py",
+          "issues": 14,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database/services",
+          "issues": 118,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 5
+        },
+        {
+          "path": "fitness_tracker/database/services/apple_health.py",
+          "issues": 22,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database/services/base.py",
+          "issues": 4,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database/services/hevy_app.py",
+          "issues": 28,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database/services/tracker.py",
+          "issues": 16,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database/services/true_coach.py",
+          "issues": 48,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database/connection.py",
+          "issues": 3,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/llm",
+          "issues": 9,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 2
+        },
+        {
+          "path": "fitness_tracker/llm/fitness_llm.py",
+          "issues": 3,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/llm/open_ai_llm.py",
+          "issues": 6,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/sync",
+          "issues": 41,
+          "kind": "directory",
+          "n_subdirs": 7,
+          "n_files_here": 1
+        },
+        {
+          "path": "fitness_tracker/sync/apple_health_tracker",
+          "issues": 5,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 1
+        },
+        {
+          "path": "fitness_tracker/sync/apple_health_tracker/sync.py",
+          "issues": 5,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/sync/hevy_tracker",
+          "issues": 17,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 1
+        },
+        {
+          "path": "fitness_tracker/sync/hevy_tracker/sync.py",
+          "issues": 17,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/sync/hevy_true_coach",
+          "issues": 5,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 1
+        },
+        {
+          "path": "fitness_tracker/sync/hevy_true_coach/sync.py",
+          "issues": 5,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/sync/tracker_hevy",
+          "issues": 2,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 1
+        },
+        {
+          "path": "fitness_tracker/sync/tracker_hevy/sync.py",
+          "issues": 2,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/sync/tracker_true_coach",
+          "issues": 4,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 1
+        },
+        {
+          "path": "fitness_tracker/sync/tracker_true_coach/sync.py",
+          "issues": 4,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/sync/true_coach_hevy",
+          "issues": 2,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 1
+        },
+        {
+          "path": "fitness_tracker/sync/true_coach_hevy/sync.py",
+          "issues": 2,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/sync/true_coach_tracker",
+          "issues": 4,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 1
+        },
+        {
+          "path": "fitness_tracker/sync/true_coach_tracker/sync.py",
+          "issues": 4,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/sync/sync.py",
+          "issues": 2,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        }
+      ],
+      "pip_audit": [
+        {
+          "path": "(dependency) filelock",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "(dependency) langchain-core",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "(dependency) langgraph",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "(dependency) langgraph-checkpoint",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "(dependency) langsmith",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "(dependency) orjson",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "(dependency) pillow",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "(dependency) pygments",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "(dependency) requests",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "(dependency) urllib3",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "(dependency) virtualenv",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        }
+      ],
+      "sloppylint": [
+        {
+          "path": "fitness_tracker",
+          "issues": 5,
+          "kind": "directory",
+          "n_subdirs": 3,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis",
+          "issues": 2,
+          "kind": "directory",
+          "n_subdirs": 1,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis/true_coach",
+          "issues": 2,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 2
+        },
+        {
+          "path": "fitness_tracker/apis/true_coach/auth.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/apis/true_coach/exercises.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database",
+          "issues": 2,
+          "kind": "directory",
+          "n_subdirs": 2,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database/repository",
+          "issues": 1,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 1
+        },
+        {
+          "path": "fitness_tracker/database/repository/base.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/database/services",
+          "issues": 1,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 1
+        },
+        {
+          "path": "fitness_tracker/database/services/base.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/sync",
+          "issues": 1,
+          "kind": "directory",
+          "n_subdirs": 1,
+          "n_files_here": 0
+        },
+        {
+          "path": "fitness_tracker/sync/hevy_true_coach",
+          "issues": 1,
+          "kind": "directory",
+          "n_subdirs": 0,
+          "n_files_here": 1
+        },
+        {
+          "path": "fitness_tracker/sync/hevy_true_coach/sync.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        }
+      ],
+      "slop_detector": [
+        {
+          "path": "(slop-detector) apple_health.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "(slop-detector) base.py",
+          "issues": 2,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "(slop-detector) hevy_app.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "(slop-detector) sync.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "(slop-detector) tracker.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "(slop-detector) true_coach.py",
+          "issues": 1,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        },
+        {
+          "path": "(slop-detector) utils.py",
+          "issues": 4,
+          "kind": "file",
+          "n_subdirs": 0,
+          "n_files_here": 0
+        }
+      ]
+    }
+  },
+  "combined_flat_by_file": {
+    "fitness_tracker/database/services/true_coach.py": 89,
+    "fitness_tracker/database/services/hevy_app.py": 59,
+    "fitness_tracker/apis/true_coach/types.py": 55,
+    "fitness_tracker/database/repository/hevy_app.py": 50,
+    "fitness_tracker/sync/hevy_tracker/sync.py": 50,
+    "fitness_tracker/database/repository/base.py": 46,
+    "fitness_tracker/apis/hevy_app/types.py": 45,
+    "fitness_tracker/database/models/base.py": 42,
+    "fitness_tracker/apis/hevy_app/session.py": 41,
+    "fitness_tracker/apis/true_coach/auth.py": 41,
+    "fitness_tracker/apis/true_coach/session.py": 40,
+    "fitness_tracker/apis/hevy_app/web_session.py": 37,
+    "fitness_tracker/database/services/apple_health.py": 35,
+    "fitness_tracker/apis/hevy_app/workouts.py": 34,
+    "fitness_tracker/apis/hevy_app/routines.py": 26,
+    "fitness_tracker/database/services/tracker.py": 25,
+    "fitness_tracker/sync/tracker_hevy/sync.py": 25,
+    "fitness_tracker/sync/apple_health_tracker/sync.py": 24,
+    "fitness_tracker/llm/fitness_llm.py": 22,
+    "fitness_tracker/sync/tracker_hevy/utils.py": 22,
+    "fitness_tracker/sync/tracker_true_coach/utils.py": 22,
+    "fitness_tracker/sync/true_coach_hevy/sync.py": 20,
+    "fitness_tracker/database/repository/true_coach.py": 19,
+    "fitness_tracker/apis/true_coach/workouts.py": 18,
+    "fitness_tracker/database/models/true_coach.py": 18,
+    "fitness_tracker/apis/true_coach/exercises.py": 16,
+    "fitness_tracker/llm/open_ai_llm.py": 16,
+    "fitness_tracker/sync/true_coach_hevy/utils.py": 16,
+    "fitness_tracker/apis/true_coach/assessments.py": 15,
+    "fitness_tracker/database/models/hevy_app.py": 15,
+    "fitness_tracker/sync/hevy_true_coach/sync.py": 14,
+    "fitness_tracker/sync/tracker_true_coach/sync.py": 14,
+    "fitness_tracker/database/services/base.py": 13,
+    "fitness_tracker/llm/prompt_models.py": 13,
+    "fitness_tracker/apis/hevy_app/exercises.py": 12,
+    "fitness_tracker/sync/true_coach_tracker/sync.py": 12,
+    "fitness_tracker/database/connection.py": 10,
+    "fitness_tracker/database/repository/apple_health.py": 10,
+    "fitness_tracker/sync/hevy_true_coach/utils.py": 10,
+    "fitness_tracker/apis/hevy_app/exceptions.py": 9,
+    "fitness_tracker/apis/true_coach/exceptions.py": 9,
+    "fitness_tracker/database/models/apple_health.py": 7,
+    "fitness_tracker/apis/true_coach/client.py": 6,
+    "fitness_tracker/database/models/__init__.py": 6,
+    "fitness_tracker/llm/prompt_templates.py": 5,
+    "(slop-detector) utils.py": 4,
+    "fitness_tracker/apis/__init__.py": 4,
+    "fitness_tracker/database/models/tracker.py": 4,
+    "fitness_tracker/database/repository/__init__.py": 4,
+    "fitness_tracker/llm/__init__.py": 4,
+    "fitness_tracker/sync/__init__.py": 4,
+    "fitness_tracker/apis/hevy_app/__init__.py": 3,
+    "fitness_tracker/apis/hevy_app/client.py": 3,
+    "fitness_tracker/apis/true_coach/__init__.py": 3,
+    "fitness_tracker/database/__init__.py": 3,
+    "fitness_tracker/sync/sync.py": 3,
+    "(slop-detector) base.py": 2,
+    "fitness_tracker/apis/base.py": 2,
+    "fitness_tracker/sync/apple_health_tracker/utils.py": 2,
+    "fitness_tracker/sync/hevy_tracker/utils.py": 2,
+    "fitness_tracker/sync/true_coach_tracker/utils.py": 2,
+    "(dependency) filelock": 1,
+    "(dependency) langchain-core": 1,
+    "(dependency) langgraph": 1,
+    "(dependency) langgraph-checkpoint": 1,
+    "(dependency) langsmith": 1,
+    "(dependency) orjson": 1,
+    "(dependency) pillow": 1,
+    "(dependency) pygments": 1,
+    "(dependency) requests": 1,
+    "(dependency) urllib3": 1,
+    "(dependency) virtualenv": 1,
+    "(slop-detector) apple_health.py": 1,
+    "(slop-detector) hevy_app.py": 1,
+    "(slop-detector) sync.py": 1,
+    "(slop-detector) tracker.py": 1,
+    "(slop-detector) true_coach.py": 1,
+    "fitness_tracker/database/repository/tracker.py": 1,
+    "fitness_tracker/database/services/__init__.py": 1,
+    "fitness_tracker/sync/base.py": 1
+  }
+}
