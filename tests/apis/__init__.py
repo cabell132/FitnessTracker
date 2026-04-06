@@ -1,1 +1,1 @@
-"""Tests for fitness_tracker.apis."""
+"""API-related tests."""

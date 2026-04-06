@@ -2,16 +2,12 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from fitness_tracker.apis.hevy_app.types.common import _BaseSetMeasurements
 
 
-class Set(BaseModel):
+class Set(_BaseSetMeasurements):
     """One logged set inside a workout or routine block."""
 
     index: int
     type: str
-    weight_kg: float | None = None
-    reps: int | None = None
-    distance_meters: int | None = None
-    duration_seconds: int | None = None
     rpe: int | None = None

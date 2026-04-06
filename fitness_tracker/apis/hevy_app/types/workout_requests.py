@@ -1,29 +1,36 @@
-"""Workout request models for the Hevy API."""
+"""Workout POST request models for the Hevy API.
+
+Endpoint: POST /v1/workouts
+Purpose: Log a completed workout session.
+
+Key differences from siblings:
+- PostWorkoutsRequestSet includes rpe (logged effort / subjective intensity); routine
+  variants do not.
+- PostWorkoutsRequestExercise has optional notes and no rest_seconds at exercise level.
+
+See Also:
+- routine_post_requests.py — POST /v1/routines (templates; exercise notes required).
+- routine_put_requests.py — PUT /v1/routines/{id} (sets may include rep_range,
+  custom_metric).
+"""
 
 from __future__ import annotations
 
-from typing import Literal
-
 from pydantic import BaseModel
 
+from fitness_tracker.apis.hevy_app.types.common import _BaseRequestExercise, _BaseRequestSet
 
-class PostWorkoutsRequestSet(BaseModel):
+
+class PostWorkoutsRequestSet(_BaseRequestSet):
     """Set row when creating a workout via POST."""
 
-    type: Literal["normal", "warmup", "failure", "dropset"] = "normal"
-    weight_kg: float | None = None
-    reps: int | None = None
-    distance_meters: int | None = None
-    duration_seconds: int | None = None
     rpe: float | None = None
 
 
-class PostWorkoutsRequestExercise(BaseModel):
+class PostWorkoutsRequestExercise(_BaseRequestExercise):
     """Exercise block when creating a workout."""
 
-    exercise_template_id: str
     notes: str | None = None
-    superset_id: int | None = None
     sets: list[PostWorkoutsRequestSet]
 
 

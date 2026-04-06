@@ -1,10 +1,24 @@
-"""Routine PUT request models for the Hevy API."""
+"""Routine PUT request models for the Hevy API.
+
+Endpoint: PUT /v1/routines/{routineId}
+Purpose: Update an existing routine.
+
+Key differences from siblings:
+- PutRoutinesRequestSet may include custom_metric and rep_range (prescription metadata);
+  workout POST sets use rpe instead.
+- PutRoutinesRequestExercise mirrors update semantics (optional routine-level notes on
+  PUT; exercise notes optional).
+
+See Also:
+- workout_requests.py — POST /v1/workouts (sets use rpe).
+- routine_post_requests.py — POST /v1/routines (stricter required fields on creation).
+"""
 
 from __future__ import annotations
 
-from typing import Literal
-
 from pydantic import BaseModel
+
+from fitness_tracker.apis.hevy_app.types.common import _BaseRequestExercise, _BaseRequestSet
 
 
 class PutRoutinesRepRange(BaseModel):
@@ -14,23 +28,16 @@ class PutRoutinesRepRange(BaseModel):
     end: int | None = None
 
 
-class PutRoutinesRequestSet(BaseModel):
+class PutRoutinesRequestSet(_BaseRequestSet):
     """Set row when updating a routine via PUT."""
 
-    type: Literal["normal", "warmup", "failure", "dropset"] = "normal"
-    weight_kg: float | None = None
-    reps: int | None = None
-    distance_meters: int | None = None
-    duration_seconds: int | None = None
     custom_metric: float | None = None
     rep_range: PutRoutinesRepRange | None = None
 
 
-class PutRoutinesRequestExercise(BaseModel):
+class PutRoutinesRequestExercise(_BaseRequestExercise):
     """Exercise block when updating a routine."""
 
-    exercise_template_id: str
-    superset_id: int | None = None
     rest_seconds: int | None = None
     notes: str | None = None
     sets: list[PutRoutinesRequestSet]
@@ -48,3 +55,23 @@ class PutRoutinesRequestBody(BaseModel):
     """Wrapper object expected by ``PUT /v1/routines/{routineId}``."""
 
     routine: PutRoutinesRequest
+
+    @classmethod
+    def build(
+        cls,
+        *,
+        title: str,
+        exercises: list[PutRoutinesRequestExercise],
+        notes: str | None = None,
+    ) -> PutRoutinesRequestBody:
+        """Construct the inner ``PutRoutinesRequest`` automatically.
+
+        Args:
+            title (str): Routine title.
+            exercises (list[PutRoutinesRequestExercise]): Exercises in the routine.
+            notes (str | None, optional): Routine notes. Defaults to None.
+
+        Returns:
+            PutRoutinesRequestBody: Wrapper accepted by the routines PUT endpoint.
+        """
+        return cls(routine=PutRoutinesRequest(title=title, notes=notes, exercises=exercises))
