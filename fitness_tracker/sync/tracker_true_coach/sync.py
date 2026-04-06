@@ -1,23 +1,25 @@
 """Sync tracker metric rows to True Coach assessments."""
 
-from fitness_tracker.apis import TrueCoachClient
+from __future__ import annotations
+
 from fitness_tracker.apis.true_coach.types import AssessmentItem, PostAssessment, PostAssessmentItem
-from fitness_tracker.database import Store
+from fitness_tracker.sync.ports.store_like import StoreLike
+from fitness_tracker.sync.ports.true_coach_assessment_writer import TrueCoachAssessmentWriter
 from sqlalchemy import text
 
 
 class TrackerToTrueCoachSyncronizer:
     """Reads SQL-selected metric rows and posts them to True Coach."""
 
-    def __init__(self, store: Store, target: TrueCoachClient) -> None:
-        """Initiate the syncronizer with the clients.
+    def __init__(self, store: StoreLike, assessment_writer: TrueCoachAssessmentWriter) -> None:
+        """Initiate the syncronizer with port-typed dependencies.
 
         Args:
-            store (Store): Persistence layer.
-            target (TrueCoachClient): Client for assessment POSTs.
+            store (StoreLike): Persistence layer.
+            assessment_writer (TrueCoachAssessmentWriter): Port for assessment POSTs.
         """
         self._store = store
-        self._target = target
+        self._assessment_writer = assessment_writer
 
     def sync_assessment(self, assessment_id: str, date: str, value: str) -> AssessmentItem:
         """Sync the assessment to True Coach.
@@ -39,7 +41,7 @@ class TrackerToTrueCoachSyncronizer:
                 attachments=[],
             )
         )
-        return self._target.assessments.post(assessment)
+        return self._assessment_writer.post_assessment(assessment)
 
     def sync_assessments(self) -> None:
         """Sync all the assessments."""

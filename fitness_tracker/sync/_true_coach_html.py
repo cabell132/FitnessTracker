@@ -4,12 +4,15 @@ Every syncer that needs workout order, superset indexing, or notes extraction
 imports from here instead of maintaining its own copy.
 """
 
+from __future__ import annotations
+
 from typing import cast
 
 import pandas as pd
 from bs4 import BeautifulSoup
 
 from fitness_tracker.apis.hevy_app.types import PostRoutinesRequestSet
+from fitness_tracker.llm.prompt_models import PostRoutinesRequestSets
 
 
 def parse_workout_order(description: str) -> dict[int, dict[str, str | int | None]]:
@@ -116,3 +119,22 @@ def fallback_sets(description: str) -> list[PostRoutinesRequestSet]:
             duration_seconds=60,
         )
     ]
+
+
+class HtmlFallbackSetParser:
+    """``SetParser``-compatible wrapper around :func:`fallback_sets`.
+
+    Used as the last delegate in a :class:`FallbackSetParser` chain so that
+    every prescription resolves to at least one set row.
+    """
+
+    def parse_the_sets(self, info: str) -> PostRoutinesRequestSets:
+        """Return default fallback sets.
+
+        Args:
+            info (str): Free-form exercise text (forwarded to :func:`fallback_sets`).
+
+        Returns:
+            PostRoutinesRequestSets: Wrapped fallback set rows.
+        """
+        return PostRoutinesRequestSets(sets=fallback_sets(info))

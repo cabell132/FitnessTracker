@@ -1,24 +1,23 @@
 """Import True Coach workout payloads into the internal tracker database."""
 
-from fitness_tracker.apis import TrueCoachClient
+from __future__ import annotations
+
 from fitness_tracker.apis.true_coach.types import Workout, WorkoutItem, WorkoutResponse
-from fitness_tracker.database import Store
 from fitness_tracker.database.models import TrueCoachExercise
 from fitness_tracker.database.uow import UnitOfWork
+from fitness_tracker.sync.ports.store_like import StoreLike
 
 
 class TrueCoachToFitnessTrackerSyncronizer:
     """Persists True Coach workouts and items from an API snapshot."""
 
-    def __init__(self, store: Store, source: TrueCoachClient) -> None:
-        """Initiate the syncronizer with the clients.
+    def __init__(self, store: StoreLike) -> None:
+        """Initiate the syncronizer with port-typed dependencies.
 
         Args:
-            store (Store): Persistence layer.
-            source (TrueCoachClient): True Coach client for loading snapshots.
+            store (StoreLike): Persistence layer.
         """
         self._store = store
-        self._source = source
 
     def sync_workout(self, uow: UnitOfWork, workout: Workout) -> None:
         """Syncronize the workout with the given id.

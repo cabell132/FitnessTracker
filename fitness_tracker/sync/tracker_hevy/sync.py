@@ -1,17 +1,19 @@
 """Create Hevy workouts from internal tracker rows linked to True Coach."""
 
+from __future__ import annotations
+
 from typing import Literal, cast
 
-from fitness_tracker.apis import HevyAppClient, TrueCoachClient
 from fitness_tracker.apis.hevy_app.types import (
     PostWorkoutsRequest,
     PostWorkoutsRequestBody,
     PostWorkoutsRequestExercise,
     PostWorkoutsRequestSet,
 )
-from fitness_tracker.database import Store
 from fitness_tracker.database.models import Exercise, HevyAppExercise, Sets
-from fitness_tracker.llm.fitness_llm import FitnessLLM
+from fitness_tracker.sync.ports.hevy_workout_writer import HevyWorkoutWriter
+from fitness_tracker.sync.ports.set_parser import SetParser
+from fitness_tracker.sync.ports.store_like import StoreLike
 from fitness_tracker.sync.tracker_hevy import utils
 from tqdm import tqdm
 
@@ -27,25 +29,22 @@ def _coerce_set_type(raw: str) -> SetType:
 class TrackerToHevySyncronizer:
     """Posts a Hevy workout built from tracker state and True Coach metadata."""
 
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
-        store: Store,
-        source: TrueCoachClient,
-        target: HevyAppClient,
-        llm: FitnessLLM,
+        store: StoreLike,
+        workout_writer: HevyWorkoutWriter,
+        set_parser: SetParser,
     ) -> None:
-        """Initiate the syncronizer with the clients.
+        """Initiate the syncronizer with port-typed dependencies.
 
         Args:
-            store (Store): Persistence layer.
-            source (TrueCoachClient): Source for workout metadata (naming only).
-            target (HevyAppClient): Hevy client for workout creation.
-            llm (FitnessLLM): Fallback set parser.
+            store (StoreLike): Persistence layer.
+            workout_writer (HevyWorkoutWriter): Port for creating Hevy workouts.
+            set_parser (SetParser): Port for parsing set prescriptions.
         """
         self._store = store
-        self._target = target
-        self._source = source
-        self._llm = llm
+        self._workout_writer = workout_writer
+        self._set_parser = set_parser
 
     def sync_workout(self, workout_id: int) -> None:  # noqa: PLR0912, PLR0915
         """Syncronize the workout with the given id.
@@ -99,7 +98,7 @@ class TrackerToHevySyncronizer:
                         note = str(tc_item.name or "")
                         sets = [
                             PostWorkoutsRequestSet(**s.model_dump())
-                            for s in self._llm.parse_the_sets(
+                            for s in self._set_parser.parse_the_sets(
                                 info=str(
                                     {
                                         "exercise_type": cast(str, hevy_app_exercise.type),
@@ -138,7 +137,7 @@ class TrackerToHevySyncronizer:
                     )
                 )
 
-                self._target.workouts.create(workout_request)
+                self._workout_writer.create_workout(workout_request)
 
     def get_sets(self, sets: list[Sets]) -> list[PostWorkoutsRequestSet]:
         """Map tracker sets to Hevy POST set payloads.
