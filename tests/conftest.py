@@ -1,4 +1,4 @@
-"""Shared fixtures for Store / UnitOfWork boundary tests."""
+"""Shared pytest fixtures for all test packages."""
 
 import pytest
 from sqlalchemy import create_engine

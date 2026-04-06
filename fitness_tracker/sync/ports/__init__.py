@@ -29,6 +29,7 @@ Design decisions
    both except ``HevyToFitnessTrackerSyncronizer``.
 """
 
+from fitness_tracker.sync.ports.checkpoint_store import CheckpointStore
 from fitness_tracker.sync.ports.file_entry import FileEntry
 from fitness_tracker.sync.ports.health_export_store import HealthExportStore
 from fitness_tracker.sync.ports.hevy_routine_writer import HevyRoutineWriter
@@ -41,6 +42,7 @@ from fitness_tracker.sync.ports.true_coach_workout_item_writer import TrueCoachW
 from fitness_tracker.sync.ports.workout_item_linker import WorkoutItemLinker
 
 __all__ = [
+    "CheckpointStore",
     "FileEntry",
     "HealthExportStore",
     "HevyRoutineWriter",

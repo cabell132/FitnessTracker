@@ -7,12 +7,17 @@ and how cascades work (e.g. Hevy → Tracker triggers Hevy → True Coach).
 
 from __future__ import annotations
 
+import time
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from fitness_tracker.apis.hevy_app.types import DeletedWorkout, UpdatedWorkout
 from fitness_tracker.apis.true_coach.types import WorkoutResponse
+from logs import WideEvent
+
 from fitness_tracker.sync._deps import SyncDeps
+from fitness_tracker.sync._run import SyncRunResult
+from fitness_tracker.sync.adapters.file_checkpoint_store import HEVY_CHECKPOINT_KEY
 from fitness_tracker.sync.apple_health_tracker.sync import AppleHealthToFitnessTrackerSyncronizer
 from fitness_tracker.sync.hevy_tracker.sync import HevyToFitnessTrackerSyncronizer
 from fitness_tracker.sync.hevy_true_coach.sync import HevyToTrueCoachSyncronizer
@@ -75,6 +80,73 @@ class SyncService:
         self._tracker_to_tc = TrackerToTrueCoachSyncronizer(
             store=deps.store,
             target=deps.true_coach,
+        )
+
+    def _execute_full_sync(
+        self,
+        ts: datetime,
+    ) -> tuple[list[UpdatedWorkout | DeletedWorkout], int, list[Any]]:
+        """Run ordered platform steps and return counts inputs for :class:`SyncRunResult`.
+
+        Args:
+            ts (datetime): Wall time written to the Hevy checkpoint after Hevy sync.
+
+        Returns:
+            tuple[list[UpdatedWorkout | DeletedWorkout], int, list[Any]]: Hevy events, deleted Hevy
+                routine count, due True Coach workouts (ORM rows).
+        """
+        checkpoints = self._deps.checkpoints
+        self.sync_apple_health()
+
+        hevy_default = datetime(2025, 1, 1, tzinfo=UTC)
+        previous = checkpoints.read(HEVY_CHECKPOINT_KEY, hevy_default)
+        events = self.sync_hevy_workouts(since=previous)
+        checkpoints.write(HEVY_CHECKPOINT_KEY, ts)
+
+        self.sync_assessments()
+        deleted = self.clear_hevy_routines()
+
+        res = self.fetch_recent_true_coach_workouts()
+        if res is not None:
+            self.sync_true_coach_workouts(res)
+
+        workouts = self.get_due_workouts()
+        for workout in workouts:
+            self.create_hevy_routine(workout.id)
+
+        return events, deleted, workouts
+
+    def run(self, *, now: datetime | None = None) -> SyncRunResult:
+        """Execute the full sync pipeline with internal checkpoint lifecycle.
+
+        Runs Apple Health import, Hevy incremental sync with checkpoints, assessments, routine
+        cleanup, conditional True Coach import, and Hevy routine creation for due workouts.
+
+        Args:
+            now (datetime | None, optional): Wall clock override for tests.
+                Defaults to ``datetime.now(tz=UTC)``.
+
+        Returns:
+            SyncRunResult: Counts, timing, and outcome summary.
+        """
+        ts = now if now is not None else datetime.now(tz=UTC)
+        started = time.perf_counter()
+
+        with WideEvent(operation="sync_run") as evt:
+            events, deleted, workouts = self._execute_full_sync(ts)
+            evt.set(
+                hevy_event_count=len(events),
+                hevy_routines_deleted=deleted,
+                true_coach_workouts_synced=len(workouts),
+            )
+
+        duration_ms = round((time.perf_counter() - started) * 1000, 2)
+        return SyncRunResult(
+            hevy_event_count=len(events),
+            hevy_routines_deleted=deleted,
+            true_coach_workouts_synced=len(workouts),
+            duration_ms=duration_ms,
+            outcome="success",
         )
 
     def sync_apple_health(self) -> None:

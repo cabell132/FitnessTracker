@@ -5,6 +5,7 @@ full client surface.  Test doubles replace these adapters, not the clients.
 """
 
 from fitness_tracker.sync.adapters.dropbox_health_export import DropboxHealthExportAdapter
+from fitness_tracker.sync.adapters.file_checkpoint_store import FileCheckpointStore, InMemoryCheckpointStore
 from fitness_tracker.sync.adapters.hevy_routine_writer import HevyRoutineWriterAdapter
 from fitness_tracker.sync.adapters.hevy_workout_event_source import HevyWorkoutEventSourceAdapter
 from fitness_tracker.sync.adapters.hevy_workout_writer import HevyWorkoutWriterAdapter
@@ -17,9 +18,11 @@ from fitness_tracker.sync.adapters.true_coach_workout_item_writer import (
 
 __all__ = [
     "DropboxHealthExportAdapter",
+    "FileCheckpointStore",
     "HevyRoutineWriterAdapter",
     "HevyWorkoutEventSourceAdapter",
     "HevyWorkoutWriterAdapter",
+    "InMemoryCheckpointStore",
     "TrueCoachAssessmentWriterAdapter",
     "TrueCoachWorkoutItemWriterAdapter",
 ]

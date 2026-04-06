@@ -15,6 +15,8 @@ from sqlalchemy.engine import Engine
 from fitness_tracker.apis import HevyAppClient, TrueCoachClient
 from fitness_tracker.database import Store
 from fitness_tracker.llm.fitness_llm import FitnessLLM
+from fitness_tracker.sync.adapters.file_checkpoint_store import FileCheckpointStore
+from fitness_tracker.sync.ports.checkpoint_store import CheckpointStore
 
 
 @dataclass
@@ -29,6 +31,7 @@ class SyncDeps:
     true_coach: TrueCoachClient
     llm: FitnessLLM
     dbx: dropbox.Dropbox
+    checkpoints: CheckpointStore
 
     @classmethod
     def from_engine(cls, engine: Engine) -> SyncDeps:
@@ -46,4 +49,5 @@ class SyncDeps:
             true_coach=TrueCoachClient(),
             llm=FitnessLLM("gpt-4o-mini-2024-07-18"),
             dbx=dropbox.Dropbox(os.environ["DROPBOX_ACCESS_TOKEN"]),
+            checkpoints=FileCheckpointStore(),
         )
