@@ -4,16 +4,19 @@ from __future__ import annotations
 
 from typing import cast
 
+from fitness_tracker.apis import HevyAppClient, TrueCoachClient
 from fitness_tracker.apis.hevy_app.types import (
     PostRoutinesRequest,
     PostRoutinesRequestBody,
     PostRoutinesRequestExercise,
 )
-from fitness_tracker.database.models import HevyAppExercise
-from fitness_tracker.sync._exercise_resolution import resolve_hevy_exercise
-from fitness_tracker.sync.ports.hevy_routine_writer import HevyRoutineWriter
-from fitness_tracker.sync.ports.set_parser import SetParser
-from fitness_tracker.sync.ports.store_like import StoreLike
+from fitness_tracker.database import Store
+from fitness_tracker.database.models import (
+    HevyAppExercise,
+    TrueCoachExercise,
+)
+from fitness_tracker.database.models.tracker import Exercise as TrackerExercise
+from fitness_tracker.llm.fitness_llm import FitnessLLM
 from fitness_tracker.sync.true_coach_hevy import utils
 from tqdm import tqdm
 
@@ -21,24 +24,27 @@ from tqdm import tqdm
 class TrueCoachToHevySyncronizer:
     """Builds Hevy routine drafts from a True Coach workout and tracker links."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
-        store: StoreLike,
-        routine_writer: HevyRoutineWriter,
-        set_parser: SetParser,
+        store: Store,
+        source: TrueCoachClient,
+        target: HevyAppClient,
+        llm: FitnessLLM,
     ) -> None:
-        """Initiate the syncronizer with port-typed dependencies.
+        """Initiate the syncronizer with the clients.
 
         Args:
-            store (StoreLike): Persistence layer.
-            routine_writer (HevyRoutineWriter): Port for creating Hevy routines.
-            set_parser (SetParser): Port for parsing set prescriptions.
+            store (Store): Persistence layer.
+            source (TrueCoachClient): True Coach API client.
+            target (HevyAppClient): Hevy API client for routine creation.
+            llm (FitnessLLM): Parser for set prescriptions.
         """
         self._store = store
-        self._routine_writer = routine_writer
-        self._set_parser = set_parser
+        self._target = target
+        self._source = source
+        self._llm = llm
 
-    def sync_workout(self, workout_id: int) -> None:  # noqa: PLR0915
+    def sync_workout(self, workout_id: int) -> None:  # noqa: C901, PLR0912, PLR0915
         """Syncronize the workout with the given id.
 
         Args:
@@ -61,23 +67,30 @@ class TrueCoachToHevySyncronizer:
                 exercises: list[PostRoutinesRequestExercise] = []
                 used_exercises: list[HevyAppExercise] = []
                 for order_index, item in enumerate(tqdm(workout_items), start=1):
-                    tc_exercise = item.exercise
-                    tc_hevy_app = tc_exercise.hevy_app if hasattr(tc_exercise, "hevy_app") else None
-
-                    hevy_app_exercise, note_override = resolve_hevy_exercise(
-                        uow=uow,
-                        item_name=item.name,
-                        tc_exercise_hevy_app=tc_hevy_app if isinstance(tc_hevy_app, HevyAppExercise) else None,
-                        placeholders=placeholder_exercises,
-                        used=used_exercises,
-                    )
-
-                    if note_override:
-                        notes = f"{note_override}\n\n{item.info or ''}"
-                    else:
+                    exercise = item.exercise
+                    if isinstance(exercise, TrueCoachExercise):
+                        hevy_app_exercise = exercise.hevy_app
                         notes = str(item.info or "")
-                    if not notes:
-                        notes = str(item.name)
+                        if not isinstance(hevy_app_exercise, HevyAppExercise):
+                            hevy_app_exercise = placeholder_exercises.pop(0)
+                            uow.tracker_add_exercise(exercise)
+                            notes = f"{item.name}\n\n{item.info or ''}"
+                    elif exercise_instance := uow.tracker_get_exercise(name=item.name):
+                        if hevy_app_exercise := exercise_instance.hevy_app:
+                            notes = str(item.info or "")
+                        else:
+                            hevy_app_exercise = placeholder_exercises.pop(0)
+                            notes = f"{item.name}\n\n{item.info or ''}"
+
+                    else:
+                        exercise_instance = TrackerExercise(name=item.name)
+                        uow.insert_ignore(exercise_instance)
+                        hevy_app_exercise = placeholder_exercises.pop(0)
+                        notes = f"{item.name}\n\n{item.info or ''}"
+
+                    if hevy_app_exercise in used_exercises:
+                        hevy_app_exercise = placeholder_exercises.pop(0)
+                        notes = f"{item.name}\n\n{item.info or ''}"
 
                     o = order.get(order_index, {})
                     is_superset = bool(o.get("is_superset"))
@@ -86,9 +99,11 @@ class TrueCoachToHevySyncronizer:
                         super_set = superset_index.get(sg)
                     else:
                         super_set = None
+                    if not notes:
+                        notes = str(item.name)
 
                     if hevy_app_exercise.name != "#####PLACEHOLDER#####":
-                        sets = self._set_parser.parse_the_sets(
+                        sets = self._llm.parse_the_sets(
                             info=str({"exercise_type": hevy_app_exercise.type, "info": item.info})
                         ).sets
                         if not sets:
@@ -118,6 +133,6 @@ class TrueCoachToHevySyncronizer:
                     )
                 )
 
-                self._routine_writer.create_routine(routine_request)
+                self._target.routines.create(routine_request)
 
             uow.insert_tc_tracker_workout_items()

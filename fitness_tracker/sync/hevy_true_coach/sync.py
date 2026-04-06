@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from typing import cast
 
+from fitness_tracker.apis import TrueCoachClient
 from fitness_tracker.apis.hevy_app.types import Set as HevySet
 from fitness_tracker.apis.true_coach.types import PutWorkoutItemRequest
+from fitness_tracker.database import Store
 from fitness_tracker.database.models import (
     HevyAppExercise,
     HevyAppWorkout,
@@ -13,23 +15,21 @@ from fitness_tracker.database.models import (
     TrueCoachWorkoutItem,
 )
 from fitness_tracker.sync.hevy_true_coach.utils import mapping
-from fitness_tracker.sync.ports.store_like import StoreLike
-from fitness_tracker.sync.ports.true_coach_workout_item_writer import TrueCoachWorkoutItemWriter
 from logs import WideEvent
 
 
 class HevyToTrueCoachSyncronizer:
     """Updates True Coach items when a linked Hevy workout is completed."""
 
-    def __init__(self, store: StoreLike, tc_item_writer: TrueCoachWorkoutItemWriter) -> None:
-        """Initiate the syncronizer with port-typed dependencies.
+    def __init__(self, store: Store, target: TrueCoachClient) -> None:
+        """Initiate the syncronizer with the clients.
 
         Args:
-            store (StoreLike): Persistence layer.
-            tc_item_writer (TrueCoachWorkoutItemWriter): Port for True Coach mutations.
+            store (Store): Persistence layer.
+            target (TrueCoachClient): API client for True Coach mutations.
         """
         self._store = store
-        self._tc_item_writer = tc_item_writer
+        self._target = target
 
     def sync_workout(self, hevy_workout_id: str) -> None:  # noqa: PLR0915
         """Mark matching True Coach items complete from a Hevy workout.
@@ -101,7 +101,7 @@ class HevyToTrueCoachSyncronizer:
                             ),
                         )
 
-                        self._tc_item_writer.update_workout_item(
+                        self._target.workouts.update_workout_item(
                             update_workout_item.id,
                             update_workout_item,
                         )
@@ -111,7 +111,7 @@ class HevyToTrueCoachSyncronizer:
                     else:
                         items_skipped += 1
 
-            self._tc_item_writer.mark_workout_completed(cast(int, true_coach_workout.id))
+            self._target.workouts.mark_as_completed(cast(int, true_coach_workout.id))
             evt.set(
                 item_count=len(hevy_app_workout_items),
                 items_synced=items_synced,

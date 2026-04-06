@@ -145,9 +145,6 @@ class HevyMixin(CrudMixin):
     ) -> None:
         """Insert or merge a workout item and its sets.
 
-        Callers must ensure the exercise template already exists locally
-        (e.g. via ``HevyExerciseTemplateLookup``) before calling this method.
-
         Args:
             workout_id (str): Hevy workout id.
             exercise (HevyExercisePayload): Exercise block from the API.
@@ -155,6 +152,8 @@ class HevyMixin(CrudMixin):
         Raises:
             HevyAppPersistenceError: If the item row is missing after merge.
         """
+        self._hevy_ensure_exercise_template(exercise)
+
         entry = HevyAppWorkoutItem(
             workout_id=workout_id,
             index=exercise.index,
@@ -244,3 +243,26 @@ class HevyMixin(CrudMixin):
         """
         self.delete_all(HevyAppWorkout, **kwargs)
 
+    def _hevy_ensure_exercise_template(
+        self,
+        exercise: HevyExercisePayload,
+    ) -> None:
+        """Load an exercise template from the API when missing locally.
+
+        Args:
+            exercise (HevyExercisePayload): Workout block referring to a template.
+
+        Raises:
+            HevyAppPersistenceError: If the template cannot be fetched.
+        """
+        from fitness_tracker.apis.hevy_app import HevyAppClient  # noqa: PLC0415
+
+        if self.get(HevyAppExercise, id=exercise.exercise_template_id):
+            return
+        api = HevyAppClient()
+        template = api.exercises.get_template(exercise.exercise_template_id)
+        if template:
+            self.hevy_add_exercise(exercise=template)
+            return
+        msg = f"Exercise with id {exercise.exercise_template_id} does not exist"
+        raise HevyAppPersistenceError(msg)

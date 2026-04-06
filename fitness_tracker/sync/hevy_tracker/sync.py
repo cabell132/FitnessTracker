@@ -1,24 +1,21 @@
 """Sync Hevy workouts into the internal tracker and link True Coach IDs."""
 
-from __future__ import annotations
-
 from datetime import datetime
 from typing import cast
 
+from sqlalchemy.sql import text
+
+from fitness_tracker.apis import HevyAppClient
 from fitness_tracker.apis.hevy_app.types import (
     DeletedWorkout,
     Exercise as HevyAppExercise,
     UpdatedWorkout,
     Workout,
 )
+from fitness_tracker.database import Store
 from fitness_tracker.database.models import TrueCoachExercise
-from fitness_tracker.database.models.hevy_app import HevyAppExercise as HevyAppExerciseModel
 from fitness_tracker.database.uow import UnitOfWork
-from fitness_tracker.database.uow.errors import HevyAppPersistenceError
-from fitness_tracker.sync.ports.hevy_exercise_template_lookup import HevyExerciseTemplateLookup
-from fitness_tracker.sync.ports.hevy_workout_event_source import HevyWorkoutEventSource
-from fitness_tracker.sync.ports.store_like import StoreLike
-from fitness_tracker.sync.ports.workout_item_linker import WorkoutItemLinker
+from fitness_tracker.llm.fitness_llm import FitnessLLM
 from logs import WideEvent
 
 
@@ -38,51 +35,17 @@ def _parse_api_datetime(value: str) -> datetime:
 class HevyToFitnessTrackerSyncronizer:
     """Incremental Hevy → tracker sync with True Coach ID extraction and SQL linking."""
 
-    def __init__(  # noqa: PLR0913
-        self,
-        store: StoreLike,
-        event_source: HevyWorkoutEventSource,
-        item_linker: WorkoutItemLinker,
-        template_lookup: HevyExerciseTemplateLookup,
-    ) -> None:
-        """Initiate the syncronizer with port-typed dependencies.
+    def __init__(self, store: Store, source: HevyAppClient, llm: FitnessLLM) -> None:
+        """Initiate the syncronizer with the clients.
 
         Args:
-            store (StoreLike): Persistence layer.
-            event_source (HevyWorkoutEventSource): Port for polling Hevy events.
-            item_linker (WorkoutItemLinker): Port for fuzzy workout item linking.
-            template_lookup (HevyExerciseTemplateLookup): Port for Hevy template lookups.
+            store (Store): Persistence layer.
+            source (HevyAppClient): Hevy API client for events.
+            llm (FitnessLLM): LLM for fuzzy workout item linking.
         """
         self._store = store
-        self._event_source = event_source
-        self._item_linker = item_linker
-        self._template_lookup = template_lookup
-
-    def _ensure_exercise_templates(
-        self,
-        uow: UnitOfWork,
-        exercises: list[HevyAppExercise],
-    ) -> None:
-        """Load missing exercise templates via the template lookup port.
-
-        Args:
-            uow (UnitOfWork): Active unit of work.
-            exercises (list[HevyAppExercise]): Exercise blocks from a workout payload.
-
-        Raises:
-            HevyAppPersistenceError: If a template cannot be fetched.
-        """
-        for exercise in exercises:
-            if uow.get(HevyAppExerciseModel, id=exercise.exercise_template_id):
-                continue
-            template = self._template_lookup.get_exercise_template(
-                exercise.exercise_template_id,
-            )
-            if template:
-                uow.hevy_add_exercise(exercise=template)
-            else:
-                msg = f"Exercise with id {exercise.exercise_template_id} does not exist"
-                raise HevyAppPersistenceError(msg)
+        self._source = source
+        self._llm = llm
 
     def update_workout(self, uow: UnitOfWork, workout: UpdatedWorkout) -> None:
         """Update the tracker row and link SQL for a Hevy workout update event.
@@ -97,7 +60,6 @@ class HevyToFitnessTrackerSyncronizer:
             sync_target="tracker",
             workout_id=workout.workout.id,
         ) as event:
-            self._ensure_exercise_templates(uow, workout.workout.exercises)
             uow.hevy_add_workout(workout.workout)
             true_coach_id = self.link_workout(uow, workout.workout.id, workout.workout)
             event.set(true_coach_id=true_coach_id)
@@ -159,17 +121,46 @@ class HevyToFitnessTrackerSyncronizer:
         uow.link_hevy_tracker_workout_items(true_coach_id)
         uow.flush()
 
-        true_coach_items = uow.get_unlinked_true_coach_items(true_coach_id)
-        hevy_items = uow.get_unlinked_hevy_items(true_coach_id)
+        stmnt = text("""
+                    SELECT tcwi.id as true_coach_id, tcwi.name, tcwi.position as 'order'
+                    FROM WorkoutItem as wi
+                    JOIN Workout w ON wi.workout_id = w.id
+                    JOIN TrueCoachWorkoutItem tcwi ON wi.true_coach_id = tcwi.id
+                    WHERE w.true_coach_id = :true_coach_id
+                    AND wi.hevy_app_id IS NULL
+                    """)
+        res = uow.execute(stmnt, {"true_coach_id": true_coach_id}).fetchall()
+        true_coach_items = [row._asdict() for row in res]
 
-        if true_coach_items and hevy_items:
-            link_list = self._item_linker.link_workout_items(
-                hevy_items=hevy_items,
-                true_coach_items=true_coach_items,
-            )
-            for link in link_list.links:
-                if link.hevy_app_id is not None:
-                    uow.link_workout_item_pair(link.hevy_app_id, link.true_coach_id)
+        stmnt = text("""
+                    SELECT hwi.id as hevy_app_id, hwi.name, hwi."index" + 1 as "order"
+                    FROM HevyAppWorkoutItem as hwi
+                    JOIN HevyAppWorkout hw  ON hw.id = hwi.workout_id
+                    JOIN Workout w ON w.hevy_app_id = hw.id
+                    WHERE w.true_coach_id = :true_coach_id
+                    AND hwi.id NOT IN (
+                        SELECT hevy_app_id
+                        FROM WorkoutItem
+                        WHERE workout_id = w.id
+                        AND hevy_app_id IS NOT NULL
+                        )""")
+        res = uow.execute(stmnt, {"true_coach_id": true_coach_id}).fetchall()
+        hevy_items = [row._asdict() for row in res]
+
+        link_list = self._llm.link_workout_items(
+            hevy_items=hevy_items,
+            true_coach_items=true_coach_items,
+        )
+
+        for link in link_list.links:
+            if link.hevy_app_id is None:
+                continue
+            stmnt = text("""
+                        UPDATE WorkoutItem
+                        SET hevy_app_id = :hevy_app_id
+                        WHERE true_coach_id = :true_coach_id
+                        """)
+            uow.execute(stmnt, link.model_dump())
         uow.flush()
 
     def update_exercise(self, uow: UnitOfWork, true_coach_id: int) -> None:
@@ -179,7 +170,32 @@ class HevyToFitnessTrackerSyncronizer:
             uow (UnitOfWork): Active unit of work.
             true_coach_id (int): True Coach workout id scope.
         """
-        uow.update_exercise_from_hevy(true_coach_id)
+        stmnt = text("""
+                    UPDATE WorkoutItem
+                    SET exercise_id = (
+                        SELECT e.id
+                        FROM HevyAppWorkoutItem hwi
+                        JOIN Exercise e ON hwi.exercise_id = e.hevy_app_id
+                        JOIN WorkoutItem wi ON wi.hevy_app_id = hwi.id
+                        JOIN Workout w ON w.id = wi.workout_id
+                        WHERE WorkoutItem.id = wi.id
+                        AND e.id IS NOT NULL
+                        AND w.true_coach_id = :true_coach_id
+                        LIMIT 1
+                    )
+                    WHERE EXISTS (
+                        SELECT 1
+                        FROM HevyAppWorkoutItem hwi
+                        JOIN Exercise e ON hwi.exercise_id = e.hevy_app_id
+                        JOIN WorkoutItem wi ON wi.hevy_app_id = hwi.id
+                        JOIN Workout w ON w.id = wi.workout_id
+                        WHERE WorkoutItem.id = wi.id
+                        AND e.id IS NOT NULL
+                        AND e.id != wi.exercise_id
+                        AND w.true_coach_id = :true_coach_id
+                    );
+                        """)
+        uow.execute(stmnt, {"true_coach_id": true_coach_id})
 
     def update_sets(self, uow: UnitOfWork, true_coach_id: int) -> None:
         """Run SQL to refresh set rows for a workout.
@@ -290,11 +306,11 @@ class HevyToFitnessTrackerSyncronizer:
             sync_source="hevy",
             sync_target="tracker",
         ) as evt:
-            res = self._event_source.get_workout_events(since=since)
+            res = self._source.workouts.get_workout_events(since=since)
             if res:
                 if res.page_count > 1:
                     for page in range(2, res.page_count + 1):
-                        new_res = self._event_source.get_workout_events(
+                        new_res = self._source.workouts.get_workout_events(
                             since=since,
                             page=page,
                         )

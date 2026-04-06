@@ -31,7 +31,6 @@ Design decisions
 
 from fitness_tracker.sync.ports.file_entry import FileEntry
 from fitness_tracker.sync.ports.health_export_store import HealthExportStore
-from fitness_tracker.sync.ports.hevy_exercise_template_lookup import HevyExerciseTemplateLookup
 from fitness_tracker.sync.ports.hevy_routine_writer import HevyRoutineWriter
 from fitness_tracker.sync.ports.hevy_workout_event_source import HevyWorkoutEventSource
 from fitness_tracker.sync.ports.hevy_workout_writer import HevyWorkoutWriter
@@ -44,7 +43,6 @@ from fitness_tracker.sync.ports.workout_item_linker import WorkoutItemLinker
 __all__ = [
     "FileEntry",
     "HealthExportStore",
-    "HevyExerciseTemplateLookup",
     "HevyRoutineWriter",
     "HevyWorkoutEventSource",
     "HevyWorkoutWriter",

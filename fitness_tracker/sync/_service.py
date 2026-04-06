@@ -2,7 +2,7 @@
 
 Callers use :class:`SyncService` instead of accessing directional syncers
 directly.  The service hides which API endpoints are called, in what order,
-and how cascades work (e.g. Hevy -> Tracker triggers Hevy -> True Coach).
+and how cascades work (e.g. Hevy → Tracker triggers Hevy → True Coach).
 """
 
 from __future__ import annotations
@@ -10,10 +10,10 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from fitness_tracker.apis.hevy_app.types import DeletedWorkout, UpdatedWorkout
 from fitness_tracker.apis.true_coach.types import WorkoutResponse
 from fitness_tracker.sync._deps import SyncDeps
 from fitness_tracker.sync.apple_health_tracker.sync import AppleHealthToFitnessTrackerSyncronizer
-from fitness_tracker.sync.domain.events import SyncEvent, WorkoutDeleted, WorkoutSynced
 from fitness_tracker.sync.hevy_tracker.sync import HevyToFitnessTrackerSyncronizer
 from fitness_tracker.sync.hevy_true_coach.sync import HevyToTrueCoachSyncronizer
 from fitness_tracker.sync.tracker_hevy.sync import TrackerToHevySyncronizer
@@ -22,7 +22,6 @@ from fitness_tracker.sync.true_coach_hevy.sync import TrueCoachToHevySyncronizer
 from fitness_tracker.sync.true_coach_tracker.sync import TrueCoachToFitnessTrackerSyncronizer
 
 if TYPE_CHECKING:
-    from fitness_tracker.apis.hevy_app.types import DeletedWorkout, UpdatedWorkout
     from fitness_tracker.database.models.true_coach import TrueCoachWorkout
 
 
@@ -46,101 +45,60 @@ class SyncService:
         # --- internal syncers (callers never see these) ---
         self._tc_to_hevy = TrueCoachToHevySyncronizer(
             store=deps.store,
-            routine_writer=deps.hevy_routine_writer,
-            set_parser=deps.set_parser,
+            source=deps.true_coach,
+            target=deps.hevy,
+            llm=deps.llm,
         )
         self._hevy_to_tracker = HevyToFitnessTrackerSyncronizer(
             store=deps.store,
-            event_source=deps.hevy_event_source,
-            item_linker=deps.item_linker,
-            template_lookup=deps.hevy_template_lookup,
+            source=deps.hevy,
+            llm=deps.llm,
         )
         self._hevy_to_tc = HevyToTrueCoachSyncronizer(
             store=deps.store,
-            tc_item_writer=deps.tc_item_writer,
+            target=deps.true_coach,
         )
         self._tc_to_tracker = TrueCoachToFitnessTrackerSyncronizer(
             store=deps.store,
+            source=deps.true_coach,
         )
         self._tracker_to_hevy = TrackerToHevySyncronizer(
             store=deps.store,
-            workout_writer=deps.hevy_workout_writer,
-            set_parser=deps.set_parser,
+            source=deps.true_coach,
+            target=deps.hevy,
+            llm=deps.llm,
         )
         self._ah_to_tracker = AppleHealthToFitnessTrackerSyncronizer(
             store=deps.store,
-            health_export=deps.health_export,
+            source=deps.dbx,
         )
         self._tracker_to_tc = TrackerToTrueCoachSyncronizer(
             store=deps.store,
-            assessment_writer=deps.tc_assessment_writer,
+            target=deps.true_coach,
         )
 
     def sync_apple_health(self) -> None:
-        """Import Apple Health metrics and workouts from remote storage."""
+        """Import Apple Health metrics and workouts from Dropbox."""
         self._ah_to_tracker.sync_metrics()
         self._ah_to_tracker.sync_workouts()
 
-    def sync_hevy_workouts(self, since: datetime) -> list[SyncEvent]:
+    def sync_hevy_workouts(self, since: datetime) -> list[UpdatedWorkout | DeletedWorkout]:
         """Fetch Hevy events, update tracker, and cascade to True Coach.
 
         Args:
             since (datetime): Lower bound for the Hevy events query.
 
         Returns:
-            list[SyncEvent]: Domain events representing what happened (oldest first).
+            list[UpdatedWorkout | DeletedWorkout]: Events applied (oldest first).
         """
-        from fitness_tracker.apis.hevy_app.types import UpdatedWorkout  # noqa: PLC0415
-
-        raw_events = self._hevy_to_tracker.sync_workouts(since=since)
+        events = self._hevy_to_tracker.sync_workouts(since=since)
 
         with self._store.unit_of_work():
-            for event in raw_events:
+            for event in events:
                 if isinstance(event, UpdatedWorkout):
                     self._hevy_to_tc.sync_workout(event.workout.id)
 
-        return self._to_domain_events(raw_events)
-
-    @staticmethod
-    def _to_domain_events(
-        raw_events: list[UpdatedWorkout | DeletedWorkout],
-    ) -> list[SyncEvent]:
-        """Map API DTOs to sync-layer domain events.
-
-        Args:
-            raw_events (list[UpdatedWorkout | DeletedWorkout]): Raw API events.
-
-        Returns:
-            list[SyncEvent]: Domain-typed events.
-        """
-        from fitness_tracker.apis.hevy_app.types import (  # noqa: PLC0415
-            DeletedWorkout,
-            UpdatedWorkout,
-        )
-        from fitness_tracker.sync.hevy_tracker.sync import (  # noqa: PLC0415
-            _parse_api_datetime,
-        )
-
-        domain_events: list[SyncEvent] = []
-        for event in raw_events:
-            if isinstance(event, UpdatedWorkout):
-                wo = event.workout
-                domain_events.append(
-                    WorkoutSynced(
-                        hevy_workout_id=wo.id,
-                        title=wo.title,
-                        started_at=_parse_api_datetime(wo.start_time),
-                        ended_at=_parse_api_datetime(wo.end_time),
-                    )
-                )
-            elif isinstance(event, DeletedWorkout):
-                domain_events.append(
-                    WorkoutDeleted(
-                        hevy_workout_id=event.id,
-                        deleted_at=datetime.now(tz=UTC),
-                    )
-                )
-        return domain_events
+        return events
 
     def sync_true_coach_workouts(self, workouts: WorkoutResponse) -> None:
         """Persist True Coach workout snapshots into the tracker.
@@ -180,8 +138,6 @@ class SyncService:
         Returns:
             int: Number of routines deleted.
         """
-        if self._deps.hevy is None:
-            return 0
         routines = self._deps.hevy.routines.get(page=page, per_page=per_page)
         if routines is None:
             return 0
@@ -195,8 +151,6 @@ class SyncService:
         Returns:
             WorkoutResponse | None: API response or ``None`` when empty.
         """
-        if self._deps.true_coach is None:
-            return None
         return self._deps.true_coach.workouts.get(
             order="desc",
             page=1,
