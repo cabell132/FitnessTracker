@@ -8,7 +8,7 @@ import urllib3
 from fitness_tracker.apis.hevy_app.client import HevyAppClient
 from fitness_tracker.apis.hevy_app.types import UpdatedWorkout
 from fitness_tracker.apis.true_coach.client import TrueCoachClient
-from fitness_tracker.database import Database
+from fitness_tracker.database import Store
 from fitness_tracker.sync import Syncronizer
 from logs import WideEvent
 from sqlalchemy import create_engine
@@ -20,7 +20,7 @@ hevy_app = HevyAppClient()
 
 engine = create_engine("sqlite:///fitness_tracker.db")
 
-db = Database(engine)
+store = Store(engine)
 
 sync = Syncronizer(engine)
 
@@ -40,7 +40,7 @@ with WideEvent(operation="sync_run") as run:
     with Path("hevy_last_sync.txt").open("w") as f:
         f.write(now.isoformat())
 
-    with db.tracker.get_session() as session:
+    with store.unit_of_work() as uow:
         for event in events:
             if isinstance(event, UpdatedWorkout):
                 sync.hevy_to_true_coach.sync_workout(event.workout.id)
@@ -48,20 +48,20 @@ with WideEvent(operation="sync_run") as run:
     sync.tracker_to_true_coach.sync_assessments()
 
     routines = hevy_app.routines.get(page=1, per_page=10)
-    for routine in routines["routines"]:
-        hevy_app.routines.delete(routine["id"])
-    run.set(hevy_routines_deleted=len(routines["routines"]))
+    for routine in routines.routines:
+        hevy_app.routines.delete(routine.id)
+    run.set(hevy_routines_deleted=len(routines.routines))
 
     res = true_coach.workouts.get(
         order="desc", page=1, per_page=10, states=["pending", "completed", "missed"],
     )
     sync.true_coach_to_tracker.sync_workouts(res)
 
-    with db.tracker.get_session() as session:
+    with store.unit_of_work() as uow:
         due = datetime.now(tz=UTC).replace(
             hour=0, minute=0, second=0, microsecond=0,
         )
-        workouts = db.true_coach.get_workouts(due=due, session=session)
+        workouts = uow.tc_get_workouts(due=due)
         run.set(true_coach_workouts_synced=len(workouts))
         for workout in workouts:
             sync.true_coach_to_hevy.sync_workout(workout.id)

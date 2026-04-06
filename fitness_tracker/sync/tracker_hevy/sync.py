@@ -9,7 +9,7 @@ from fitness_tracker.apis.hevy_app.types import (
     PostWorkoutsRequestExercise,
     PostWorkoutsRequestSet,
 )
-from fitness_tracker.database import Database
+from fitness_tracker.database import Store
 from fitness_tracker.database.models import Exercise, HevyAppExercise, Sets
 from fitness_tracker.llm.fitness_llm import FitnessLLM
 from fitness_tracker.sync.tracker_hevy import utils
@@ -28,17 +28,21 @@ class TrackerToHevySyncronizer:
     """Posts a Hevy workout built from tracker state and True Coach metadata."""
 
     def __init__(  # noqa: PLR0913
-        self, database: Database, source: TrueCoachClient, target: HevyAppClient, llm: FitnessLLM
+        self,
+        store: Store,
+        source: TrueCoachClient,
+        target: HevyAppClient,
+        llm: FitnessLLM,
     ) -> None:
         """Initiate the syncronizer with the clients.
 
         Args:
-            database (Database): Persistence layer.
+            store (Store): Persistence layer.
             source (TrueCoachClient): Source for workout metadata (naming only).
             target (HevyAppClient): Hevy client for workout creation.
             llm (FitnessLLM): Fallback set parser.
         """
-        self._database = database
+        self._store = store
         self._target = target
         self._source = source
         self._llm = llm
@@ -49,9 +53,9 @@ class TrackerToHevySyncronizer:
         Args:
             workout_id (int): The true coach workout id to syncronize.
         """
-        with self._database.hevy_app.get_session() as session:
-            workout = self._database.tracker.get_workout(session, true_coach_id=workout_id)
-            placeholder_exercises = self._database.hevy_app.get_placeholders()
+        with self._store.unit_of_work() as uow:
+            workout = uow.tracker_get_workout(true_coach_id=workout_id)
+            placeholder_exercises = uow.hevy_get_placeholders()
 
             if workout is not None and workout.true_coach is not None:
                 tc_workout = workout.true_coach
@@ -77,7 +81,7 @@ class TrackerToHevySyncronizer:
                         else:
                             hevy_app_exercise = placeholder_exercises.pop(0)
                             if hevy_app_exercise.name != "#####PLACEHOLDER#####":
-                                self._database.tracker.add_exercise(session, exercise)
+                                uow.tracker_add_exercise(exercise)
                     else:
                         hevy_app_exercise = placeholder_exercises.pop(0)
 
@@ -135,8 +139,6 @@ class TrackerToHevySyncronizer:
                 )
 
                 self._target.workouts.create(workout_request)
-
-            session.commit()
 
     def get_sets(self, sets: list[Sets]) -> list[PostWorkoutsRequestSet]:
         """Map tracker sets to Hevy POST set payloads.

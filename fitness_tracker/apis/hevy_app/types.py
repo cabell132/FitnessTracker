@@ -86,7 +86,7 @@ class Exercise(BaseModel):
 
     index: int
     title: str
-    notes: str
+    notes: str | None = None
     exercise_template_id: str
     superset_id: int | None = None
     sets: list[Set]
@@ -121,6 +121,14 @@ class WorkoutResponse(BaseModel):
     page: int
     page_count: int
     workouts: list[Workout]
+
+
+class RoutineResponse(BaseModel):
+    """Paginated routines list."""
+
+    page: int
+    page_count: int
+    routines: list[Routine]
 
 
 class UpdatedWorkout(BaseModel):

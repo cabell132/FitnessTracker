@@ -6,8 +6,8 @@ from fitness_tracker.apis.hevy_app.session import HevyAppSession
 from fitness_tracker.apis.hevy_app.types import (
     PostRoutinesRequestBody,
     PostRoutinesResponse,
-    Workout,
-    WorkoutResponse,
+    Routine,
+    RoutineResponse,
 )
 from fitness_tracker.apis.hevy_app.web_session import HevyAppWebSession
 
@@ -26,7 +26,7 @@ class HevyAppRoutines:
         self._web_session = web_session
         self.endpoint = "/routines"
 
-    def get(self, page: int = 1, per_page: int = 10) -> WorkoutResponse | None:
+    def get(self, page: int = 1, per_page: int = 10) -> RoutineResponse | None:
         """List routines with pagination.
 
         Args:
@@ -34,27 +34,27 @@ class HevyAppRoutines:
             per_page (int): Page size.
 
         Returns:
-            WorkoutResponse | None: Parsed list payload, or ``None`` when empty.
+            RoutineResponse | None: Parsed list payload, or ``None`` when empty.
         """
         query = {"page": page, "pageSize": per_page}
         data = self._session.make_request(method="GET", endpoint=self.endpoint, params=query)
         if data:
-            return WorkoutResponse(**data)
+            return RoutineResponse(**data)
         return None
 
-    def get_routine(self, routine_id: str) -> Workout | None:
+    def get_routine(self, routine_id: str) -> Routine | None:
         """Fetch a single routine by id.
 
         Args:
             routine_id (str): Routine id.
 
         Returns:
-            Workout | None: Parsed routine, or ``None`` when empty.
+            Routine | None: Parsed routine, or ``None`` when empty.
         """
         endpoint = f"{self.endpoint}/{routine_id}"
         data = self._session.make_request(method="GET", endpoint=endpoint)
         if data:
-            return Workout(**data)
+            return Routine(**data)
         return None
 
     def create(self, routine: PostRoutinesRequestBody) -> PostRoutinesResponse | None:

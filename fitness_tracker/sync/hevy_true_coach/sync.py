@@ -7,7 +7,7 @@ from typing import cast
 from fitness_tracker.apis import TrueCoachClient
 from fitness_tracker.apis.hevy_app.types import Set as HevySet
 from fitness_tracker.apis.true_coach.types import PutWorkoutItemRequest
-from fitness_tracker.database import Database
+from fitness_tracker.database import Store
 from fitness_tracker.database.models import (
     HevyAppExercise,
     HevyAppWorkout,
@@ -21,14 +21,14 @@ from logs import WideEvent
 class HevyToTrueCoachSyncronizer:
     """Updates True Coach items when a linked Hevy workout is completed."""
 
-    def __init__(self, database: Database, target: TrueCoachClient) -> None:
+    def __init__(self, store: Store, target: TrueCoachClient) -> None:
         """Initiate the syncronizer with the clients.
 
         Args:
-            database (Database): Database access for Hevy and True Coach ORM rows.
+            store (Store): Persistence layer.
             target (TrueCoachClient): API client for True Coach mutations.
         """
-        self._database = database
+        self._store = store
         self._target = target
 
     def sync_workout(self, hevy_workout_id: str) -> None:  # noqa: PLR0915
@@ -48,12 +48,9 @@ class HevyToTrueCoachSyncronizer:
                 sync_target="true_coach",
                 hevy_workout_id=hevy_workout_id,
             ) as evt,
-            self._database.hevy_app.get_session() as session,
+            self._store.unit_of_work() as uow,
         ):
-            hevy_app_workout = self._database.hevy_app.get_workout(
-                session,
-                id=hevy_workout_id,
-            )
+            hevy_app_workout = uow.hevy_get_workout(id=hevy_workout_id)
             if not isinstance(hevy_app_workout, HevyAppWorkout):
                 msg = f"Workout with id {hevy_workout_id} not found"
                 raise TypeError(msg)
@@ -109,10 +106,7 @@ class HevyToTrueCoachSyncronizer:
                             update_workout_item,
                         )
 
-                        self._database.true_coach.update_workout_item(
-                            session,
-                            update_workout_item,
-                        )
+                        uow.tc_update_workout_item(update_workout_item)
                         items_synced += 1
                     else:
                         items_skipped += 1
@@ -123,4 +117,3 @@ class HevyToTrueCoachSyncronizer:
                 items_synced=items_synced,
                 items_skipped=items_skipped,
             )
-            session.commit()

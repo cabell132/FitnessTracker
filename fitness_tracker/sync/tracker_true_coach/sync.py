@@ -1,24 +1,22 @@
 """Sync tracker metric rows to True Coach assessments."""
 
-from pathlib import Path
-
 from fitness_tracker.apis import TrueCoachClient
 from fitness_tracker.apis.true_coach.types import AssessmentItem, PostAssessment, PostAssessmentItem
-from fitness_tracker.database import Database
+from fitness_tracker.database import Store
 from sqlalchemy import text
 
 
 class TrackerToTrueCoachSyncronizer:
     """Reads SQL-selected metric rows and posts them to True Coach."""
 
-    def __init__(self, database: Database, target: TrueCoachClient) -> None:
+    def __init__(self, store: Store, target: TrueCoachClient) -> None:
         """Initiate the syncronizer with the clients.
 
         Args:
-            database (Database): Persistence layer.
+            store (Store): Persistence layer.
             target (TrueCoachClient): Client for assessment POSTs.
         """
-        self._database = database
+        self._store = store
         self._target = target
 
     def sync_assessment(self, assessment_id: str, date: str, value: str) -> AssessmentItem:
@@ -45,31 +43,22 @@ class TrackerToTrueCoachSyncronizer:
 
     def sync_assessments(self) -> None:
         """Sync all the assessments."""
-        query = text(
-            Path(
-                "fitness_tracker/database/SQL/tracker/true_coach/assessments/select.sql"
-            ).read_text(encoding="utf-8")
-        )
+        with self._store.unit_of_work() as uow:
+            rows = uow.select_tracker_tc_assessments()
 
-        with self._database.tracker.get_session() as session:
-            result = session.execute(query)
-            rows = result.mappings().all()
-
-        with self._database.true_coach.get_session() as session:
             for row in rows:
                 assessment_item = self.sync_assessment(
                     str(row["assessment_id"]),
                     str(row["date"]),
                     str(row["value"]),
                 )
-                self._database.true_coach.add_assessment_item(session, assessment_item)
+                uow.tc_add_assessment_item(assessment_item)
                 update_query = text("""
                 UPDATE MetricItem
                 SET true_coach_id = :true_coach_id
                 WHERE id = :id
                 """)
-                session.execute(
+                uow.execute(
                     update_query,
                     {"true_coach_id": assessment_item.id, "id": row["id"]},
                 )
-                session.commit()

@@ -8,22 +8,21 @@ from pathlib import Path
 import pandas as pd
 from dropbox import Dropbox
 from dropbox.files import FileMetadata
-from sqlalchemy import text
 
-from fitness_tracker.database import Database
+from fitness_tracker.database import Store
 
 
 class AppleHealthToFitnessTrackerSyncronizer:
     """Imports Apple Health exports via Dropbox into tracker tables."""
 
-    def __init__(self, database: Database, source: Dropbox) -> None:
+    def __init__(self, store: Store, source: Dropbox) -> None:
         """Initiate the syncronizer with the clients.
 
         Args:
-            database (Database): Persistence layer for Apple Health aggregates.
+            store (Store): Persistence layer for Apple Health aggregates.
             source (Dropbox): Dropbox client for listing and downloading exports.
         """
-        self._database = database
+        self._store = store
         self._source = source
 
     def load_previous_sync_datetimes(self) -> dict[str, datetime]:
@@ -53,7 +52,9 @@ class AppleHealthToFitnessTrackerSyncronizer:
             json.dump({k: v.isoformat() for k, v in sync_datetimes.items()}, f)
 
     def get_new_files_since(
-        self, folder_path: str, target_datetime: datetime
+        self,
+        folder_path: str,
+        target_datetime: datetime,
     ) -> list[FileMetadata]:
         """List Dropbox CSV files modified after the given time.
 
@@ -74,7 +75,7 @@ class AppleHealthToFitnessTrackerSyncronizer:
                 for entry in response.entries
                 if isinstance(entry, FileMetadata)
                 and entry.name.endswith(".csv")
-                and entry.server_modified > target_datetime
+                and entry.server_modified.replace(tzinfo=UTC) > target_datetime
             )
 
             if not response.has_more:
@@ -114,19 +115,23 @@ class AppleHealthToFitnessTrackerSyncronizer:
         target_datetime = sync_datetimes["Metrics"]
 
         new_files = self.get_new_files_since(
-            "/apps/health auto export/health auto export/Health App Data", target_datetime
+            "/apps/health auto export/health auto export/Health App Data",
+            target_datetime,
         )
 
-        for file_metadata in new_files:
-            df = self.load_csv_from_dropbox(file_metadata)
-            if "Date" not in df.columns:
-                continue
-            df = df.set_index("Date")
-            self._database.apple_health.add_data_records(df)
+        with self._store.unit_of_work() as uow:
+            for file_metadata in new_files:
+                df = self.load_csv_from_dropbox(file_metadata)
+                if "Date" not in df.columns:
+                    continue
+                df = df.set_index("Date")
+                uow.ah_add_data_records(df)
 
         sync_datetimes["Metrics"] = datetime.now(UTC)
         self.save_sync_datetimes(sync_datetimes)
-        self.insert_metrics()
+
+        with self._store.unit_of_work() as uow:
+            uow.insert_apple_health_metrics()
 
     def sync_workouts(self) -> None:
         """Pull new workout CSVs from Dropbox and load them into the database."""
@@ -134,19 +139,14 @@ class AppleHealthToFitnessTrackerSyncronizer:
         target_datetime = sync_datetimes["Workout"]
 
         new_files = self.get_new_files_since(
-            "/apps/health auto export/health auto export/Apple Workouts", target_datetime
+            "/apps/health auto export/health auto export/Apple Workouts",
+            target_datetime,
         )
 
-        for file_metadata in new_files:
-            df = self.load_csv_from_dropbox(file_metadata)
-            self._database.apple_health.add_workouts(df)
+        with self._store.unit_of_work() as uow:
+            for file_metadata in new_files:
+                df = self.load_csv_from_dropbox(file_metadata)
+                uow.ah_add_workouts(df)
 
         sync_datetimes["Workout"] = datetime.now(UTC)
         self.save_sync_datetimes(sync_datetimes)
-
-    def insert_metrics(self) -> None:
-        """Run SQL to materialize Apple Health metrics from staged data."""
-        sql_path = Path("fitness_tracker/database/SQL/apple_health/metrics/insert.sql")
-        with self._database.apple_health.get_session() as session:
-            session.execute(text(sql_path.read_text(encoding="utf-8")))
-            session.commit()
