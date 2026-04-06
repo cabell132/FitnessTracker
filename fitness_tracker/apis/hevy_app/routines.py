@@ -6,6 +6,7 @@ from fitness_tracker.apis.hevy_app.session import HevyAppSession
 from fitness_tracker.apis.hevy_app.types import (
     PostRoutinesRequestBody,
     PostRoutinesResponse,
+    PutRoutinesRequestBody,
     Routine,
     RoutineResponse,
 )
@@ -71,6 +72,24 @@ class HevyAppRoutines:
         )
         if data:
             return PostRoutinesResponse(**data)
+        return None
+
+    def update(self, routine_id: str, routine: PutRoutinesRequestBody) -> Routine | None:
+        """Update an existing routine.
+
+        Args:
+            routine_id (str): Routine id to update.
+            routine (PutRoutinesRequestBody): Wrapper accepted by the API.
+
+        Returns:
+            Routine | None: Updated routine, or ``None`` when empty.
+        """
+        endpoint = f"{self.endpoint}/{routine_id}"
+        data = self._session.make_request(
+            method="PUT", endpoint=endpoint, json=routine.model_dump()
+        )
+        if data:
+            return Routine(**data)
         return None
 
     def delete(self, routine_id: str) -> dict[str, Any] | None:

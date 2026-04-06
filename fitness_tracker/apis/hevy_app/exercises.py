@@ -1,12 +1,17 @@
 """Hevy App exercise template endpoints."""
 
 from fitness_tracker.apis.hevy_app.session import HevyAppSession
-from fitness_tracker.apis.hevy_app.types import ExerciseResponse, ExerciseTemplate
+from fitness_tracker.apis.hevy_app.types import (
+    CreateCustomExerciseRequestBody,
+    CreateCustomExerciseResponse,
+    ExerciseResponse,
+    ExerciseTemplate,
+)
 from fitness_tracker.apis.hevy_app.web_session import HevyAppWebSession
 
 
 class HevyAppExercises:
-    """Lists exercise templates via the REST API."""
+    """Lists and creates exercise templates via the REST API."""
 
     def __init__(self, session: HevyAppSession, web_session: HevyAppWebSession) -> None:
         """Attach HTTP sessions (web session reserved for future use).
@@ -48,4 +53,22 @@ class HevyAppExercises:
         data = self._session.make_request(method="GET", endpoint=endpoint)
         if data:
             return ExerciseTemplate(**data)
+        return None
+
+    def create(
+        self, exercise: CreateCustomExerciseRequestBody
+    ) -> CreateCustomExerciseResponse | None:
+        """Create a new custom exercise template.
+
+        Args:
+            exercise (CreateCustomExerciseRequestBody): Wrapper accepted by the API.
+
+        Returns:
+            CreateCustomExerciseResponse | None: Created template id, or ``None`` when empty.
+        """
+        data = self._session.make_request(
+            method="POST", endpoint=self.endpoint, json=exercise.model_dump()
+        )
+        if data:
+            return CreateCustomExerciseResponse(**data)
         return None
