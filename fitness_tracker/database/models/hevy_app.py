@@ -1,4 +1,11 @@
-"""SQLAlchemy models mirroring Hevy App workout and exercise payloads."""
+"""SQLAlchemy models mirroring Hevy App workout and exercise payloads.
+
+Platform rows connect to True Coach through tracker hub tables
+(:mod:`fitness_tracker.database.models.tracker`): ``secondary=Workout``,
+``WorkoutItem``, or ``Exercise`` act as junction tables. See the tracker
+module docstring for the star schema, ``overlaps=``, and ``secondary=``
+shortcuts.
+"""
 
 from typing import TYPE_CHECKING, Optional
 
@@ -26,7 +33,6 @@ if TYPE_CHECKING:
     )
 
 
-# Association table for many-to-many relationship between Exercise and Tag
 class HevyAppWorkout(BaseModel):
     """Represents a workout in the Hevy app.
 
@@ -61,7 +67,11 @@ class HevyAppWorkout(BaseModel):
         "HevyAppWorkoutItem", back_populates="workout", cascade="all, delete-orphan"
     )
     true_coach: Mapped[Optional["TrueCoachWorkout"]] = relationship(
-        "TrueCoachWorkout", secondary="Workout", uselist=False, overlaps="hevy_app,tracker"
+        "TrueCoachWorkout",
+        secondary="Workout",
+        uselist=False,
+        # Overlaps: Workout.hevy_app/true_coach, TrueCoachWorkout.hevy_app/tracker.
+        overlaps="hevy_app,tracker",
     )
 
     def __repr__(self) -> str:
@@ -93,7 +103,11 @@ class HevyAppWorkoutItem(BaseModel):
         "HevyAppWorkout", back_populates="workout_items"
     )
     true_coach: Mapped[Optional["TrueCoachWorkoutItem"]] = relationship(
-        "TrueCoachWorkoutItem", secondary="WorkoutItem", uselist=False, overlaps="tracker"
+        "TrueCoachWorkoutItem",
+        secondary="WorkoutItem",
+        uselist=False,
+        # Overlaps: WorkoutItem.hevy_app/true_coach, TrueCoachWorkoutItem.tracker.
+        overlaps="tracker",
     )
     exercise: Mapped["HevyAppExercise"] = relationship("HevyAppExercise")
     sets: Mapped[list["HevyAppSets"]] = relationship(
@@ -165,7 +179,11 @@ class HevyAppExercise(BaseModel):
         "HevyAppWorkoutItem", back_populates="exercise", cascade="all, delete-orphan"
     )
     true_coach: Mapped[Optional["TrueCoachExercise"]] = relationship(
-        "TrueCoachExercise", secondary="Exercise", uselist=False, overlaps="hevy_app,tracker"
+        "TrueCoachExercise",
+        secondary="Exercise",
+        uselist=False,
+        # Overlaps: Exercise.hevy_app/true_coach, TrueCoachExercise.hevy_app/tracker.
+        overlaps="hevy_app,tracker",
     )
 
     def __repr__(self) -> str:

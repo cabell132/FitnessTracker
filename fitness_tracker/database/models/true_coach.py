@@ -1,4 +1,10 @@
-"""SQLAlchemy models mirroring True Coach API entities."""
+"""SQLAlchemy models mirroring True Coach API entities.
+
+Hevy navigation uses tracker hub tables (:mod:`fitness_tracker.database.models.tracker`):
+``TrueCoachWorkout.hevy_app`` and similar use ``secondary=`` with ``Workout`` /
+``WorkoutItem`` / ``Exercise``. See the tracker module docstring for the star
+schema and overlap rules.
+"""
 
 from typing import TYPE_CHECKING, Optional
 
@@ -11,8 +17,6 @@ from fitness_tracker.database.models.base import BaseModel
 if TYPE_CHECKING:
     from fitness_tracker.database.models.hevy_app import HevyAppExercise, HevyAppWorkout
     from fitness_tracker.database.models.tracker import Exercise, Workout, WorkoutItem
-
-# Association table for many-to-many relationship between Exercise and Tag
 
 
 class TrueCoachWorkout(BaseModel):
@@ -41,6 +45,7 @@ class TrueCoachWorkout(BaseModel):
         secondary="Workout",
         primaryjoin="TrueCoachWorkout.id == Workout.true_coach_id",
         secondaryjoin="HevyAppWorkout.id == Workout.hevy_app_id",
+        # Overlaps: Workout.true_coach, HevyAppWorkout.true_coach (same junction row).
         overlaps="tracker",
     )
 
@@ -120,6 +125,7 @@ class TrueCoachExercise(BaseModel):
         uselist=False,
         primaryjoin="TrueCoachExercise.id == Exercise.true_coach_id",
         secondaryjoin="HevyAppExercise.id == Exercise.hevy_app_id",
+        # Overlaps: Exercise.true_coach, HevyAppExercise.true_coach (same junction row).
         overlaps="tracker",
     )
 
@@ -166,9 +172,15 @@ class TrueCoachExerciseTags(BaseModel):
 
     # Relationships
     exercise: Mapped["TrueCoachExercise"] = relationship(
-        "TrueCoachExercise", overlaps="exercises,tags"
+        "TrueCoachExercise",
+        # Overlaps: TrueCoachTag.exercises, TrueCoachExercise.tags (association M2M).
+        overlaps="exercises,tags",
     )
-    tag: Mapped["TrueCoachTag"] = relationship("TrueCoachTag", overlaps="exercises,tags")
+    tag: Mapped["TrueCoachTag"] = relationship(
+        "TrueCoachTag",
+        # Overlaps: TrueCoachExercise.tags, TrueCoachTag.exercises (association M2M).
+        overlaps="exercises,tags",
+    )
 
     def __repr__(self) -> str:
         """Return a debug representation of this exercise-tag link.

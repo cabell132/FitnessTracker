@@ -1,4 +1,37 @@
-"""Unified fitness tracker ORM models (workouts, exercises, metrics, sets)."""
+"""Unified fitness tracker ORM models -- the canonical star schema.
+
+Schema
+------
+Each tracker model (Workout, WorkoutItem, Exercise) is the center of a
+star joining platform-specific rows:
+
+    TrueCoachWorkout <--FK-- Workout --FK--> HevyAppWorkout
+    TrueCoachWorkoutItem <--FK-- WorkoutItem --FK--> HevyAppWorkoutItem
+    TrueCoachExercise <--FK-- Exercise --FK--> HevyAppExercise
+
+Navigation shortcuts (always Optional, may be None):
+    tracker_row.hevy_app    -> platform row or None
+    tracker_row.true_coach  -> platform row or None
+    hevy_row.true_coach     -> TC row via secondary=Workout
+    tc_row.hevy_app         -> Hevy row via secondary=Exercise
+
+Overlaps
+--------
+SQLAlchemy emits warnings when multiple relationships touch the same
+FK columns. Every ``overlaps=`` directive silences a specific warning.
+When adding a new relationship:
+
+1. Add the FK column and relationship to the tracker model.
+2. Run tests -- SQLAlchemy names the overlapping relationships in the
+   warning text.
+3. Add ``overlaps="<names from warning>"`` to the new relationship.
+4. Update existing overlaps on related models to include the new name.
+
+Loading
+-------
+All cross-model relationships use lazy loading. Syncers that navigate
+them in loops should prefer UoW query helpers to avoid N+1.
+"""
 
 from typing import TYPE_CHECKING, Optional
 
@@ -33,7 +66,6 @@ if TYPE_CHECKING:
     )
 
 
-# Association table for many-to-many relationship between Exercise and Tag
 class Workout(BaseModel):
     """Represents a workout in the fitness tracker database.
 
@@ -66,10 +98,14 @@ class Workout(BaseModel):
         "WorkoutItem", back_populates="workout"
     )
     hevy_app: Mapped[Optional["HevyAppWorkout"]] = relationship(
-        "HevyAppWorkout", overlaps="hevy_app,true_coach"
+        "HevyAppWorkout",
+        # Overlaps: true_coach, HevyAppWorkout.true_coach (shared Workout hub FKs).
+        overlaps="hevy_app,true_coach",
     )
     true_coach: Mapped[Optional["TrueCoachWorkout"]] = relationship(
-        "TrueCoachWorkout", overlaps="hevy_app,tracker,true_coach"
+        "TrueCoachWorkout",
+        # Overlaps: hevy_app, TrueCoachWorkout.tracker/hevy_app (junction via Workout).
+        overlaps="hevy_app,tracker,true_coach",
     )
 
     # Constraints
@@ -112,10 +148,16 @@ class WorkoutItem(BaseModel):
     workout: Mapped["Workout"] = relationship("Workout", back_populates="workout_items")
     exercise: Mapped["Exercise"] = relationship("Exercise")
     hevy_app: Mapped[Optional["HevyAppWorkoutItem"]] = relationship(
-        "HevyAppWorkoutItem", uselist=False, overlaps="true_coach"
+        "HevyAppWorkoutItem",
+        # Overlaps: true_coach, HevyAppWorkoutItem.true_coach (shared WorkoutItem FKs).
+        uselist=False,
+        overlaps="true_coach",
     )
     true_coach: Mapped[Optional["TrueCoachWorkoutItem"]] = relationship(
-        "TrueCoachWorkoutItem", uselist=False, overlaps="tracker,true_coach"
+        "TrueCoachWorkoutItem",
+        # Overlaps: hevy_app, tracker, TC/Hevy secondary paths on this hub row.
+        uselist=False,
+        overlaps="tracker,true_coach",
     )
     sets: Mapped[list["Sets"]] = relationship(
         "Sets", back_populates="workout_item", cascade="all, delete-orphan"
@@ -150,10 +192,14 @@ class Exercise(BaseModel):
 
     # Relationships
     hevy_app: Mapped["HevyAppExercise"] = relationship(
-        "HevyAppExercise", overlaps="hevy_app,true_coach"
+        "HevyAppExercise",
+        # Overlaps: true_coach, HevyAppExercise.true_coach (shared Exercise hub FKs).
+        overlaps="hevy_app,true_coach",
     )
     true_coach: Mapped["TrueCoachExercise"] = relationship(
-        "TrueCoachExercise", overlaps="hevy_app,tracker,true_coach"
+        "TrueCoachExercise",
+        # Overlaps: hevy_app, TrueCoachExercise.tracker/hevy_app (junction via Exercise).
+        overlaps="hevy_app,tracker,true_coach",
     )
 
     # Constraints

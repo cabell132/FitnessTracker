@@ -3,7 +3,6 @@
 from fitness_tracker.apis import TrueCoachClient
 from fitness_tracker.apis.true_coach.types import AssessmentItem, PostAssessment, PostAssessmentItem
 from fitness_tracker.database import Store
-from sqlalchemy import text
 
 
 class TrackerToTrueCoachSyncronizer:
@@ -53,12 +52,7 @@ class TrackerToTrueCoachSyncronizer:
                     str(row["value"]),
                 )
                 uow.tc_add_assessment_item(assessment_item)
-                update_query = text("""
-                UPDATE MetricItem
-                SET true_coach_id = :true_coach_id
-                WHERE id = :id
-                """)
-                uow.execute(
-                    update_query,
-                    {"true_coach_id": assessment_item.id, "id": row["id"]},
+                uow.link_metric_item_to_true_coach(
+                    metric_item_id=row["id"],
+                    true_coach_id=assessment_item.id,
                 )

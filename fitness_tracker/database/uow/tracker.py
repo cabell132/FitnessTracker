@@ -6,6 +6,7 @@ from typing import Any
 
 from fitness_tracker.database.models.tracker import (
     Exercise as TrackerExercise,
+    MetricItem as TrackerMetricItem,
     Workout as TrackerWorkout,
     WorkoutItem as TrackerWorkoutItem,
 )
@@ -89,3 +90,31 @@ class TrackerMixin(CrudMixin):
             TrackerWorkoutItem | None: Matching row if any.
         """
         return self.get(TrackerWorkoutItem, workout_id=workout_id, position=index)
+
+    def link_workout_item_hevy_id(self, true_coach_id: int, hevy_app_id: int) -> None:
+        """Set ``hevy_app_id`` on the workout item identified by True Coach item id.
+
+        Args:
+            true_coach_id (int): ``TrueCoachWorkoutItem.id`` / ``WorkoutItem.true_coach_id``.
+            hevy_app_id (int): ``HevyAppWorkoutItem.id`` to store on the tracker row.
+
+        Returns:
+            None
+        """
+        item = self.get(TrackerWorkoutItem, true_coach_id=true_coach_id)
+        if item:
+            item.hevy_app_id = hevy_app_id
+
+    def link_metric_item_to_true_coach(self, metric_item_id: int, true_coach_id: int) -> None:
+        """Set ``true_coach_id`` on a metric item after a successful API sync.
+
+        Args:
+            metric_item_id (int): Primary key of the ``MetricItem`` row.
+            true_coach_id (int): ``TrueCoachAssessmentItem.id`` from the API response.
+
+        Returns:
+            None
+        """
+        item = self.get(TrackerMetricItem, id=metric_item_id)
+        if item:
+            item.true_coach_id = true_coach_id

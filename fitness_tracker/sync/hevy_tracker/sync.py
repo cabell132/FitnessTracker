@@ -3,8 +3,6 @@
 from datetime import datetime
 from typing import cast
 
-from sqlalchemy.sql import text
-
 from fitness_tracker.apis import HevyAppClient
 from fitness_tracker.apis.hevy_app.types import (
     DeletedWorkout,
@@ -121,31 +119,8 @@ class HevyToFitnessTrackerSyncronizer:
         uow.link_hevy_tracker_workout_items(true_coach_id)
         uow.flush()
 
-        stmnt = text("""
-                    SELECT tcwi.id as true_coach_id, tcwi.name, tcwi.position as 'order'
-                    FROM WorkoutItem as wi
-                    JOIN Workout w ON wi.workout_id = w.id
-                    JOIN TrueCoachWorkoutItem tcwi ON wi.true_coach_id = tcwi.id
-                    WHERE w.true_coach_id = :true_coach_id
-                    AND wi.hevy_app_id IS NULL
-                    """)
-        res = uow.execute(stmnt, {"true_coach_id": true_coach_id}).fetchall()
-        true_coach_items = [row._asdict() for row in res]
-
-        stmnt = text("""
-                    SELECT hwi.id as hevy_app_id, hwi.name, hwi."index" + 1 as "order"
-                    FROM HevyAppWorkoutItem as hwi
-                    JOIN HevyAppWorkout hw  ON hw.id = hwi.workout_id
-                    JOIN Workout w ON w.hevy_app_id = hw.id
-                    WHERE w.true_coach_id = :true_coach_id
-                    AND hwi.id NOT IN (
-                        SELECT hevy_app_id
-                        FROM WorkoutItem
-                        WHERE workout_id = w.id
-                        AND hevy_app_id IS NOT NULL
-                        )""")
-        res = uow.execute(stmnt, {"true_coach_id": true_coach_id}).fetchall()
-        hevy_items = [row._asdict() for row in res]
+        true_coach_items = uow.get_unlinked_tc_workout_items(true_coach_id)
+        hevy_items = uow.get_unlinked_hevy_workout_items(true_coach_id)
 
         link_list = self._llm.link_workout_items(
             hevy_items=hevy_items,
@@ -153,14 +128,9 @@ class HevyToFitnessTrackerSyncronizer:
         )
 
         for link in link_list.links:
-            if link.hevy_app_id is None:
+            if link.hevy_app_id is None or link.true_coach_id is None:
                 continue
-            stmnt = text("""
-                        UPDATE WorkoutItem
-                        SET hevy_app_id = :hevy_app_id
-                        WHERE true_coach_id = :true_coach_id
-                        """)
-            uow.execute(stmnt, link.model_dump())
+            uow.link_workout_item_hevy_id(link.true_coach_id, link.hevy_app_id)
         uow.flush()
 
     def update_exercise(self, uow: UnitOfWork, true_coach_id: int) -> None:
@@ -170,32 +140,7 @@ class HevyToFitnessTrackerSyncronizer:
             uow (UnitOfWork): Active unit of work.
             true_coach_id (int): True Coach workout id scope.
         """
-        stmnt = text("""
-                    UPDATE WorkoutItem
-                    SET exercise_id = (
-                        SELECT e.id
-                        FROM HevyAppWorkoutItem hwi
-                        JOIN Exercise e ON hwi.exercise_id = e.hevy_app_id
-                        JOIN WorkoutItem wi ON wi.hevy_app_id = hwi.id
-                        JOIN Workout w ON w.id = wi.workout_id
-                        WHERE WorkoutItem.id = wi.id
-                        AND e.id IS NOT NULL
-                        AND w.true_coach_id = :true_coach_id
-                        LIMIT 1
-                    )
-                    WHERE EXISTS (
-                        SELECT 1
-                        FROM HevyAppWorkoutItem hwi
-                        JOIN Exercise e ON hwi.exercise_id = e.hevy_app_id
-                        JOIN WorkoutItem wi ON wi.hevy_app_id = hwi.id
-                        JOIN Workout w ON w.id = wi.workout_id
-                        WHERE WorkoutItem.id = wi.id
-                        AND e.id IS NOT NULL
-                        AND e.id != wi.exercise_id
-                        AND w.true_coach_id = :true_coach_id
-                    );
-                        """)
-        uow.execute(stmnt, {"true_coach_id": true_coach_id})
+        uow.update_workout_exercise_ids_from_hevy(true_coach_id)
 
     def update_sets(self, uow: UnitOfWork, true_coach_id: int) -> None:
         """Run SQL to refresh set rows for a workout.
