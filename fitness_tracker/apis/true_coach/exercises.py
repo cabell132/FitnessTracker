@@ -1,17 +1,17 @@
 """True Coach exercises API resource."""
 
-from fitness_tracker.apis.true_coach.session import TrueCoachSession
+from fitness_tracker.apis.session import APISession
 from fitness_tracker.apis.true_coach.types import ExerciseResponse
 
 
 class TrueCoachExercises:
     """Lists exercise definitions available to the client."""
 
-    def __init__(self, session: TrueCoachSession) -> None:
+    def __init__(self, session: APISession) -> None:
         """Attach this resource to an authenticated session.
 
         Args:
-            session (TrueCoachSession): Session used for HTTP calls.
+            session (APISession): Session used for HTTP calls.
         """
         self._session = session
         self.endpoint = "exercises"

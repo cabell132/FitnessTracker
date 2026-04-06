@@ -1,139 +1,30 @@
 """Authenticated HTTP session for the Hevy App REST API."""
 
 import os
-from typing import Any
-from urllib.parse import urlencode
 
-import requests
 from dotenv import load_dotenv
 
-from logs import WideEvent
-
 from fitness_tracker.apis.hevy_app.exceptions import HevyAppAPIError
+from fitness_tracker.apis.session import APISession
 
 load_dotenv()
 
 
-def _endpoint_without_url_scheme(endpoint: str) -> str:
-    """Strip a leading ``https://`` if present so URL joining stays consistent.
+def hevy_session(api_key: str | None = None) -> APISession:
+    """Return a session for the Hevy REST API v1.
 
     Args:
-        endpoint (str): API path or full URL.
+        api_key (str | None, optional): API key. Defaults to the ``HEVY_API_KEY``
+            environment variable.
 
     Returns:
-        str: Path without the ``https://`` scheme prefix.
+        APISession: Configured client session.
     """
-    return endpoint.removeprefix("https://")
-
-
-class HevyAppSession:
-    """Signed requests using the Hevy ``HEVY_API_KEY`` environment variable."""
-
-    def __init__(self) -> None:
-        """Load API credentials from the environment."""
-        self.api_key = os.environ["HEVY_API_KEY"]
-
-    def make_url(self, endpoint: str, query: dict[str, str] | None = None) -> str:
-        """Build an absolute Hevy API URL with optional query parameters.
-
-        Args:
-            endpoint (str): Path starting with or without ``/``.
-            query (dict[str, str] | None, optional): Query parameters. Defaults to None.
-
-        Returns:
-            str: Fully qualified URL.
-        """
-        api_version = "v1"
-        api_base = f"https://api.hevyapp.com/{api_version}"
-        if not endpoint.startswith("/"):
-            endpoint = f"/{endpoint}"
-        if query:
-            return api_base + endpoint + "?" + urlencode(query)
-        return api_base + endpoint
-
-    def _get_request_headers(self) -> dict[str, str]:
-        """Return headers required for JSON API calls.
-
-        Returns:
-            dict[str, str]: Headers including the API key.
-        """
-        return {
-            "api-key": self.api_key,
-        }
-
-    def format_response(self, _endpoint: str, response: requests.Response) -> dict[str, Any]:
-        """Parse JSON and decorate successful dict bodies with ``request_url``.
-
-        Args:
-            _endpoint (str): Unused placeholder for a stable call signature.
-            response (requests.Response): Completed HTTP response.
-
-        Returns:
-            dict[str, Any]: Parsed JSON payload.
-
-        Raises:
-            HevyAppAPIError: When the HTTP status indicates failure.
-        """
-        if not response.ok:
-            req_url = response.url or ""
-            msg = f"Error {response.status_code} for {req_url!r}"
-            raise HevyAppAPIError(
-                msg,
-                status_code=response.status_code,
-                url=req_url,
-            )
-        data = response.json()
-        if response.status_code == 200:
-            if isinstance(data, dict):
-                data["request_url"] = response.url
-            else:
-                data = {"results": data, "request_url": response.url}
-        return data
-
-    def make_request(self, method: str, endpoint: str, **kwargs: Any) -> dict[str, Any] | None:
-        """Perform an HTTP request against the Hevy API.
-
-        Args:
-            method (str): HTTP verb.
-            endpoint (str): API path or host-relative URL.
-            **kwargs (Any): Extra arguments for ``requests.Session.request``.
-
-        Returns:
-            dict[str, Any] | None: Parsed JSON for typical responses; ``None`` for HTTP 204.
-
-        Raises:
-            HevyAppAPIError: On transport errors or HTTP error responses.
-        """
-        url = self.make_url(_endpoint_without_url_scheme(endpoint))
-        headers = self._get_request_headers()
-
-        with WideEvent(operation="api_request", api="hevy", method=method, url=url) as event:
-            with requests.Session() as session:
-                try:
-                    response = session.request(
-                        method.upper(),
-                        url,
-                        headers=headers,
-                        timeout=10,
-                        verify=False,
-                        **kwargs,
-                    )
-                except Exception as e:
-                    msg = f"Error connecting to HevyApp API: {e}"
-                    raise HevyAppAPIError(msg, url=url) from e
-
-            event.set(status_code=response.status_code)
-
-            if not response.ok:
-                req_url = response.url or ""
-                msg = f"Error {response.status_code} for {req_url!r}"
-                if response.text:
-                    msg = f"{msg} body={response.text!r}"
-                raise HevyAppAPIError(
-                    msg,
-                    status_code=response.status_code,
-                    url=req_url,
-                )
-            if response.status_code == 204:
-                return None
-            return self.format_response(endpoint, response)
+    key = os.environ["HEVY_API_KEY"] if api_key is None else api_key
+    return APISession(
+        base_url="https://api.hevyapp.com/v1",
+        headers={"api-key": key},
+        error_class=HevyAppAPIError,
+        api_name="hevy",
+        error_label="HevyApp API",
+    )

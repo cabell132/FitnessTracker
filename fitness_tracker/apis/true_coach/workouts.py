@@ -2,7 +2,7 @@
 
 from typing import Any, Literal
 
-from fitness_tracker.apis.true_coach.session import TrueCoachSession
+from fitness_tracker.apis.session import APISession
 from fitness_tracker.apis.true_coach.types import (
     PutWorkoutItemRequest,
     PutWorkoutItemResponse,
@@ -15,11 +15,11 @@ WorkoutState = Literal["pending", "completed", "missed"]
 class TrueCoachWorkouts:
     """Fetches and updates client workouts and workout items."""
 
-    def __init__(self, session: TrueCoachSession) -> None:
+    def __init__(self, session: APISession) -> None:
         """Attach this resource to an authenticated session.
 
         Args:
-            session (TrueCoachSession): Session used for HTTP calls.
+            session (APISession): Session used for HTTP calls.
         """
         self._session = session
         self.endpoint = "clients/2876143/workouts"

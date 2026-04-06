@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from fitness_tracker.apis.hevy_app.session import HevyAppSession
+from fitness_tracker.apis.session import APISession
 from fitness_tracker.apis.hevy_app.types import (
     PostRoutinesRequestBody,
     PostRoutinesResponse,
@@ -10,18 +10,17 @@ from fitness_tracker.apis.hevy_app.types import (
     Routine,
     RoutineResponse,
 )
-from fitness_tracker.apis.hevy_app.web_session import HevyAppWebSession
 
 
 class HevyAppRoutines:
     """CRUD helpers for saved routines (REST + web delete)."""
 
-    def __init__(self, session: HevyAppSession, web_session: HevyAppWebSession) -> None:
+    def __init__(self, session: APISession, web_session: APISession) -> None:
         """Attach REST and web sessions.
 
         Args:
-            session (HevyAppSession): Primary JSON API session.
-            web_session (HevyAppWebSession): Session used for DELETE on web routes.
+            session (APISession): Primary JSON API session.
+            web_session (APISession): Session used for DELETE on web routes.
         """
         self._session = session
         self._web_session = web_session

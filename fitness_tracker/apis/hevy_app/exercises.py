@@ -1,24 +1,23 @@
 """Hevy App exercise template endpoints."""
 
-from fitness_tracker.apis.hevy_app.session import HevyAppSession
+from fitness_tracker.apis.session import APISession
 from fitness_tracker.apis.hevy_app.types import (
     CreateCustomExerciseRequestBody,
     CreateCustomExerciseResponse,
     ExerciseResponse,
     ExerciseTemplate,
 )
-from fitness_tracker.apis.hevy_app.web_session import HevyAppWebSession
 
 
 class HevyAppExercises:
     """Lists and creates exercise templates via the REST API."""
 
-    def __init__(self, session: HevyAppSession, web_session: HevyAppWebSession) -> None:
+    def __init__(self, session: APISession, web_session: APISession) -> None:
         """Attach HTTP sessions (web session reserved for future use).
 
         Args:
-            session (HevyAppSession): Authenticated JSON API session.
-            web_session (HevyAppWebSession): Web-token session for future endpoints.
+            session (APISession): Authenticated JSON API session.
+            web_session (APISession): Web-token session for future endpoints.
         """
         self._session = session
         self.endpoint = "/exercise_templates"

@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 
-from fitness_tracker.apis.hevy_app.session import HevyAppSession
+from fitness_tracker.apis.session import APISession
 from fitness_tracker.apis.hevy_app.types import (
     PaginatedWorkoutEvents,
     PostWorkoutsRequestBody,
@@ -15,11 +15,11 @@ from fitness_tracker.apis.hevy_app.types import (
 class HevyAppWorkouts:
     """Workout listing, events, and mutation helpers."""
 
-    def __init__(self, session: HevyAppSession) -> None:
+    def __init__(self, session: APISession) -> None:
         """Attach the REST session used for all workout calls.
 
         Args:
-            session (HevyAppSession): Authenticated API session.
+            session (APISession): Authenticated API session.
         """
         self._session = session
         self.endpoint = "/workouts"

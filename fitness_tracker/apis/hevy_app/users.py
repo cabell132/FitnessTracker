@@ -1,17 +1,17 @@
 """Hevy App user info endpoint."""
 
-from fitness_tracker.apis.hevy_app.session import HevyAppSession
+from fitness_tracker.apis.session import APISession
 from fitness_tracker.apis.hevy_app.types import UserInfoResponse
 
 
 class HevyAppUsers:
     """Retrieve authenticated user profile information."""
 
-    def __init__(self, session: HevyAppSession) -> None:
+    def __init__(self, session: APISession) -> None:
         """Attach the REST session used for user calls.
 
         Args:
-            session (HevyAppSession): Authenticated API session.
+            session (APISession): Authenticated API session.
         """
         self._session = session
         self.endpoint = "/user/info"

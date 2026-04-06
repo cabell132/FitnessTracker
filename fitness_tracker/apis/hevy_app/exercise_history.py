@@ -4,18 +4,18 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fitness_tracker.apis.hevy_app.session import HevyAppSession
+from fitness_tracker.apis.session import APISession
 from fitness_tracker.apis.hevy_app.types import ExerciseHistoryResponse
 
 
 class HevyAppExerciseHistory:
     """Retrieve set-level history for a specific exercise template."""
 
-    def __init__(self, session: HevyAppSession) -> None:
+    def __init__(self, session: APISession) -> None:
         """Attach the REST session used for exercise history calls.
 
         Args:
-            session (HevyAppSession): Authenticated API session.
+            session (APISession): Authenticated API session.
         """
         self._session = session
         self.endpoint = "/exercise_history"

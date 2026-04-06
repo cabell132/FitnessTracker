@@ -3,7 +3,7 @@
 from fitness_tracker.apis.base import BaseClient
 from fitness_tracker.apis.true_coach.assessments import TrueCoachAssessments
 from fitness_tracker.apis.true_coach.exercises import TrueCoachExercises
-from fitness_tracker.apis.true_coach.session import TrueCoachSession
+from fitness_tracker.apis.true_coach.session import true_coach_session
 from fitness_tracker.apis.true_coach.workouts import TrueCoachWorkouts
 
 
@@ -12,7 +12,7 @@ class TrueCoachClient(BaseClient):
 
     def __init__(self) -> None:
         """Create a client with a default authenticated session."""
-        self._session = TrueCoachSession()
+        self._session = true_coach_session()
         self.workouts = TrueCoachWorkouts(session=self._session)
         self.exercises = TrueCoachExercises(session=self._session)
         self.assessments = TrueCoachAssessments(session=self._session)

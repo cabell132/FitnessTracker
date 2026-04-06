@@ -1,6 +1,6 @@
 """Hevy App routine folder endpoints."""
 
-from fitness_tracker.apis.hevy_app.session import HevyAppSession
+from fitness_tracker.apis.session import APISession
 from fitness_tracker.apis.hevy_app.types import (
     PostRoutineFolderRequestBody,
     RoutineFolder,
@@ -11,11 +11,11 @@ from fitness_tracker.apis.hevy_app.types import (
 class HevyAppRoutineFolders:
     """List, fetch, and create routine folders."""
 
-    def __init__(self, session: HevyAppSession) -> None:
+    def __init__(self, session: APISession) -> None:
         """Attach the REST session used for routine folder calls.
 
         Args:
-            session (HevyAppSession): Authenticated API session.
+            session (APISession): Authenticated API session.
         """
         self._session = session
         self.endpoint = "/routine_folders"
