@@ -85,3 +85,11 @@ logs/*.log
 .afk/
 .ralph/
 .pipeline/
+.sandbox-config.json
+
+# Claude Code artifacts
+.claude/check-output.log
+.claude/sandbox/
+
+# Coverage data
+.coverage
