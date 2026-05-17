@@ -47,6 +47,7 @@ class ReviewItem:
     source_id: int
     name: str
     info: str
+    comment: str
     selected_hevy_template: HevyAppExercise | None
     required_hevy_templates: list[RequiredHevyTemplate]
     proposed_sets: list[PostRoutinesRequestSet]
@@ -202,6 +203,8 @@ class TrueCoachToHevyReviewService:
         warnings = []
         if template is None:
             warnings.append("No linked Hevy exercise template found.")
+        if item.info and not proposed_sets and not planned_blocks:
+            warnings.append("No deterministic set parser result found.")
         if _has_missing_history_load(template, proposed_sets) or any(
             _has_missing_history_load(block.selected_hevy_template, block.proposed_sets)
             for block in planned_blocks
@@ -211,6 +214,7 @@ class TrueCoachToHevyReviewService:
             source_id=item.id,
             name=item.name,
             info=item.info or "",
+            comment=item.comment or "",
             selected_hevy_template=template,
             required_hevy_templates=required_templates,
             proposed_sets=proposed_sets,
@@ -335,6 +339,7 @@ class TrueCoachToHevyReviewService:
             "source_id": item.source_id,
             "name": item.name,
             "info": item.info,
+            "comment": item.comment,
             "selected_hevy_template": _template_to_dict(template),
             "required_hevy_templates": [
                 _required_template_to_dict(required_template)
@@ -359,6 +364,7 @@ class TrueCoachToHevyReviewService:
             f"Due: {workout.due.isoformat() if workout.due else 'unknown'}",
             "",
         ]
+        lines.extend(_format_agent_next_actions(items))
         for index, item in enumerate(items, start=1):
             lines.extend(self._report_item(index, item))
         return "\n".join(lines).rstrip() + "\n"
@@ -466,6 +472,78 @@ def _required_template_blockers(
         for required_template in required_templates
         if required_template.status in BLOCKING_REQUIRED_TEMPLATE_STATUSES
     ]
+
+
+def _format_agent_next_actions(items: list[ReviewItem]) -> list[str]:
+    lines = ["## Agent Next Actions", ""]
+    blocking_actions = [
+        _format_required_template_action(required_template)
+        for item in items
+        for required_template in _required_templates_for_blockers(
+            item.required_hevy_templates,
+            item.planned_blocks,
+        )
+        if required_template.status in BLOCKING_REQUIRED_TEMPLATE_STATUSES
+    ]
+    if blocking_actions:
+        lines.append("Blocking actions:")
+        lines.extend(f"- {action}" for action in blocking_actions)
+    else:
+        lines.append("No blocking next actions.")
+    warning_actions = _warning_actions(items)
+    if warning_actions:
+        lines.append("")
+        lines.append("Warning actions:")
+        lines.extend(f"- {action}" for action in warning_actions)
+    lines.append("")
+    return lines
+
+
+def _warning_actions(items: list[ReviewItem]) -> list[str]:
+    actions: list[str] = []
+    for item in items:
+        for warning in item.warnings:
+            action = _format_warning_action(item, warning)
+            if action is not None:
+                actions.append(action)
+    return actions
+
+
+def _format_required_template_action(required_template: RequiredHevyTemplate) -> str:
+    spec = required_template.spec
+    source_ids = ", ".join(
+        str(source_id) for source_id in required_template.source_workout_item_ids
+    )
+    if required_template.status == "ambiguous":
+        matching_ids = ", ".join(required_template.matching_template_ids)
+        return (
+            f'Resolve ambiguous Hevy template "{spec.title}" '
+            f"for True Coach Workout Item {source_ids}; "
+            f"matching template IDs: {matching_ids}."
+        )
+    other_muscles = ", ".join(spec.other_muscles) if spec.other_muscles else "none"
+    return (
+        f'Create required Hevy template "{spec.title}" '
+        f"(type: {spec.expected_type}; equipment: {spec.equipment_category}; "
+        f"muscle group: {spec.muscle_group}; other muscles: {other_muscles}) "
+        f"for True Coach Workout Item {source_ids}."
+    )
+
+
+def _format_warning_action(item: ReviewItem, warning: str) -> str | None:
+    if warning == "No linked Hevy exercise template found.":
+        return (
+            "Add a True Coach to Hevy template mapping for True Coach "
+            f'Workout Item {item.source_id} "{item.name}" with info "{item.info}" '
+            f'and comment "{item.comment or "none"}".'
+        )
+    if warning == "No deterministic set parser result found.":
+        return (
+            "Add a deterministic set parser fixture or override for True Coach "
+            f'Workout Item {item.source_id} "{item.name}" with info "{item.info}" '
+            f'and comment "{item.comment or "none"}".'
+        )
+    return None
 
 
 def _required_templates_for_blockers(

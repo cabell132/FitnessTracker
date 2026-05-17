@@ -50,6 +50,13 @@ def test_sync_review_reports_missing_single_leg_isometric_calf_raise_template(
         "- Single-Leg Isometric Calf Raise | type: duration | equipment: bodyweight | "
         "muscle group: calves | other muscles: none | status: missing | source IDs: 1003"
     ) in report
+    assert "## Agent Next Actions" in report
+    assert "Blocking actions:" in report
+    assert (
+        '- Create required Hevy template "Single-Leg Isometric Calf Raise" '
+        "(type: duration; equipment: bodyweight; muscle group: calves; other muscles: none) "
+        "for True Coach Workout Item 1003."
+    ) in report
     assert "BLOCKER: Missing required Hevy template: Single-Leg Isometric Calf Raise" in report
 
     item = plan["items"][0]
@@ -84,6 +91,11 @@ def test_sync_review_reports_ambiguous_isometric_knee_extension_template(
     assert (
         "- Isometric Seated Knee Extension | type: duration | equipment: machine | "
         "muscle group: quadriceps | other muscles: none | status: ambiguous | source IDs: 1004"
+    ) in report
+    assert (
+        '- Resolve ambiguous Hevy template "Isometric Seated Knee Extension" '
+        "for True Coach Workout Item 1004; matching template IDs: "
+        "hevy-knee-iso-a, hevy-knee-iso-b."
     ) in report
     assert "BLOCKER: Ambiguous required Hevy template: Isometric Seated Knee Extension" in report
 
@@ -266,6 +278,43 @@ def test_sync_review_treats_missing_history_as_warning_not_blocker(tmp_path: Pat
     assert bench_item["blockers"] == []
 
 
+def test_sync_review_agent_next_actions_include_parser_gap_source_text(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_parser_gap_workout(store)
+
+    report, plan = _write_sync_review(tmp_path, db_path, workout_id=46)
+
+    assert "## Agent Next Actions" in report
+    assert "No blocking next actions." in report
+    assert "Warning actions:" in report
+    assert (
+        "- Add a deterministic set parser fixture or override for True Coach Workout Item 1006 "
+        '"Tempo Press" with info "tempo eccentric clusters to technical failure" '
+        'and comment "coach wants controlled eccentrics".'
+    ) in report
+    assert plan["items"][0]["warnings"] == ["No deterministic set parser result found."]
+
+
+def test_sync_review_agent_next_actions_report_clean_plan(tmp_path: Path) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_clean_plan_workout(store)
+
+    report, plan = _write_sync_review(tmp_path, db_path, workout_id=47)
+
+    assert "## Agent Next Actions" in report
+    assert "No blocking next actions." in report
+    assert "Blocking actions:" not in report
+    assert "Warning actions:" not in report
+    assert plan["items"][0]["warnings"] == []
+    assert plan["items"][0]["blockers"] == []
+
+
 def _assert_mixed_knee_extension_blocks(item: dict) -> None:
     blocks = item["planned_blocks"]
     assert [block["source_id"] for block in blocks] == [1005, 1005]
@@ -336,6 +385,10 @@ def _assert_report(report: str) -> None:
     assert "Info: 3 x 8+8+8 ^Glternating RIR 1" in report
     assert "- type: dropset; reps: 8" in report
     assert "Selected Hevy template: unknown" in report
+    assert (
+        "- Add a True Coach to Hevy template mapping for True Coach Workout Item 1002 "
+        '"Mystery Carry" with info "3 x 8+8+8 ^Glternating RIR 1" and comment "none".'
+    ) in report
     assert "WARNING: No linked Hevy exercise template found." in report
 
 
@@ -655,6 +708,92 @@ def _seed_mixed_mode_knee_extension_workout(store: Store) -> None:
                 state="pending",
                 position=1,
                 exercise_id=504,
+                assessment_id=None,
+            )
+        )
+
+
+def _seed_parser_gap_workout(store: Store) -> None:
+    now = datetime(2026, 5, 17, tzinfo=UTC)
+    with store.unit_of_work() as uow:
+        uow.add(
+            TrueCoachWorkout(
+                id=46,
+                title="Parser Gap",
+                due=now,
+                short_description="",
+                state="pending",
+                rest_day=False,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        uow.add(TrueCoachExercise(id=505, name="Tempo Press", default=False))
+        uow.add(
+            HevyAppExercise(
+                id="hevy-tempo-press",
+                name="Tempo Press",
+                type="reps_only",
+                equipment="dumbbell",
+                default=True,
+            )
+        )
+        uow.add(
+            TrackerExercise(name="Tempo Press", hevy_app_id="hevy-tempo-press", true_coach_id=505)
+        )
+        uow.add(
+            TrueCoachWorkoutItem(
+                id=1006,
+                workout_id=46,
+                name="Tempo Press",
+                info="tempo eccentric clusters to technical failure",
+                comment="coach wants controlled eccentrics",
+                is_circuit=False,
+                state="pending",
+                position=1,
+                exercise_id=505,
+                assessment_id=None,
+            )
+        )
+
+
+def _seed_clean_plan_workout(store: Store) -> None:
+    now = datetime(2026, 5, 17, tzinfo=UTC)
+    with store.unit_of_work() as uow:
+        uow.add(
+            TrueCoachWorkout(
+                id=47,
+                title="Clean Plan",
+                due=now,
+                short_description="",
+                state="pending",
+                rest_day=False,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        uow.add(TrueCoachExercise(id=506, name="Push Up", default=False))
+        uow.add(
+            HevyAppExercise(
+                id="hevy-push-up",
+                name="Push Up",
+                type="reps_only",
+                equipment="bodyweight",
+                default=True,
+            )
+        )
+        uow.add(TrackerExercise(name="Push Up", hevy_app_id="hevy-push-up", true_coach_id=506))
+        uow.add(
+            TrueCoachWorkoutItem(
+                id=1007,
+                workout_id=47,
+                name="Push Up",
+                info="3 x 12",
+                comment="",
+                is_circuit=False,
+                state="pending",
+                position=1,
+                exercise_id=506,
                 assessment_id=None,
             )
         )
