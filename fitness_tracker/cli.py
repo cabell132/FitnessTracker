@@ -19,6 +19,11 @@ from fitness_tracker.maintenance.hevy_exercise_migration import (
     MigrationPlan,
     MigrationResult,
 )
+from fitness_tracker.maintenance.hevy_template_ensure import (
+    HevyTemplateEnsureService,
+    TemplateEnsureError,
+    TemplateEnsureResult,
+)
 from fitness_tracker.sync_review import SyncReviewError, TrueCoachToHevyReviewService
 
 
@@ -35,6 +40,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "hevy" and args.hevy_command == "migrate-exercise-template":
         return _migrate_exercise_template(args)
+    if args.command == "hevy-templates" and args.hevy_templates_command == "ensure-from-plan":
+        return _ensure_hevy_templates_from_plan(args)
     if args.command == "sync-review" and args.sync_review_command == "truecoach-to-hevy":
         return _sync_review_truecoach_to_hevy(args)
     parser.print_help()
@@ -45,6 +52,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="fitness-tracker")
     subparsers = parser.add_subparsers(dest="command")
     _add_hevy_parser(subparsers)
+    _add_hevy_templates_parser(subparsers)
     _add_sync_review_parser(subparsers)
     return parser
 
@@ -65,6 +73,19 @@ def _add_hevy_parser(subparsers: Any) -> None:
     migrate.add_argument("--limit", type=int)
     migrate.add_argument("--no-backup", action="store_true")
     migrate.add_argument("--report-path")
+
+
+def _add_hevy_templates_parser(subparsers: Any) -> None:
+    hevy_templates = subparsers.add_parser("hevy-templates")
+    hevy_template_subparsers = hevy_templates.add_subparsers(dest="hevy_templates_command")
+
+    ensure = hevy_template_subparsers.add_parser("ensure-from-plan")
+    ensure.add_argument("plan_path")
+    ensure.add_argument("--db", help="SQLite database path. Prefer --database-url.")
+    ensure.add_argument("--database-url", help="SQLAlchemy database URL. Defaults to DATABASE_URL.")
+    mode = ensure.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--dry-run", action="store_true")
+    mode.add_argument("--yes", action="store_true")
 
 
 def _add_sync_review_parser(
@@ -114,6 +135,22 @@ def _migrate_exercise_template(args: argparse.Namespace) -> int:
     except MigrationError as exc:
         _emit(f"Error: {exc}")
         return 2
+    return 0
+
+
+def _ensure_hevy_templates_from_plan(args: argparse.Namespace) -> int:
+    store = Store(_engine_from_args(args))
+    hevy = None if args.dry_run else HevyAppClient()
+    service = HevyTemplateEnsureService(
+        store=store,
+        hevy_exercises=hevy.exercises if hevy is not None else None,
+    )
+    try:
+        result = service.ensure_from_plan(Path(args.plan_path), dry_run=args.dry_run)
+    except TemplateEnsureError as exc:
+        _emit(f"Error: {exc}")
+        return 2
+    _print_template_ensure_result(result)
     return 0
 
 
@@ -183,6 +220,17 @@ def _print_result(result: MigrationResult) -> None:
     _emit(f"Hevy workouts updated: {len(result.api_updates)}")
     _emit(f"Local Hevy workout items updated: {result.db_workout_items_updated}")
     _emit(f"Tracker Exercise row updated: {result.tracker_exercise_id}")
+
+
+def _print_template_ensure_result(result: TemplateEnsureResult) -> None:
+    for template in result.existing:
+        _emit(f"Already exists: {template.title}")
+    for template in result.would_create:
+        _emit(f"Would create Hevy template: {template.title}")
+    for template in result.created:
+        _emit(f"Created Hevy template: {template.title}")
+    if not (result.existing or result.would_create or result.created):
+        _emit("No Hevy templates to create.")
 
 
 def _emit(message: str) -> None:

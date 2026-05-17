@@ -31,6 +31,7 @@ MUSCLE_GROUPS = Literal[
 
 EQUIPMENT_CATEGORIES = Literal[
     "barbell",
+    "bodyweight",
     "dumbbell",
     "kettlebell",
     "machine",
