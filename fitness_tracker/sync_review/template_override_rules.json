@@ -1,0 +1,28 @@
+{
+  "template_selection_overrides": [
+    {
+      "id": "bodyweight-calf-raise-single-leg-isometric",
+      "source_template_names": ["Bodyweight Calf Raise"],
+      "item_patterns": ["\\bsingle[- ]?leg\\b", "\\biso(?:metric)?\\b|\\bhold\\b"],
+      "required_template": {
+        "title": "Single-Leg Isometric Calf Raise",
+        "expected_type": "duration",
+        "equipment_category": "bodyweight",
+        "muscle_group": "calves",
+        "other_muscles": []
+      }
+    },
+    {
+      "id": "seated-knee-extension-isometric",
+      "source_template_names": ["Seated Knee Extension"],
+      "item_patterns": ["\\biso(?:metric)?\\b|\\bhold\\b"],
+      "required_template": {
+        "title": "Isometric Seated Knee Extension",
+        "expected_type": "duration",
+        "equipment_category": "machine",
+        "muscle_group": "quadriceps",
+        "other_muscles": []
+      }
+    }
+  ]
+}
