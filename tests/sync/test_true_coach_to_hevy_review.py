@@ -49,10 +49,12 @@ def test_sync_review_cli_writes_ordered_report_and_plan(tmp_path: Path) -> None:
 def _assert_report(report: str) -> None:
     assert report.index("## 1. Bench Press") < report.index("## 2. Mystery Carry")
     assert "Source ID: 1001" in report
-    assert "Info: 3 x 8 @ RPE 7" in report
+    assert "Info: 3 x 10-12 ES ^Glternating RIR 2" in report
     assert "Selected Hevy template: Barbell Bench Press (hevy-bench)" in report
-    assert "- type: normal; reps: 8" in report
+    assert "- type: normal; reps: 12" in report
     assert "Source ID: 1002" in report
+    assert "Info: 3 x 8+8+8 ^Glternating RIR 1" in report
+    assert "- type: dropset; reps: 8" in report
     assert "Selected Hevy template: unknown" in report
     assert "WARNING: No linked Hevy exercise template found." in report
 
@@ -62,9 +64,20 @@ def _assert_plan(plan: dict) -> None:
     assert [item["source_id"] for item in plan["items"]] == [1001, 1002]
     assert plan["items"][0]["selected_hevy_template"]["id"] == "hevy-bench"
     assert plan["items"][0]["proposed_sets"] == [
+        {"type": "normal", "reps": 12},
+        {"type": "normal", "reps": 12},
+        {"type": "normal", "reps": 12},
+    ]
+    assert plan["items"][1]["proposed_sets"] == [
         {"type": "normal", "reps": 8},
+        {"type": "dropset", "reps": 8},
+        {"type": "dropset", "reps": 8},
         {"type": "normal", "reps": 8},
+        {"type": "dropset", "reps": 8},
+        {"type": "dropset", "reps": 8},
         {"type": "normal", "reps": 8},
+        {"type": "dropset", "reps": 8},
+        {"type": "dropset", "reps": 8},
     ]
     assert plan["items"][1]["warnings"] == ["No linked Hevy exercise template found."]
 
@@ -100,7 +113,7 @@ def _seed_workout(store: Store) -> None:
                 id=1002,
                 workout_id=42,
                 name="Mystery Carry",
-                info="walk heavy",
+                info="3 x 8+8+8 ^Glternating RIR 1",
                 comment="",
                 is_circuit=False,
                 state="pending",
@@ -114,7 +127,7 @@ def _seed_workout(store: Store) -> None:
                 id=1001,
                 workout_id=42,
                 name="Bench Press",
-                info="3 x 8 @ RPE 7",
+                info="3 x 10-12 ES ^Glternating RIR 2",
                 comment="",
                 is_circuit=False,
                 state="pending",

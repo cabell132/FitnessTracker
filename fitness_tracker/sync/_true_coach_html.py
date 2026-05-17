@@ -4,12 +4,17 @@ Every syncer that needs workout order, superset indexing, or notes extraction
 imports from here instead of maintaining its own copy.
 """
 
+import re
 from typing import cast
 
 import pandas as pd
 from bs4 import BeautifulSoup
 
 from fitness_tracker.apis.hevy_app.types import PostRoutinesRequestSet
+
+SET_PATTERN = re.compile(
+    r"(?P<count>\d+)\s*[xX]\s*(?P<reps>\d+(?:\s*-\s*\d+)?(?:\s*[+>]\s*\d+(?:\s*-\s*\d+)?)*)"
+)
 
 
 def parse_workout_order(description: str) -> dict[int, dict[str, str | int | None]]:
@@ -105,14 +110,47 @@ def fallback_sets(description: str) -> list[PostRoutinesRequestSet]:
     """Fallback routine sets when LLM parsing returns nothing.
 
     Args:
-        description (str): Exercise info HTML or text (unused placeholder).
+        description (str): Exercise info HTML or text.
 
     Returns:
-        list[PostRoutinesRequestSet]: A single default set row.
+        list[PostRoutinesRequestSet]: Parsed deterministic rows, or one default set row.
     """
+    if sets := parse_prescribed_sets(description):
+        return sets
+
     return [
         PostRoutinesRequestSet(
             type="normal",
             duration_seconds=60,
         )
     ]
+
+
+def parse_prescribed_sets(description: str) -> list[PostRoutinesRequestSet]:
+    """Parse safe deterministic Coach set prescriptions from free text.
+
+    Args:
+        description (str): Exercise info HTML or text.
+
+    Returns:
+        list[PostRoutinesRequestSet]: Parsed Hevy set rows, or an empty list.
+    """
+    match = SET_PATTERN.search(description)
+    if not match:
+        return []
+
+    count = int(match.group("count"))
+    rep_parts = re.split(r"\s*[+>]\s*", match.group("reps"))
+    reps = [_parse_rep_target(part) for part in rep_parts]
+    sets: list[PostRoutinesRequestSet] = []
+    for _ in range(count):
+        sets.extend(
+            PostRoutinesRequestSet(type="normal" if index == 0 else "dropset", reps=rep)
+            for index, rep in enumerate(reps)
+        )
+    return sets
+
+
+def _parse_rep_target(value: str) -> int:
+    bounds = [int(part.strip()) for part in value.split("-")]
+    return max(bounds)

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -13,8 +12,8 @@ from fitness_tracker.database import Store
 from fitness_tracker.database.models import HevyAppExercise, TrueCoachExercise
 from fitness_tracker.database.models.true_coach import TrueCoachWorkout, TrueCoachWorkoutItem
 from fitness_tracker.database.uow import UnitOfWork
+from fitness_tracker.sync._true_coach_html import parse_prescribed_sets
 
-SET_PATTERN = re.compile(r"(?P<count>\d+)\s*[xX]\s*(?P<reps>\d+)")
 SET_DISPLAY_KEYS = ("type", "weight_kg", "reps", "distance_meters", "duration_seconds")
 
 
@@ -180,12 +179,7 @@ class TrueCoachToHevyReviewService:
 
 
 def _parse_proposed_sets(info: str) -> list[PostRoutinesRequestSet]:
-    match = SET_PATTERN.search(info)
-    if not match:
-        return []
-    count = int(match.group("count"))
-    reps = int(match.group("reps"))
-    return [PostRoutinesRequestSet(type="normal", reps=reps) for _ in range(count)]
+    return parse_prescribed_sets(info)
 
 
 def _template_to_dict(template: HevyAppExercise | None) -> dict[str, str | None] | None:

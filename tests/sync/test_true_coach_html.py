@@ -116,3 +116,42 @@ def test_fallback_sets_returns_single_default() -> None:
     assert len(sets) == 1
     assert sets[0].type == "normal"
     assert sets[0].duration_seconds == 60
+
+
+def test_fallback_sets_uses_rep_range_upper_bound() -> None:
+    sets = fallback_sets("3 x 10-12")
+
+    assert [set_.model_dump(exclude_none=True) for set_ in sets] == [
+        {"type": "normal", "reps": 12},
+        {"type": "normal", "reps": 12},
+        {"type": "normal", "reps": 12},
+    ]
+
+
+def test_fallback_sets_parses_plus_notation_as_dropsets() -> None:
+    sets = fallback_sets("3 x 10+10")
+
+    assert [set_.model_dump(exclude_none=True) for set_ in sets] == [
+        {"type": "normal", "reps": 10},
+        {"type": "dropset", "reps": 10},
+        {"type": "normal", "reps": 10},
+        {"type": "dropset", "reps": 10},
+        {"type": "normal", "reps": 10},
+        {"type": "dropset", "reps": 10},
+    ]
+
+
+def test_fallback_sets_parses_greater_than_notation_as_dropsets() -> None:
+    sets = fallback_sets("3 x 8>8>8")
+
+    assert [set_.model_dump(exclude_none=True) for set_ in sets] == [
+        {"type": "normal", "reps": 8},
+        {"type": "dropset", "reps": 8},
+        {"type": "dropset", "reps": 8},
+        {"type": "normal", "reps": 8},
+        {"type": "dropset", "reps": 8},
+        {"type": "dropset", "reps": 8},
+        {"type": "normal", "reps": 8},
+        {"type": "dropset", "reps": 8},
+        {"type": "dropset", "reps": 8},
+    ]
