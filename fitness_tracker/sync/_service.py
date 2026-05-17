@@ -98,6 +98,10 @@ class SyncService:
         checkpoints = self._deps.checkpoints
         self.sync_apple_health()
 
+        res = self.fetch_recent_true_coach_workouts()
+        if res is not None:
+            self.sync_true_coach_workouts(res)
+
         hevy_default = datetime(2025, 1, 1, tzinfo=UTC)
         previous = checkpoints.read(HEVY_CHECKPOINT_KEY, hevy_default)
         events = self.sync_hevy_workouts(since=previous)

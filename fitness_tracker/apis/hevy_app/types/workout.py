@@ -12,7 +12,7 @@ class Workout(BaseModel):
 
     id: str
     title: str
-    description: str
+    description: str | None
     start_time: str
     end_time: str
     updated_at: str

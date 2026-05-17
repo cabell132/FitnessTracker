@@ -52,7 +52,7 @@ class Store:
         Raises:
             Exception: Re-raised after rollback if the worker block fails.
         """
-        session = Session(self._engine)
+        session = Session(self._engine, expire_on_commit=False)
         uow = UnitOfWork(session)
         try:
             yield uow

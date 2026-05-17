@@ -80,6 +80,11 @@ def test_should_execute_sync_steps_in_declared_order(
     monkeypatch.setattr(svc, "sync_apple_health", lambda: order.append("apple") or None)
     monkeypatch.setattr(
         svc,
+        "fetch_recent_true_coach_workouts",
+        lambda: order.append("tc-fetch") or None,
+    )
+    monkeypatch.setattr(
+        svc,
         "sync_hevy_workouts",
         lambda since: order.append("hevy") or [],
     )
@@ -89,7 +94,6 @@ def test_should_execute_sync_steps_in_declared_order(
         "clear_hevy_routines",
         lambda **_: order.append("clear") or 0,
     )
-    monkeypatch.setattr(svc, "fetch_recent_true_coach_workouts", lambda: None)
     monkeypatch.setattr(svc, "get_due_workouts", lambda: order.append("due") or [])
     monkeypatch.setattr(
         svc,
@@ -101,9 +105,11 @@ def test_should_execute_sync_steps_in_declared_order(
 
     assert order == [
         "apple",
+        "tc-fetch",
         "hevy",
         "assessments",
         "clear",
+        "tc-fetch",
         "due",
     ]
 
@@ -157,7 +163,7 @@ def test_should_sync_true_coach_workouts_only_when_fetch_returns_payload(
     monkeypatch.setattr(svc, "get_due_workouts", list)
 
     svc.run()
-    assert tc_called == [True]
+    assert tc_called == [True, True]
 
 
 def test_should_populate_sync_run_result_counters_from_run(

@@ -99,10 +99,34 @@ class HevyAppWorkouts:
             Workout | None: Parsed workout, or ``None`` when empty.
         """
         endpoint = f"{self.endpoint}/{workout_id}"
+        payload = {
+            "title": workout.title,
+            "description": workout.description or None,
+            "start_time": workout.start_time,
+            "end_time": workout.end_time,
+            "is_private": False,
+            "exercises": [
+                {
+                    "exercise_template_id": exercise.exercise_template_id,
+                    "superset_id": exercise.superset_id,
+                    "notes": exercise.notes or None,
+                    "sets": [
+                        workout_set.model_dump(exclude={"index"})
+                        for workout_set in exercise.sets
+                    ],
+                }
+                for exercise in workout.exercises
+            ],
+        }
         data = self._session.make_request(
-            method="PUT", endpoint=endpoint, json=workout.model_dump()
+            method="PUT", endpoint=endpoint, json={"workout": payload}
         )
         if data:
+            if "workout" in data:
+                workout_data = data["workout"]
+                if isinstance(workout_data, list):
+                    workout_data = workout_data[0]
+                return Workout(**workout_data)
             return Workout(**data)
         return None
 

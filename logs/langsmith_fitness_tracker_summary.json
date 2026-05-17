@@ -1,0 +1,14 @@
+{
+  "project": "fitness-tracker",
+  "project_url": "https://smith.langchain.com/o/2646cef4-be40-4e3d-9e63-16c83017ac24/projects/p/a40db34c-3efd-45e3-9cf0-b8d3c3137cef",
+  "count": 200,
+  "oldest_start": "2026-03-26 06:12:52.164101",
+  "newest_start": "2026-04-08 05:09:37.264225",
+  "run_type_counts": {
+    "llm": 200
+  },
+  "prompt_type_counts": {
+    "link_workout_items": 12,
+    "parse_the_sets": 188
+  }
+}

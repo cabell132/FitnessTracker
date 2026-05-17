@@ -113,6 +113,10 @@ class CrudMixin:
         """Flush pending changes to the database without committing."""
         self._session.flush()
 
+    def expire_all(self) -> None:
+        """Expire all loaded ORM state so later reads reflect fresh database rows."""
+        self._session.expire_all()
+
     def commit(self) -> None:
         """Commit the current transaction."""
         self._session.commit()

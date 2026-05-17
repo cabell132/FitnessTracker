@@ -30,6 +30,9 @@ dependencies = [
     "nbformat>=5.10.4",
 ]
 
+[project.scripts]
+fitness-tracker = "fitness_tracker.cli:main"
+
 [project.optional-dependencies]
 test = [
     "commitizen>=3.2.1",
