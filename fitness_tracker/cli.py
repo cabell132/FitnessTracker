@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import urllib3
 from sqlalchemy.engine import Engine
@@ -18,6 +19,7 @@ from fitness_tracker.maintenance.hevy_exercise_migration import (
     MigrationPlan,
     MigrationResult,
 )
+from fitness_tracker.sync_review import SyncReviewError, TrueCoachToHevyReviewService
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -33,6 +35,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "hevy" and args.hevy_command == "migrate-exercise-template":
         return _migrate_exercise_template(args)
+    if args.command == "sync-review" and args.sync_review_command == "truecoach-to-hevy":
+        return _sync_review_truecoach_to_hevy(args)
     parser.print_help()
     return 1
 
@@ -40,7 +44,12 @@ def main(argv: list[str] | None = None) -> int:
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="fitness-tracker")
     subparsers = parser.add_subparsers(dest="command")
+    _add_hevy_parser(subparsers)
+    _add_sync_review_parser(subparsers)
+    return parser
 
+
+def _add_hevy_parser(subparsers: Any) -> None:
     hevy = subparsers.add_parser("hevy")
     hevy_subparsers = hevy.add_subparsers(dest="hevy_command")
 
@@ -56,7 +65,25 @@ def _build_parser() -> argparse.ArgumentParser:
     migrate.add_argument("--limit", type=int)
     migrate.add_argument("--no-backup", action="store_true")
     migrate.add_argument("--report-path")
-    return parser
+
+
+def _add_sync_review_parser(
+    subparsers: Any,
+) -> None:
+    sync_review = subparsers.add_parser("sync-review")
+    sync_review_subparsers = sync_review.add_subparsers(dest="sync_review_command")
+
+    truecoach_to_hevy = sync_review_subparsers.add_parser("truecoach-to-hevy")
+    truecoach_to_hevy.add_argument("--workout-id", type=int, required=True)
+    truecoach_to_hevy.add_argument("--db", help="SQLite database path. Prefer --database-url.")
+    truecoach_to_hevy.add_argument(
+        "--database-url", help="SQLAlchemy database URL. Defaults to DATABASE_URL."
+    )
+    truecoach_to_hevy.add_argument(
+        "--output-dir",
+        default="reports",
+        help="Report root. Defaults to reports.",
+    )
 
 
 def _migrate_exercise_template(args: argparse.Namespace) -> int:
@@ -114,6 +141,18 @@ def _report_path(value: str | None) -> Path | None:
         return Path(value)
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     return Path("reports") / "hevy_exercise_migrations" / f"{stamp}.json"
+
+
+def _sync_review_truecoach_to_hevy(args: argparse.Namespace) -> int:
+    store = Store(_engine_from_args(args))
+    service = TrueCoachToHevyReviewService(store=store, output_root=Path(args.output_dir))
+    try:
+        bundle = service.write_review(args.workout_id)
+    except SyncReviewError as exc:
+        _emit(f"Error: {exc}")
+        return 2
+    _emit(f"Wrote sync review: {bundle.directory}")
+    return 0
 
 
 def _print_plan(plan: MigrationPlan) -> None:
