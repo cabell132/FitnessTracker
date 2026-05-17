@@ -19,28 +19,11 @@ from fitness_tracker.database.models.true_coach import (
 
 def test_sync_review_cli_writes_ordered_report_and_plan(tmp_path: Path) -> None:
     db_path = tmp_path / "tracker.sqlite"
-    reports_dir = tmp_path / "reports"
     store = Store(create_engine(f"sqlite:///{db_path}"))
     store.init_db()
     _seed_workout(store)
 
-    exit_code = main(
-        [
-            "sync-review",
-            "truecoach-to-hevy",
-            "--workout-id",
-            "42",
-            "--database-url",
-            f"sqlite:///{db_path}",
-            "--output-dir",
-            str(reports_dir),
-        ]
-    )
-
-    assert exit_code == 0
-    bundle_dir = reports_dir / "sync-review" / "truecoach-to-hevy" / "42"
-    report = (bundle_dir / "report.md").read_text()
-    plan = json.loads((bundle_dir / "plan.json").read_text())
+    report, plan = _write_sync_review(tmp_path, db_path, workout_id=42)
 
     _assert_report(report)
     _assert_plan(plan)
@@ -50,28 +33,11 @@ def test_sync_review_reports_missing_single_leg_isometric_calf_raise_template(
     tmp_path: Path,
 ) -> None:
     db_path = tmp_path / "tracker.sqlite"
-    reports_dir = tmp_path / "reports"
     store = Store(create_engine(f"sqlite:///{db_path}"))
     store.init_db()
     _seed_template_override_workout(store)
 
-    exit_code = main(
-        [
-            "sync-review",
-            "truecoach-to-hevy",
-            "--workout-id",
-            "43",
-            "--database-url",
-            f"sqlite:///{db_path}",
-            "--output-dir",
-            str(reports_dir),
-        ]
-    )
-
-    assert exit_code == 0
-    bundle_dir = reports_dir / "sync-review" / "truecoach-to-hevy" / "43"
-    report = (bundle_dir / "report.md").read_text()
-    plan = json.loads((bundle_dir / "plan.json").read_text())
+    report, plan = _write_sync_review(tmp_path, db_path, workout_id=43)
 
     assert "Selected Hevy template: Bodyweight Calf Raise (hevy-calf-raise)" in report
     assert "Required Hevy templates:" in report
@@ -102,29 +68,12 @@ def test_sync_review_reports_ambiguous_isometric_knee_extension_template(
     tmp_path: Path,
 ) -> None:
     db_path = tmp_path / "tracker.sqlite"
-    reports_dir = tmp_path / "reports"
     store = Store(create_engine(f"sqlite:///{db_path}"))
     store.init_db()
     _seed_template_override_workout(store)
     _seed_ambiguous_knee_extension_workout(store)
 
-    exit_code = main(
-        [
-            "sync-review",
-            "truecoach-to-hevy",
-            "--workout-id",
-            "44",
-            "--database-url",
-            f"sqlite:///{db_path}",
-            "--output-dir",
-            str(reports_dir),
-        ]
-    )
-
-    assert exit_code == 0
-    bundle_dir = reports_dir / "sync-review" / "truecoach-to-hevy" / "44"
-    report = (bundle_dir / "report.md").read_text()
-    plan = json.loads((bundle_dir / "plan.json").read_text())
+    report, plan = _write_sync_review(tmp_path, db_path, workout_id=44)
 
     assert "Selected Hevy template: Seated Knee Extension (hevy-knee-extension)" in report
     assert (
@@ -148,6 +97,33 @@ def test_sync_review_reports_ambiguous_isometric_knee_extension_template(
         }
     ]
     assert item["blockers"] == ["Ambiguous required Hevy template: Isometric Seated Knee Extension"]
+
+
+def _write_sync_review(
+    tmp_path: Path,
+    db_path: Path,
+    *,
+    workout_id: int,
+) -> tuple[str, dict]:
+    reports_dir = tmp_path / "reports"
+    exit_code = main(
+        [
+            "sync-review",
+            "truecoach-to-hevy",
+            "--workout-id",
+            str(workout_id),
+            "--database-url",
+            f"sqlite:///{db_path}",
+            "--output-dir",
+            str(reports_dir),
+        ]
+    )
+
+    assert exit_code == 0
+    bundle_dir = reports_dir / "sync-review" / "truecoach-to-hevy" / str(workout_id)
+    report = (bundle_dir / "report.md").read_text()
+    plan = json.loads((bundle_dir / "plan.json").read_text())
+    return report, plan
 
 
 def _assert_report(report: str) -> None:

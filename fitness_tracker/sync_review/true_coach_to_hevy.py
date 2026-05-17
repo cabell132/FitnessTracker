@@ -5,8 +5,9 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
+from functools import cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fitness_tracker.apis.hevy_app.types import PostRoutinesRequestSet
 from fitness_tracker.database import Store
@@ -16,6 +17,8 @@ from fitness_tracker.database.uow import UnitOfWork
 
 SET_PATTERN = re.compile(r"(?P<count>\d+)\s*[xX]\s*(?P<reps>\d+)")
 SET_DISPLAY_KEYS = ("type", "weight_kg", "reps", "distance_meters", "duration_seconds")
+BLOCKING_REQUIRED_TEMPLATE_STATUSES = frozenset({"missing", "ambiguous"})
+RequiredTemplateStatus = Literal["existing", "missing", "ambiguous"]
 
 
 class SyncReviewError(Exception):
@@ -70,7 +73,7 @@ class RequiredHevyTemplate:
     """Required Hevy exercise template and local catalog resolution status."""
 
     spec: RequiredTemplateSpec
-    status: str
+    status: RequiredTemplateStatus
     source_workout_item_ids: tuple[int, ...]
     matching_template_ids: tuple[str, ...]
 
@@ -133,12 +136,6 @@ class TrueCoachToHevyReviewService:
         warnings = []
         if template is None:
             warnings.append("No linked Hevy exercise template found.")
-        blockers = [
-            f"{required_template.status.title()} required Hevy template: "
-            f"{required_template.spec.title}"
-            for required_template in required_templates
-            if required_template.status in {"missing", "ambiguous"}
-        ]
         return ReviewItem(
             source_id=item.id,
             name=item.name,
@@ -147,7 +144,7 @@ class TrueCoachToHevyReviewService:
             required_hevy_templates=required_templates,
             proposed_sets=_parse_proposed_sets(item.info or ""),
             warnings=warnings,
-            blockers=blockers,
+            blockers=_required_template_blockers(required_templates),
         )
 
     def _selected_template(
@@ -251,9 +248,10 @@ class TrueCoachToHevyReviewService:
         return lines
 
 
-def _load_template_override_rules(path: Path) -> list[TemplateOverrideRule]:
+@cache
+def _load_template_override_rules(path: Path) -> tuple[TemplateOverrideRule, ...]:
     raw_rules = json.loads(path.read_text(encoding="utf-8"))
-    return [
+    return tuple(
         TemplateOverrideRule(
             source_template_names=tuple(rule["source_template_names"]),
             item_patterns=tuple(
@@ -268,7 +266,7 @@ def _load_template_override_rules(path: Path) -> list[TemplateOverrideRule]:
             ),
         )
         for rule in raw_rules["template_selection_overrides"]
-    ]
+    )
 
 
 def _rule_matches(
@@ -298,18 +296,30 @@ def _resolve_required_template(
         if template.name.casefold() == spec.title.casefold()
     ]
     matching_ids = tuple(sorted(template.id for template in matching_templates))
-    if not matching_templates:
-        status = "missing"
-    elif len(matching_templates) == 1:
-        status = "existing"
-    else:
-        status = "ambiguous"
     return RequiredHevyTemplate(
         spec=spec,
-        status=status,
+        status=_required_template_status(len(matching_templates)),
         source_workout_item_ids=(source_workout_item_id,),
         matching_template_ids=matching_ids,
     )
+
+
+def _required_template_status(match_count: int) -> RequiredTemplateStatus:
+    if match_count == 0:
+        return "missing"
+    if match_count == 1:
+        return "existing"
+    return "ambiguous"
+
+
+def _required_template_blockers(
+    required_templates: list[RequiredHevyTemplate],
+) -> list[str]:
+    return [
+        f"{required_template.status.title()} required Hevy template: {required_template.spec.title}"
+        for required_template in required_templates
+        if required_template.status in BLOCKING_REQUIRED_TEMPLATE_STATUSES
+    ]
 
 
 def _parse_proposed_sets(info: str) -> list[PostRoutinesRequestSet]:
