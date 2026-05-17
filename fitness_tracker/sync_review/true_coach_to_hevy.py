@@ -6,11 +6,16 @@ import json
 import re
 from collections import deque
 from dataclasses import dataclass
+from datetime import datetime
 from functools import cache
 from pathlib import Path
 from typing import Any, Literal
 
-from fitness_tracker.apis.hevy_app.types import PostRoutinesRequestSet
+from fitness_tracker.apis.hevy_app.types import (
+    PostRoutinesRequestBody,
+    PostRoutinesRequestExercise,
+    PostRoutinesRequestSet,
+)
 from fitness_tracker.database import Store
 from fitness_tracker.database.models import HevyAppExercise, TrueCoachExercise
 from fitness_tracker.database.models.hevy_app import HevyAppSets, HevyAppWorkout, HevyAppWorkoutItem
@@ -34,6 +39,10 @@ class SyncReviewError(Exception):
     """Raised when a requested sync review cannot be produced."""
 
 
+class SyncApplyError(Exception):
+    """Raised when a sync review plan is not safe to apply."""
+
+
 @dataclass(frozen=True)
 class ReviewBundle:
     """Paths written for a sync review."""
@@ -41,6 +50,15 @@ class ReviewBundle:
     directory: Path
     report_path: Path
     plan_path: Path
+
+
+@dataclass(frozen=True)
+class ApplyResult:
+    """Paths and request body produced for a sync apply attempt."""
+
+    review_bundle: ReviewBundle
+    request_path: Path
+    request_body: PostRoutinesRequestBody
 
 
 @dataclass(frozen=True)
@@ -196,6 +214,43 @@ class TrueCoachToHevyReviewService:
         report_path.write_text(report, encoding="utf-8")
         plan_path.write_text(json.dumps(plan, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         return ReviewBundle(directory=bundle_dir, report_path=report_path, plan_path=plan_path)
+
+    def write_apply_request(self, workout_id: int) -> ApplyResult:
+        """Validate a review plan and write the Hevy Routine request body.
+
+        Args:
+            workout_id (int): True Coach workout id.
+
+        Returns:
+            ApplyResult: Review bundle and dry-run request path.
+        """
+        bundle = self.write_review(workout_id)
+        plan = json.loads(bundle.plan_path.read_text(encoding="utf-8"))
+        request_body = _build_hevy_routine_request(plan)
+        request_path = bundle.directory / "hevy-request.json"
+        request_path.write_text(
+            json.dumps(request_body.model_dump(), indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        return ApplyResult(
+            review_bundle=bundle,
+            request_path=request_path,
+            request_body=request_body,
+        )
+
+    def apply(self, workout_id: int, *, routine_writer: Any) -> ApplyResult:
+        """Create a Hevy Routine from a validated sync review plan.
+
+        Args:
+            workout_id (int): True Coach workout id.
+            routine_writer (Any): Object exposing ``create_routine``.
+
+        Returns:
+            ApplyResult: Request body and local artifacts from the apply attempt.
+        """
+        result = self.write_apply_request(workout_id)
+        routine_writer.create_routine(result.request_body)
+        return result
 
     def _review_item(self, uow: UnitOfWork, item: TrueCoachWorkoutItem) -> ReviewItem:
         template = self._selected_template(uow, item)
@@ -404,6 +459,113 @@ class TrueCoachToHevyReviewService:
             lines.append("Blockers: none")
         lines.append("")
         return lines
+
+
+def _build_hevy_routine_request(plan: dict[str, Any]) -> PostRoutinesRequestBody:
+    blockers = _apply_blockers(plan)
+    if blockers:
+        raise SyncApplyError("; ".join(blockers))
+    workout = plan["workout"]
+    return PostRoutinesRequestBody.build(
+        title=_routine_title(workout),
+        notes="",
+        exercises=[
+            exercise for item in plan["items"] for exercise in _request_exercises_for_item(item)
+        ],
+    )
+
+
+def _apply_blockers(plan: dict[str, Any]) -> list[str]:
+    blockers = [blocker for item in plan["items"] for blocker in item.get("blockers", [])]
+    blockers.extend(
+        f"Missing required Hevy exercise mapping: {item['name']}"
+        for item in plan["items"]
+        if not item.get("planned_blocks") and item.get("selected_hevy_template") is None
+    )
+    blockers.extend(
+        f"Missing required Hevy exercise mapping: {block['source_text']}"
+        for item in plan["items"]
+        for block in item.get("planned_blocks", [])
+        if block.get("selected_hevy_template") is None
+    )
+    blockers.extend(
+        f"Unsplit required mixed-mode item: {item['name']}"
+        for item in plan["items"]
+        if _is_unsplit_required_mixed_mode_item(item)
+    )
+    blockers.extend(
+        f"Invalid set payload for {item['name']}: no sets"
+        for item in plan["items"]
+        if not item.get("planned_blocks") and not item.get("proposed_sets")
+    )
+    blockers.extend(
+        f"Invalid set payload for {block['source_text']}: no sets"
+        for item in plan["items"]
+        for block in item.get("planned_blocks", [])
+        if not block.get("proposed_sets")
+    )
+    return blockers
+
+
+def _is_unsplit_required_mixed_mode_item(item: dict[str, Any]) -> bool:
+    info = item.get("info") or ""
+    return (
+        not item.get("planned_blocks")
+        and ISO_PHASE_PATTERN.search(info) is not None
+        and re.search(r"\b(?:then|followed by)\b", info, re.IGNORECASE) is not None
+    )
+
+
+def _routine_title(workout: dict[str, Any]) -> str:
+    due = workout.get("due")
+    due_text = datetime.fromisoformat(due).strftime("%d %b %Y") if due else ""
+    return f"{due_text}\n{workout.get('title') or ''}\n{workout['id']}"
+
+
+def _request_exercises_for_item(item: dict[str, Any]) -> list[PostRoutinesRequestExercise]:
+    blocks = item.get("planned_blocks", [])
+    if blocks:
+        return [_request_exercise_from_block(block) for block in blocks]
+    return [
+        _request_exercise(
+            template_id=item["selected_hevy_template"]["id"],
+            notes=_item_notes(item),
+            sets=item["proposed_sets"],
+        )
+    ]
+
+
+def _item_notes(item: dict[str, Any]) -> str:
+    return "\n".join(
+        part for part in (item.get("info") or item["name"], item.get("comment") or "") if part
+    )
+
+
+def _request_exercise_from_block(block: dict[str, Any]) -> PostRoutinesRequestExercise:
+    return _request_exercise(
+        template_id=block["selected_hevy_template"]["id"],
+        notes=block["notes"],
+        sets=block["proposed_sets"],
+    )
+
+
+def _request_exercise(
+    *,
+    template_id: str,
+    notes: str,
+    sets: list[dict[str, Any]],
+) -> PostRoutinesRequestExercise:
+    return PostRoutinesRequestExercise(
+        exercise_template_id=template_id,
+        notes=notes,
+        rest_seconds=0,
+        sets=[
+            PostRoutinesRequestSet(
+                **{key: value for key, value in set_row.items() if not key.startswith("_")}
+            )
+            for set_row in sets
+        ],
+    )
 
 
 @cache

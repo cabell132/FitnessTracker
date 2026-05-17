@@ -4,9 +4,11 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
 from sqlalchemy import create_engine
 
 from fitness_tracker.cli import main
+from fitness_tracker.apis.hevy_app.types import PostRoutinesRequestBody
 from fitness_tracker.database import Store
 from fitness_tracker.database.models.hevy_app import (
     HevyAppExercise,
@@ -20,6 +22,8 @@ from fitness_tracker.database.models.true_coach import (
     TrueCoachWorkout,
     TrueCoachWorkoutItem,
 )
+from fitness_tracker.sync_review import TrueCoachToHevyReviewService
+from fitness_tracker.sync_review.true_coach_to_hevy import SyncApplyError
 
 
 def test_sync_review_cli_writes_ordered_report_and_plan(tmp_path: Path) -> None:
@@ -313,6 +317,229 @@ def test_sync_review_agent_next_actions_report_clean_plan(tmp_path: Path) -> Non
     assert "Warning actions:" not in report
     assert plan["items"][0]["warnings"] == []
     assert plan["items"][0]["blockers"] == []
+
+
+def test_sync_apply_dry_run_writes_hevy_request_for_clean_plan(tmp_path: Path) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_clean_plan_workout(store)
+
+    reports_dir = tmp_path / "reports"
+    exit_code = main(
+        [
+            "sync-apply",
+            "truecoach-to-hevy",
+            "--workout-id",
+            "47",
+            "--database-url",
+            f"sqlite:///{db_path}",
+            "--output-dir",
+            str(reports_dir),
+            "--dry-run",
+        ]
+    )
+
+    assert exit_code == 0
+    request_path = reports_dir / "sync-review" / "truecoach-to-hevy" / "47" / "hevy-request.json"
+    assert json.loads(request_path.read_text()) == {
+        "routine": {
+            "title": "17 May 2026\nClean Plan\n47",
+            "folder_id": None,
+            "notes": "",
+            "exercises": [
+                {
+                    "exercise_template_id": "hevy-push-up",
+                    "superset_id": None,
+                    "notes": "3 x 12",
+                    "rest_seconds": 0,
+                    "sets": [
+                        {
+                            "weight_kg": None,
+                            "reps": 12,
+                            "distance_meters": None,
+                            "duration_seconds": None,
+                            "type": "normal",
+                        },
+                        {
+                            "weight_kg": None,
+                            "reps": 12,
+                            "distance_meters": None,
+                            "duration_seconds": None,
+                            "type": "normal",
+                        },
+                        {
+                            "weight_kg": None,
+                            "reps": 12,
+                            "distance_meters": None,
+                            "duration_seconds": None,
+                            "type": "normal",
+                        },
+                    ],
+                }
+            ],
+        }
+    }
+
+
+def test_sync_apply_sends_same_hevy_request_as_dry_run(tmp_path: Path) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_clean_plan_workout(store)
+    service = TrueCoachToHevyReviewService(store=store, output_root=tmp_path / "reports")
+    dry_run = service.write_apply_request(47)
+    writer = _RecordingRoutineWriter()
+
+    applied = service.apply(47, routine_writer=writer)
+
+    assert len(writer.requests) == 1
+    assert writer.requests[0].model_dump() == json.loads(dry_run.request_path.read_text())
+    assert applied.request_body.model_dump() == writer.requests[0].model_dump()
+
+
+def test_sync_apply_blocks_missing_required_exercise_mapping(tmp_path: Path) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_workout(store)
+    service = TrueCoachToHevyReviewService(store=store, output_root=tmp_path / "reports")
+
+    with pytest.raises(
+        SyncApplyError,
+        match="Missing required Hevy exercise mapping: Mystery Carry",
+    ):
+        service.write_apply_request(42)
+
+
+def test_sync_apply_blocks_missing_required_hevy_template(tmp_path: Path) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_template_override_workout(store)
+    service = TrueCoachToHevyReviewService(store=store, output_root=tmp_path / "reports")
+
+    with pytest.raises(
+        SyncApplyError,
+        match="Missing required Hevy template: Single-Leg Isometric Calf Raise",
+    ):
+        service.write_apply_request(43)
+
+
+def test_sync_apply_blocks_ambiguous_required_hevy_template(tmp_path: Path) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_template_override_workout(store)
+    _seed_ambiguous_knee_extension_workout(store)
+    service = TrueCoachToHevyReviewService(store=store, output_root=tmp_path / "reports")
+
+    with pytest.raises(
+        SyncApplyError,
+        match="Ambiguous required Hevy template: Isometric Seated Knee Extension",
+    ):
+        service.write_apply_request(44)
+
+
+def test_sync_apply_allows_missing_history_enrichment_warning(tmp_path: Path) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_clean_weight_plan_workout(store)
+    service = TrueCoachToHevyReviewService(store=store, output_root=tmp_path / "reports")
+
+    result = service.write_apply_request(48)
+
+    request = result.request_body.model_dump()
+    assert request["routine"]["exercises"][0]["exercise_template_id"] == "hevy-row"
+    assert request["routine"]["exercises"][0]["sets"] == [
+        {
+            "weight_kg": None,
+            "reps": 10,
+            "distance_meters": None,
+            "duration_seconds": None,
+            "type": "normal",
+        },
+        {
+            "weight_kg": None,
+            "reps": 10,
+            "distance_meters": None,
+            "duration_seconds": None,
+            "type": "normal",
+        },
+    ]
+
+
+def test_sync_apply_blocks_unsplit_required_mixed_mode_item(tmp_path: Path) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_unsplit_mixed_mode_workout(store)
+    service = TrueCoachToHevyReviewService(store=store, output_root=tmp_path / "reports")
+
+    with pytest.raises(
+        SyncApplyError,
+        match="Unsplit required mixed-mode item: Seated Knee Extension",
+    ):
+        service.write_apply_request(49)
+
+
+def test_sync_apply_blocks_invalid_empty_set_payload(tmp_path: Path) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_parser_gap_workout(store)
+    service = TrueCoachToHevyReviewService(store=store, output_root=tmp_path / "reports")
+
+    with pytest.raises(SyncApplyError, match="Invalid set payload for Tempo Press: no sets"):
+        service.write_apply_request(46)
+
+
+def test_sync_apply_allows_notes_preserved_nuance(tmp_path: Path) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_notes_preserved_workout(store)
+    service = TrueCoachToHevyReviewService(store=store, output_root=tmp_path / "reports")
+
+    result = service.write_apply_request(50)
+
+    exercise = result.request_body.model_dump()["routine"]["exercises"][0]
+    assert exercise["notes"] == (
+        "build weight then 3 x 12 ES alternating RIR 2, rest 60-90s\n"
+        "Substitute dumbbells if benches are busy."
+    )
+    assert exercise["sets"] == [
+        {
+            "weight_kg": None,
+            "reps": 12,
+            "distance_meters": None,
+            "duration_seconds": None,
+            "type": "normal",
+        },
+        {
+            "weight_kg": None,
+            "reps": 12,
+            "distance_meters": None,
+            "duration_seconds": None,
+            "type": "normal",
+        },
+        {
+            "weight_kg": None,
+            "reps": 12,
+            "distance_meters": None,
+            "duration_seconds": None,
+            "type": "normal",
+        },
+    ]
+
+
+class _RecordingRoutineWriter:
+    def __init__(self) -> None:
+        self.requests: list[PostRoutinesRequestBody] = []
+
+    def create_routine(self, routine: PostRoutinesRequestBody) -> None:
+        self.requests.append(routine)
 
 
 def _assert_mixed_knee_extension_blocks(item: dict) -> None:
@@ -794,6 +1021,138 @@ def _seed_clean_plan_workout(store: Store) -> None:
                 state="pending",
                 position=1,
                 exercise_id=506,
+                assessment_id=None,
+            )
+        )
+
+
+def _seed_clean_weight_plan_workout(store: Store) -> None:
+    now = datetime(2026, 5, 17, tzinfo=UTC)
+    with store.unit_of_work() as uow:
+        uow.add(
+            TrueCoachWorkout(
+                id=48,
+                title="Pull Strength",
+                due=now,
+                short_description="",
+                state="pending",
+                rest_day=False,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        uow.add(TrueCoachExercise(id=507, name="Row", default=False))
+        uow.add(
+            HevyAppExercise(
+                id="hevy-row",
+                name="Row",
+                type="weight_reps",
+                equipment="barbell",
+                default=True,
+            )
+        )
+        uow.add(TrackerExercise(name="Row", hevy_app_id="hevy-row", true_coach_id=507))
+        uow.add(
+            TrueCoachWorkoutItem(
+                id=1008,
+                workout_id=48,
+                name="Row",
+                info="2 x 10",
+                comment="",
+                is_circuit=False,
+                state="pending",
+                position=1,
+                exercise_id=507,
+                assessment_id=None,
+            )
+        )
+
+
+def _seed_unsplit_mixed_mode_workout(store: Store) -> None:
+    now = datetime(2026, 5, 17, tzinfo=UTC)
+    with store.unit_of_work() as uow:
+        uow.add(
+            TrueCoachWorkout(
+                id=49,
+                title="Knee Rehab Unsplit",
+                due=now,
+                short_description="",
+                state="pending",
+                rest_day=False,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        uow.add(TrueCoachExercise(id=508, name="Seated Knee Extension", default=False))
+        uow.add(
+            HevyAppExercise(
+                id="hevy-knee-extension",
+                name="Seated Knee Extension",
+                type="reps_only",
+                equipment="machine",
+                default=True,
+            )
+        )
+        uow.add(
+            TrackerExercise(
+                name="Seated Knee Extension",
+                hevy_app_id="hevy-knee-extension",
+                true_coach_id=508,
+            )
+        )
+        uow.add(
+            TrueCoachWorkoutItem(
+                id=1009,
+                workout_id=49,
+                name="Seated Knee Extension",
+                info="2 x 30s iso hold then tempo reps",
+                comment="",
+                is_circuit=False,
+                state="pending",
+                position=1,
+                exercise_id=508,
+                assessment_id=None,
+            )
+        )
+
+
+def _seed_notes_preserved_workout(store: Store) -> None:
+    now = datetime(2026, 5, 17, tzinfo=UTC)
+    with store.unit_of_work() as uow:
+        uow.add(
+            TrueCoachWorkout(
+                id=50,
+                title="Nuance Day",
+                due=now,
+                short_description="",
+                state="pending",
+                rest_day=False,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        uow.add(TrueCoachExercise(id=509, name="Bench Press", default=False))
+        uow.add(
+            HevyAppExercise(
+                id="hevy-bench",
+                name="Barbell Bench Press",
+                type="weight_reps",
+                equipment="barbell",
+                default=True,
+            )
+        )
+        uow.add(TrackerExercise(name="Bench Press", hevy_app_id="hevy-bench", true_coach_id=509))
+        uow.add(
+            TrueCoachWorkoutItem(
+                id=1010,
+                workout_id=50,
+                name="Bench Press",
+                info="build weight then 3 x 12 ES alternating RIR 2, rest 60-90s",
+                comment="Substitute dumbbells if benches are busy.",
+                is_circuit=False,
+                state="pending",
+                position=1,
+                exercise_id=509,
                 assessment_id=None,
             )
         )
