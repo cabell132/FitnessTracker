@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import os
-
-from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 
-DEFAULT_DATABASE_URL = "sqlite:///fitness_tracker.db"
+from fitness_tracker.config import Config
+
+DEFAULT_DATABASE_URL = Config.database_url
 
 
 def get_database_url(default: str = DEFAULT_DATABASE_URL) -> str:
@@ -20,8 +19,7 @@ def get_database_url(default: str = DEFAULT_DATABASE_URL) -> str:
     Returns:
         str: SQLAlchemy database URL.
     """
-    load_dotenv()
-    return os.getenv("DATABASE_URL", default)
+    return default
 
 
 def create_database_engine(url: str | None = None) -> Engine:

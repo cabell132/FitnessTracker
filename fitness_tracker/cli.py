@@ -11,6 +11,7 @@ import urllib3
 from sqlalchemy.engine import Engine
 
 from fitness_tracker.apis import HevyAppClient
+from fitness_tracker.config import Config
 from fitness_tracker.database import Store
 from fitness_tracker.database.config import create_database_engine
 from fitness_tracker.maintenance.hevy_exercise_migration import (
@@ -138,7 +139,7 @@ def _add_sync_apply_parser(
 def _migrate_exercise_template(args: argparse.Namespace) -> int:
     engine = _engine_from_args(args)
     store = Store(engine)
-    hevy = HevyAppClient() if args.apply else None
+    hevy = _hevy_client_from_config() if args.apply else None
     service = HevyExerciseTemplateMigrationService(
         store=store,
         hevy_workouts=hevy.workouts if hevy is not None else None,
@@ -168,7 +169,7 @@ def _migrate_exercise_template(args: argparse.Namespace) -> int:
 
 def _ensure_hevy_templates_from_plan(args: argparse.Namespace) -> int:
     store = Store(_engine_from_args(args))
-    hevy = None if args.dry_run else HevyAppClient()
+    hevy = None if args.dry_run else _hevy_client_from_config()
     service = HevyTemplateEnsureService(
         store=store,
         hevy_exercises=hevy.exercises if hevy is not None else None,
@@ -187,6 +188,14 @@ def _engine_from_args(args: argparse.Namespace) -> Engine:
     if database_url is None and args.db:
         database_url = f"sqlite:///{args.db}"
     return create_database_engine(database_url)
+
+
+def _hevy_client_from_config() -> HevyAppClient:
+    cfg = Config.from_env()
+    return HevyAppClient(
+        api_key=cfg.hevy_api_key.get_secret_value(),
+        web_api_key=cfg.hevy_web_api_key.get_secret_value(),
+    )
 
 
 def _backup_path_for_engine(engine: Engine, *, no_backup: bool) -> Path | None:
@@ -230,7 +239,7 @@ def _sync_apply_truecoach_to_hevy(args: argparse.Namespace) -> int:
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
             result = service.apply(
                 args.workout_id,
-                routine_writer=HevyRoutineWriterAdapter(HevyAppClient()),
+                routine_writer=HevyRoutineWriterAdapter(_hevy_client_from_config()),
             )
     except (SyncApplyError, SyncReviewError) as exc:
         _emit(f"Error: {exc}")

@@ -7,18 +7,24 @@ from fitness_tracker.apis.true_coach.exceptions import TrueCoachAPIError
 _USER_AGENT = "beets/4 +https://beets.io/"
 
 
-def true_coach_session(token: TrueCoachOAuthToken | None = None) -> APISession:
+def true_coach_session(
+    *,
+    email: str,
+    password: str,
+    token: TrueCoachOAuthToken | None = None,
+) -> APISession:
     """Return an authenticated session for the True Coach proxy API.
 
     Args:
-        token (TrueCoachOAuthToken | None, optional): Cached OAuth token. Defaults to None,
-            in which case ``authorize()`` is used.
+        email (str): True Coach login email.
+        password (str): True Coach password.
+        token (TrueCoachOAuthToken | None, optional): Cached OAuth token. Defaults to None.
 
     Returns:
         APISession: Configured client session.
     """
     if token is None:
-        token = authorize()
+        token = authorize(email=email, password=password)
     return APISession(
         base_url="https://app.truecoach.co/proxy/api",
         headers={

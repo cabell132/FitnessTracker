@@ -19,9 +19,11 @@ from fitness_tracker.llm.prompt_templates import (
 class FitnessLLM(OpenAILLM):
     """High-level prompts for workouts, exercises, and item linking."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         model_name: str,
+        *,
+        api_key: str,
         temperature: float = 0,
         max_completion_tokens: int = 150,
     ) -> None:
@@ -29,10 +31,16 @@ class FitnessLLM(OpenAILLM):
 
         Args:
             model_name (str): OpenAI model id.
+            api_key (str): OpenAI API key.
             temperature (float, optional): Sampling temperature. Defaults to 0.
             max_completion_tokens (int, optional): Completion cap. Defaults to 150.
         """
-        super().__init__(model_name, temperature, max_completion_tokens)
+        super().__init__(
+            model_name,
+            api_key=api_key,
+            temperature=temperature,
+            max_completion_tokens=max_completion_tokens,
+        )
 
     def parse_the_sets(self, info: str) -> PostRoutinesRequestSets:
         """Parse Hevy-style set text into structured set rows.

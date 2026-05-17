@@ -1,18 +1,14 @@
 """True Coach OAuth password grant and token file helpers."""
 
 import json
-import os
 import time
 from pathlib import Path
 from typing import Any, cast
 from urllib.parse import urlencode
 
 import requests
-from dotenv import load_dotenv
 
 from logs import WideEvent
-
-load_dotenv()
 
 TOKEN_PATH = Path("true_coach_token.json")
 
@@ -59,11 +55,18 @@ class TrueCoachOAuthToken:
         }
 
 
-def _authorize_with_true_coach_api(s: requests.Session) -> TrueCoachOAuthToken:
+def _authorize_with_true_coach_api(
+    s: requests.Session,
+    *,
+    email: str,
+    password: str,
+) -> TrueCoachOAuthToken:
     """Exchange email and True Coach password for an access token.
 
     Args:
         s (requests.Session): Session used for the token POST (TLS verify disabled).
+        email (str): True Coach login email.
+        password (str): True Coach password.
 
     Returns:
         TrueCoachOAuthToken: Parsed token including expiry metadata.
@@ -74,8 +77,8 @@ def _authorize_with_true_coach_api(s: requests.Session) -> TrueCoachOAuthToken:
     response = s.post(
         url=make_url("/oauth/token/"),
         json={
-            "username": os.environ["EMAIL"],
-            "password": os.environ["TRUECOACH_PASSWORD"],
+            "username": email,
+            "password": password,
             "grant_type": "password",
         },
         verify=False,
@@ -100,8 +103,12 @@ def check_token_file() -> TrueCoachOAuthToken | None:
     return TrueCoachOAuthToken(data)
 
 
-def authorize() -> TrueCoachOAuthToken:
+def authorize(*, email: str, password: str) -> TrueCoachOAuthToken:
     """Return a valid token, refreshing via password grant when needed.
+
+    Args:
+        email (str): True Coach login email.
+        password (str): True Coach password.
 
     Returns:
         TrueCoachOAuthToken: Token from cache or freshly obtained from the API.
@@ -113,4 +120,4 @@ def authorize() -> TrueCoachOAuthToken:
             return token
         event.set(auth_source="api")
         with requests.Session() as s:
-            return _authorize_with_true_coach_api(s)
+            return _authorize_with_true_coach_api(s, email=email, password=password)

@@ -250,7 +250,7 @@ def test_should_build_true_coach_session_with_bearer_header() -> None:
         {"access_token": "tok", "user_id": 1, "token_type": "Bearer"},
     )
     # Act
-    s = true_coach_session(token)
+    s = true_coach_session(email="test@example.com", password="pass", token=token)  # noqa: S106
     # Assert
     with patch("fitness_tracker.apis.session.requests.Session") as sess_cls:
         inst = sess_cls.return_value.__enter__.return_value

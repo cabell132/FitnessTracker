@@ -35,7 +35,7 @@ def test_ensure_from_plan_dry_run_reports_missing_templates_without_writes(
     plan_path = _write_plan(tmp_path, [_missing_template("Single-Leg Isometric Calf Raise")])
     store, db_url = _store(tmp_path)
     fake_client = FakeHevyClient()
-    monkeypatch.setattr(cli, "HevyAppClient", lambda: fake_client)
+    monkeypatch.setattr(cli, "_hevy_client_from_config", lambda: fake_client)
 
     exit_code = cli.main(
         [
@@ -63,7 +63,7 @@ def test_ensure_from_plan_yes_creates_and_persists_missing_template(
     plan_path = _write_plan(tmp_path, [_missing_template("Single-Leg Isometric Calf Raise")])
     store, db_url = _store(tmp_path)
     fake_client = FakeHevyClient()
-    monkeypatch.setattr(cli, "HevyAppClient", lambda: fake_client)
+    monkeypatch.setattr(cli, "_hevy_client_from_config", lambda: fake_client)
 
     exit_code = cli.main(
         [
@@ -98,7 +98,7 @@ def test_ensure_from_plan_skips_existing_template(
     plan_path = _write_plan(tmp_path, [_existing_template("Isometric Seated Knee Extension")])
     store, db_url = _store(tmp_path)
     fake_client = FakeHevyClient()
-    monkeypatch.setattr(cli, "HevyAppClient", lambda: fake_client)
+    monkeypatch.setattr(cli, "_hevy_client_from_config", lambda: fake_client)
 
     exit_code = cli.main(
         [
@@ -126,7 +126,7 @@ def test_ensure_from_plan_refuses_ambiguous_templates_without_writes(
     plan_path = _write_plan(tmp_path, [_ambiguous_template("Isometric Seated Knee Extension")])
     store, db_url = _store(tmp_path)
     fake_client = FakeHevyClient()
-    monkeypatch.setattr(cli, "HevyAppClient", lambda: fake_client)
+    monkeypatch.setattr(cli, "_hevy_client_from_config", lambda: fake_client)
 
     exit_code = cli.main(
         [

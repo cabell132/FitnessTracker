@@ -6,6 +6,7 @@ from pprint import pprint
 from sqlalchemy import create_engine, text
 from tqdm import tqdm
 
+from fitness_tracker.config import Config
 from fitness_tracker.database.store import Store
 from fitness_tracker.llm.fitness_llm import FitnessLLM
 
@@ -21,10 +22,15 @@ logging.basicConfig(level=logging.WARNING)
 
 # Your application code here
 
-engine = create_engine("sqlite:///fitness_tracker.db")
+cfg = Config.from_env()
+engine = create_engine(cfg.database_url)
 
 store = Store(engine)
-llm = FitnessLLM(model_name="gpt-4o-mini-2024-07-18", temperature=0)
+llm = FitnessLLM(
+    model_name=cfg.llm_model,
+    api_key=cfg.openai_api_key.get_secret_value(),
+    temperature=cfg.llm_temperature,
+)
 
 with store.unit_of_work() as uow:
     try:

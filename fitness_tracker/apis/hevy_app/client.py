@@ -14,10 +14,15 @@ from fitness_tracker.apis.hevy_app.workouts import HevyAppWorkouts
 class HevyAppClient(BaseClient):
     """Composes REST and web sessions with all Hevy API resources."""
 
-    def __init__(self) -> None:
-        """Create sub-resources with shared API sessions."""
-        self._session = hevy_session()
-        self._web_session = hevy_web_session()
+    def __init__(self, *, api_key: str, web_api_key: str) -> None:
+        """Create sub-resources with shared API sessions.
+
+        Args:
+            api_key (str): Hevy REST API key.
+            web_api_key (str): Hevy web auth token.
+        """
+        self._session = hevy_session(api_key)
+        self._web_session = hevy_web_session(web_api_key)
         self.users = HevyAppUsers(session=self._session)
         self.exercises = HevyAppExercises(session=self._session, web_session=self._web_session)
         self.exercise_history = HevyAppExerciseHistory(session=self._session)

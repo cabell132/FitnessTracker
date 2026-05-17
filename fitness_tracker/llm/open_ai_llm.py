@@ -1,25 +1,23 @@
 """Thin LangChain + OpenAI wrapper for templated structured prompts."""
 
 import asyncio
-import os
 from typing import Any, cast
 
-from dotenv import load_dotenv
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.prompts import ChatPromptTemplate, HumanMessagePromptTemplate
 from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
 from pydantic.v1 import ValidationError
 
-load_dotenv()
-
 
 class OpenAILLM:
     """OpenAI chat client with Pydantic output parsing."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         model_name: str,
+        *,
+        api_key: str,
         temperature: float = 0.0,
         max_completion_tokens: int = 150,
     ) -> None:
@@ -27,11 +25,12 @@ class OpenAILLM:
 
         Args:
             model_name (str): OpenAI model id (e.g. ``gpt-4o-mini``).
+            api_key (str): OpenAI API key.
             temperature (float, optional): Sampling temperature. Defaults to 0.0.
             max_completion_tokens (int, optional): Cap on completion length. Defaults to 150.
         """
         self.model = ChatOpenAI(
-            api_key=SecretStr(os.environ["OPENAI_API_KEY"]),
+            api_key=SecretStr(api_key),
             model=model_name,
             temperature=temperature,
             max_completion_tokens=max_completion_tokens,

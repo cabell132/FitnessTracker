@@ -256,10 +256,15 @@ class HevyMixin(CrudMixin):
             HevyAppPersistenceError: If the template cannot be fetched.
         """
         from fitness_tracker.apis.hevy_app import HevyAppClient  # noqa: PLC0415
+        from fitness_tracker.config import Config  # noqa: PLC0415
 
         if self.get(HevyAppExercise, id=exercise.exercise_template_id):
             return
-        api = HevyAppClient()
+        cfg = Config.from_env()
+        api = HevyAppClient(
+            api_key=cfg.hevy_api_key.get_secret_value(),
+            web_api_key=cfg.hevy_web_api_key.get_secret_value(),
+        )
         template = api.exercises.get_template(exercise.exercise_template_id)
         if template:
             self.hevy_add_exercise(exercise=template)
