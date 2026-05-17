@@ -21,7 +21,9 @@ from fitness_tracker.sync._true_coach_html import parse_prescribed_sets
 SET_DISPLAY_KEYS = ("type", "weight_kg", "reps", "distance_meters", "duration_seconds")
 BLOCKING_REQUIRED_TEMPLATE_STATUSES = frozenset({"missing", "ambiguous"})
 RequiredTemplateStatus = Literal["existing", "missing", "ambiguous"]
+WeightProvenance = Literal["athlete_history", "calculated_dropset"]
 type SetSignature = tuple[str, str, int]
+type SetProvenance = dict[str, WeightProvenance]
 
 
 class SyncReviewError(Exception):
@@ -47,7 +49,7 @@ class ReviewItem:
     selected_hevy_template: HevyAppExercise | None
     required_hevy_templates: list[RequiredHevyTemplate]
     proposed_sets: list[PostRoutinesRequestSet]
-    set_provenance: list[dict[str, str]]
+    set_provenance: list[SetProvenance]
     warnings: list[str]
     blockers: list[str]
 
@@ -87,7 +89,6 @@ class HistoricalLoad:
     """A usable Athlete-history load for one planned Routine set."""
 
     weight_kg: float
-    source_workout_id: str
 
 
 DEFAULT_TEMPLATE_OVERRIDE_RULES_PATH = Path(__file__).with_name("template_override_rules.json")
@@ -348,7 +349,7 @@ def _enrich_sets_from_history(
     uow: UnitOfWork,
     template: HevyAppExercise | None,
     planned_sets: list[PostRoutinesRequestSet],
-) -> tuple[list[PostRoutinesRequestSet], list[dict[str, str]]]:
+) -> tuple[list[PostRoutinesRequestSet], list[SetProvenance]]:
     provenance = [{} for _ in planned_sets]
     if template is None or not _is_weight_capable(template) or not planned_sets:
         return planned_sets, provenance
@@ -358,7 +359,9 @@ def _enrich_sets_from_history(
     last_normal_load: float | None = None
     for index, planned_set in enumerate(planned_sets):
         if planned_set.weight_kg is not None:
-            last_normal_load = _normal_load(planned_set, planned_set.weight_kg, last_normal_load)
+            last_normal_load = _updated_last_normal_load(
+                planned_set, planned_set.weight_kg, last_normal_load
+            )
             continue
         signature = _set_history_signature(planned_set)
         if signature is None:
@@ -366,15 +369,15 @@ def _enrich_sets_from_history(
         historical_load = _next_historical_load(historical_loads, signature)
         if historical_load is not None:
             enriched_sets[index] = _copy_set_with_weight(planned_set, historical_load.weight_kg)
-            provenance[index] = {"weight_kg": "athlete_history"}
-            last_normal_load = _normal_load(
+            provenance[index] = _weight_provenance("athlete_history")
+            last_normal_load = _updated_last_normal_load(
                 planned_set, historical_load.weight_kg, last_normal_load
             )
         elif planned_set.type == "dropset" and last_normal_load is not None:
             enriched_sets[index] = _copy_set_with_weight(
                 planned_set, _dropset_load(last_normal_load)
             )
-            provenance[index] = {"weight_kg": "calculated_dropset"}
+            provenance[index] = _weight_provenance("calculated_dropset")
     return enriched_sets, provenance
 
 
@@ -400,7 +403,7 @@ def _historical_loads_by_signature(
     exercise_template_id: str,
 ) -> dict[SetSignature, deque[HistoricalLoad]]:
     rows = (
-        uow.query(HevyAppSets, HevyAppWorkout)
+        uow.query(HevyAppSets)
         .join(HevyAppWorkoutItem, HevyAppSets.workout_item_id == HevyAppWorkoutItem.id)
         .join(HevyAppWorkout, HevyAppWorkoutItem.workout_id == HevyAppWorkout.id)
         .filter(HevyAppWorkoutItem.exercise_id == exercise_template_id)
@@ -409,15 +412,12 @@ def _historical_loads_by_signature(
         .all()
     )
     historical_loads: dict[SetSignature, deque[HistoricalLoad]] = {}
-    for set_row, workout in rows:
+    for set_row in rows:
         signature = _set_history_signature(set_row)
         if signature is None:
             continue
         historical_loads.setdefault(signature, deque()).append(
-            HistoricalLoad(
-                weight_kg=float(set_row.weight_kg),
-                source_workout_id=str(workout.id),
-            )
+            HistoricalLoad(weight_kg=float(set_row.weight_kg))
         )
     return historical_loads
 
@@ -441,7 +441,7 @@ def _next_historical_load(
     return loads.popleft()
 
 
-def _normal_load(
+def _updated_last_normal_load(
     planned_set: PostRoutinesRequestSet,
     weight_kg: float,
     current: float | None,
@@ -453,6 +453,10 @@ def _normal_load(
 
 def _dropset_load(normal_load: float) -> float:
     return round(normal_load * 0.8, 1)
+
+
+def _weight_provenance(source: WeightProvenance) -> SetProvenance:
+    return {"weight_kg": source}
 
 
 def _copy_set_with_weight(
@@ -521,7 +525,7 @@ def _set_to_dict(value: PostRoutinesRequestSet) -> dict[str, int | float | str]:
     return value.dict(exclude_none=True)
 
 
-def _provenance_to_dict(provenance: dict[str, str]) -> dict[str, dict[str, str]]:
+def _provenance_to_dict(provenance: SetProvenance) -> dict[str, SetProvenance]:
     return {"_provenance": provenance} if provenance else {}
 
 
