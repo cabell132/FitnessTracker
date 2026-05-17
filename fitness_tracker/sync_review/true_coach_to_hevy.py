@@ -14,6 +14,9 @@ from fitness_tracker.database.models import HevyAppExercise, TrueCoachExercise
 from fitness_tracker.database.models.true_coach import TrueCoachWorkout, TrueCoachWorkoutItem
 from fitness_tracker.database.uow import UnitOfWork
 
+SET_PATTERN = re.compile(r"(?P<count>\d+)\s*[xX]\s*(?P<reps>\d+)")
+SET_DISPLAY_KEYS = ("type", "weight_kg", "reps", "distance_meters", "duration_seconds")
+
 
 class SyncReviewError(Exception):
     """Raised when a requested sync review cannot be produced."""
@@ -137,16 +140,7 @@ class TrueCoachToHevyReviewService:
             "source_id": item.source_id,
             "name": item.name,
             "info": item.info,
-            "selected_hevy_template": (
-                None
-                if template is None
-                else {
-                    "id": template.id,
-                    "name": template.name,
-                    "type": template.type,
-                    "equipment": template.equipment,
-                }
-            ),
+            "selected_hevy_template": _template_to_dict(template),
             "proposed_sets": [_set_to_dict(proposed_set) for proposed_set in item.proposed_sets],
             "warnings": item.warnings,
             "blockers": [],
@@ -166,17 +160,12 @@ class TrueCoachToHevyReviewService:
 
     def _report_item(self, index: int, item: ReviewItem) -> list[str]:
         template = item.selected_hevy_template
-        template_line = (
-            "Selected Hevy template: unknown"
-            if template is None
-            else f"Selected Hevy template: {template.name} ({template.id})"
-        )
         lines = [
             f"## {index}. {item.name}",
             "",
             f"Source ID: {item.source_id}",
             f"Info: {item.info or 'none'}",
-            template_line,
+            _format_template(template),
             "Proposed sets:",
         ]
         if item.proposed_sets:
@@ -191,12 +180,29 @@ class TrueCoachToHevyReviewService:
 
 
 def _parse_proposed_sets(info: str) -> list[PostRoutinesRequestSet]:
-    match = re.search(r"(?P<count>\d+)\s*[xX]\s*(?P<reps>\d+)", info)
+    match = SET_PATTERN.search(info)
     if not match:
         return []
     count = int(match.group("count"))
     reps = int(match.group("reps"))
     return [PostRoutinesRequestSet(type="normal", reps=reps) for _ in range(count)]
+
+
+def _template_to_dict(template: HevyAppExercise | None) -> dict[str, str | None] | None:
+    if template is None:
+        return None
+    return {
+        "id": template.id,
+        "name": template.name,
+        "type": template.type,
+        "equipment": template.equipment,
+    }
+
+
+def _format_template(template: HevyAppExercise | None) -> str:
+    if template is None:
+        return "Selected Hevy template: unknown"
+    return f"Selected Hevy template: {template.name} ({template.id})"
 
 
 def _set_to_dict(value: PostRoutinesRequestSet) -> dict[str, int | float | str]:
@@ -207,5 +213,4 @@ def _set_to_dict(value: PostRoutinesRequestSet) -> dict[str, int | float | str]:
 
 def _format_set(value: PostRoutinesRequestSet) -> str:
     data = _set_to_dict(value)
-    ordered_keys = ["type", "weight_kg", "reps", "distance_meters", "duration_seconds"]
-    return "; ".join(f"{key}: {data[key]}" for key in ordered_keys if key in data)
+    return "; ".join(f"{key}: {data[key]}" for key in SET_DISPLAY_KEYS if key in data)
