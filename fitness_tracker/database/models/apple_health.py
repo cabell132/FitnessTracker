@@ -17,7 +17,7 @@ class AppleHealthDataType(BaseModel):
 
     records = relationship("AppleHealthDataRecord", back_populates="data_type")
 
-    __table_args__ = (UniqueConstraint("name", "unit", name="uq_name_unit"),)
+    __table_args__ = (UniqueConstraint("name", "unit", name="uq_apple_health_type_name_unit"),)
 
 
 class AppleHealthDataRecord(BaseModel):
@@ -32,7 +32,9 @@ class AppleHealthDataRecord(BaseModel):
 
     data_type = relationship("AppleHealthDataType", back_populates="records")
 
-    __table_args__ = (UniqueConstraint("data_type_id", "timestamp", name="uq_data_type_timestamp"),)
+    __table_args__ = (
+        UniqueConstraint("data_type_id", "timestamp", name="uq_apple_health_record_type_timestamp"),
+    )
 
 
 class AppleHealthWorkoutType(BaseModel):
@@ -43,7 +45,7 @@ class AppleHealthWorkoutType(BaseModel):
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String, unique=True, nullable=False)
 
-    __table_args__ = (UniqueConstraint("name", name="uq_name"),)
+    __table_args__ = (UniqueConstraint("name", name="uq_apple_health_workout_type_name"),)
 
 
 class AppleHealthWorkout(BaseModel):

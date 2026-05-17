@@ -118,13 +118,13 @@ class BaseModel(Base):
         """
         return {key: self.__getitem__(key) for key in self.columns()}
 
-    def insert_ignore(self) -> Any:
-        """Build an ``INSERT OR IGNORE`` statement for this row.
+    def insert_values(self) -> dict[str, Any]:
+        """Return values for an insert statement.
 
         Returns:
-            Any: SQLAlchemy insert construct with OR IGNORE prefix.
+            dict[str, Any]: Column-value mapping for this row.
         """
-        return self.__table__.insert().prefix_with("OR IGNORE").values(**self.to_dict())
+        return self.to_dict()
 
     def pformat(self, indent: str = "   ") -> str:
         """Pretty-print column values aligned in columns.

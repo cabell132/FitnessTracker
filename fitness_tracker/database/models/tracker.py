@@ -110,9 +110,9 @@ class Workout(BaseModel):
 
     # Constraints
     __table_args__ = (
-        UniqueConstraint("hevy_app_id", "true_coach_id", name="_hevy_app_true_coach_uc"),
-        UniqueConstraint("hevy_app_id", name="_hevy_app_uc"),
-        UniqueConstraint("true_coach_id", name="_true_coach_uc"),
+        UniqueConstraint("hevy_app_id", "true_coach_id", name="uq_workout_hevy_true_coach"),
+        UniqueConstraint("hevy_app_id", name="uq_workout_hevy_app_id"),
+        UniqueConstraint("true_coach_id", name="uq_workout_true_coach_id"),
     )
 
 
@@ -204,8 +204,8 @@ class Exercise(BaseModel):
 
     # Constraints
     __table_args__ = (
-        UniqueConstraint("hevy_app_id", "true_coach_id", name="_hevy_app_true_coach_uc"),
-        UniqueConstraint("name", name="_name_uc"),
+        UniqueConstraint("hevy_app_id", "true_coach_id", name="uq_exercise_hevy_true_coach"),
+        UniqueConstraint("name", name="uq_exercise_name"),
     )
 
 
@@ -255,9 +255,12 @@ class Sets(BaseModel):
     # Constraints
     __table_args__ = (
         UniqueConstraint(
-            "workout_item_id", "index", "hevy_app_id", name="_hevy_app_workout_item_index_uc"
+            "workout_item_id",
+            "index",
+            "hevy_app_id",
+            name="uq_sets_workout_item_index_hevy_app",
         ),
-        UniqueConstraint("workout_item_id", "index", name="_workout_item_index_uc"),
+        UniqueConstraint("workout_item_id", "index", name="uq_sets_workout_item_index"),
     )
 
     def __repr__(self) -> str:
@@ -297,8 +300,8 @@ class Metric(BaseModel):
 
     # Constraints
     __table_args__ = (
-        UniqueConstraint("name", name="_name_uc"),
-        UniqueConstraint("true_coach_id", name="_true_coach_uc"),
+        UniqueConstraint("name", name="uq_metric_name"),
+        UniqueConstraint("true_coach_id", name="uq_metric_true_coach_id"),
     )
 
 
@@ -337,7 +340,7 @@ class MetricItem(BaseModel):
 
     # Constraints
     __table_args__ = (
-        UniqueConstraint("apple_id", name="_apple_id"),
-        UniqueConstraint("true_coach_id", name="_true_coach_id"),
-        UniqueConstraint("workout_id", "metric_id", name="_workout_id_metric_id"),
+        UniqueConstraint("apple_id", name="uq_metric_item_apple_id"),
+        UniqueConstraint("true_coach_id", name="uq_metric_item_true_coach_id"),
+        UniqueConstraint("workout_id", "metric_id", name="uq_metric_item_workout_metric"),
     )

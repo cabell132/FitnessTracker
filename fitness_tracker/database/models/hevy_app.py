@@ -89,7 +89,7 @@ class HevyAppWorkoutItem(BaseModel):
     __tablename__: str = __qualname__
 
     id = Column(Integer, primary_key=True, autoincrement=True)  # API provides id
-    workout_id = Column(Integer, ForeignKey("HevyAppWorkout.id"), nullable=False)
+    workout_id = Column(String, ForeignKey("HevyAppWorkout.id"), nullable=False)
     index = Column(Integer, nullable=False)
     name = Column(String, nullable=False)
     notes = Column(String, nullable=False)
@@ -115,7 +115,9 @@ class HevyAppWorkoutItem(BaseModel):
     )
 
     # Constraints
-    __table_args__ = (UniqueConstraint("workout_id", "index", name="_hevy_app_workout_index_uc"),)
+    __table_args__ = (
+        UniqueConstraint("workout_id", "index", name="uq_hevy_workout_item_workout_index"),
+    )
 
     def __repr__(self) -> str:
         """Return a debug representation of this workout item.
@@ -148,7 +150,7 @@ class HevyAppSets(BaseModel):
 
     # Constraints
     __table_args__ = (
-        UniqueConstraint("workout_item_id", "index", name="_hevy_app_workout_item_index_uc"),
+        UniqueConstraint("workout_item_id", "index", name="uq_hevy_sets_workout_item_index"),
     )
 
     def __repr__(self) -> str:

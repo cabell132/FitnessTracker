@@ -13,20 +13,20 @@
 -- 	WHERE twi.id NOT IN (SELECT true_coach_id FROM WorkoutItem) AND twi.exercise_id IS NULL
 -- 	ORDER BY twi.workout_id, twi.position
 
-INSERT INTO WorkoutItem(workout_id, true_coach_id, position, exercise_id, rest)
+INSERT INTO "WorkoutItem"(workout_id, true_coach_id, position, exercise_id, rest)
 SELECT 
     w.id as workout_id, 
     twi.id as true_coach_id, 
     twi.position, 
     CASE 
         WHEN twi.exercise_id IS NULL THEN 200 
-        ELSE e.id 
+        ELSE e.id
     END as exercise_id, 
     90 as rest
-FROM TrueCoachWorkoutItem twi
-LEFT JOIN Exercise e ON e.true_coach_id = twi.exercise_id
-JOIN Workout w ON w.true_coach_id = twi.workout_id
-WHERE twi.id NOT IN (SELECT true_coach_id FROM WorkoutItem)
+FROM "TrueCoachWorkoutItem" twi
+LEFT JOIN "Exercise" e ON e.true_coach_id = twi.exercise_id
+JOIN "Workout" w ON w.true_coach_id = twi.workout_id
+WHERE twi.id NOT IN (SELECT true_coach_id FROM "WorkoutItem")
 ORDER BY twi.workout_id, twi.position;
 
 -- SELECT *

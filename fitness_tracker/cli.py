@@ -7,10 +7,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import urllib3
-from sqlalchemy import create_engine
+from sqlalchemy.engine import Engine
 
 from fitness_tracker.apis import HevyAppClient
 from fitness_tracker.database import Store
+from fitness_tracker.database.config import create_database_engine
 from fitness_tracker.maintenance.hevy_exercise_migration import (
     HevyExerciseTemplateMigrationService,
     MigrationError,
@@ -20,7 +21,14 @@ from fitness_tracker.maintenance.hevy_exercise_migration import (
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Run the CLI."""
+    """Run the CLI.
+
+    Args:
+        argv (list[str] | None): Optional argument list. Defaults to ``sys.argv``.
+
+    Returns:
+        int: Process exit code.
+    """
     parser = _build_parser()
     args = parser.parse_args(argv)
     if args.command == "hevy" and args.hevy_command == "migrate-exercise-template":
@@ -39,7 +47,10 @@ def _build_parser() -> argparse.ArgumentParser:
     migrate = hevy_subparsers.add_parser("migrate-exercise-template")
     migrate.add_argument("--from", dest="source_id", required=True)
     migrate.add_argument("--to", dest="target_id", required=True)
-    migrate.add_argument("--db", default="fitness_tracker.db")
+    migrate.add_argument("--db", help="SQLite database path. Prefer --database-url for new usage.")
+    migrate.add_argument(
+        "--database-url", help="SQLAlchemy database URL. Defaults to DATABASE_URL."
+    )
     migrate.add_argument("--apply", action="store_true")
     migrate.add_argument("--force", action="store_true")
     migrate.add_argument("--limit", type=int)
@@ -49,7 +60,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _migrate_exercise_template(args: argparse.Namespace) -> int:
-    engine = create_engine(f"sqlite:///{args.db}")
+    engine = _engine_from_args(args)
     store = Store(engine)
     hevy = HevyAppClient() if args.apply else None
     service = HevyExerciseTemplateMigrationService(
@@ -65,7 +76,7 @@ def _migrate_exercise_template(args: argparse.Namespace) -> int:
                 args.target_id,
                 force=args.force,
                 limit=args.limit,
-                backup_path=None if args.no_backup else _default_backup_path(args.db),
+                backup_path=_backup_path_for_engine(engine, no_backup=args.no_backup),
                 report_path=_report_path(args.report_path),
             )
             _print_result(result)
@@ -79,9 +90,23 @@ def _migrate_exercise_template(args: argparse.Namespace) -> int:
     return 0
 
 
-def _default_backup_path(db_path: str) -> Path:
+def _engine_from_args(args: argparse.Namespace) -> Engine:
+    database_url = args.database_url
+    if database_url is None and args.db:
+        database_url = f"sqlite:///{args.db}"
+    return create_database_engine(database_url)
+
+
+def _backup_path_for_engine(engine: Engine, *, no_backup: bool) -> Path | None:
+    if no_backup or engine.url.get_backend_name() != "sqlite":
+        return None
+    return _default_backup_path(engine.url.render_as_string(hide_password=False))
+
+
+def _default_backup_path(database_url: str) -> Path:
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
-    return Path("reports") / "hevy_exercise_migrations" / f"{Path(db_path).name}.{stamp}.bak"
+    db_name = Path(database_url.removeprefix("sqlite:///")).name
+    return Path("reports") / "hevy_exercise_migrations" / f"{db_name}.{stamp}.bak"
 
 
 def _report_path(value: str | None) -> Path | None:

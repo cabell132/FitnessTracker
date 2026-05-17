@@ -10,7 +10,7 @@ WITH missedRows AS (
             ORDER BY position
         ) AS missed_index
     FROM
-        TrueCoachWorkoutItem
+        "TrueCoachWorkoutItem"
     WHERE
         state != 'missed'
 ),
@@ -25,27 +25,27 @@ index_table AS (
             ELSE NULL
         END AS "index"
     FROM
-        TrueCoachWorkoutItem w
+        "TrueCoachWorkoutItem" w
     LEFT JOIN
         missedRows cr
     ON
         w.id = cr.id
 )
 -- Step 2: Perform the UPDATE using the prepared index_table
-UPDATE WorkoutItem
+UPDATE "WorkoutItem"
 SET hevy_app_id = (
     SELECT hwi.id
-    FROM Workout w
-    JOIN TrueCoachWorkoutItem twi ON w.true_coach_id = twi.workout_id
-    JOIN HevyAppWorkout hw ON w.hevy_app_id = hw.id
-    JOIN HevyAppWorkoutItem hwi ON hwi.workout_id = hw.id
+    FROM "Workout" w
+    JOIN "TrueCoachWorkoutItem" twi ON w.true_coach_id = twi.workout_id
+    JOIN "HevyAppWorkout" hw ON w.hevy_app_id = hw.id
+    JOIN "HevyAppWorkoutItem" hwi ON hwi.workout_id = hw.id
     JOIN index_table idx ON idx.true_coach_id = twi.id
     WHERE idx."index" = (hwi."index" + 1)
-    AND WorkoutItem.true_coach_id = twi.id
+    AND "WorkoutItem".true_coach_id = twi.id
 )
 WHERE EXISTS (
     SELECT 1
     FROM index_table idx
-    JOIN TrueCoachWorkoutItem twi ON idx.true_coach_id = twi.id
-    WHERE WorkoutItem.true_coach_id = twi.id
+    JOIN "TrueCoachWorkoutItem" twi ON idx.true_coach_id = twi.id
+    WHERE "WorkoutItem".true_coach_id = twi.id
 );

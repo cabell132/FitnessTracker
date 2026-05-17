@@ -7,6 +7,8 @@ from typing import Any, TypeVar
 
 from sqlalchemy.orm import Query, Session
 from sqlalchemy.sql import func, text
+from sqlalchemy.dialects.postgresql import insert as postgresql_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from fitness_tracker.database.models.base import BaseModel
 
@@ -79,16 +81,23 @@ class CrudMixin:
         self._session.merge(obj)
 
     def insert_ignore(self, obj: BaseModel) -> None:
-        """Insert a row via ``INSERT OR IGNORE`` if not already present.
+        """Insert a row, ignoring unique/primary-key conflicts.
 
         Args:
-            obj (BaseModel): Instance whose model builds the statement.
+            obj (BaseModel): Instance to persist.
         """
         if getattr(obj, "date_created", None) is None:
             obj.date_created = func.now()
         if getattr(obj, "date_updated", None) is None:
             obj.date_updated = func.now()
-        stmnt = obj.insert_ignore()
+        dialect_name = self._session.get_bind().dialect.name
+        values = obj.insert_values()
+        if dialect_name == "postgresql":
+            stmnt = postgresql_insert(obj.__table__).values(**values).on_conflict_do_nothing()
+        elif dialect_name == "sqlite":
+            stmnt = sqlite_insert(obj.__table__).values(**values).on_conflict_do_nothing()
+        else:
+            stmnt = obj.__table__.insert().values(**values)
         self._session.execute(stmnt)
 
     def delete(self, obj: BaseModel) -> None:

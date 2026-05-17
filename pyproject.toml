@@ -28,6 +28,7 @@ dependencies = [
     "matplotlib>=3.10.0",
     "plotly>=6.0.0",
     "nbformat>=5.10.4",
+    "psycopg2-binary>=2.9",
 ]
 
 [project.scripts]
