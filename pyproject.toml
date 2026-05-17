@@ -131,7 +131,6 @@ max-statements = 20
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["ANN", "SLF001", "TID252", "F401", "F403", "E402", "S105", "D", "PLC0415"]
 "fitness_tracker/database/models/__init__.py" = ["F403", "F405"]
-"fitness_tracker/database/repository/__init__.py" = ["F403", "F405"]
 "fitness_tracker/llm/prompt_templates.py" = ["S608"]
 
 # Static types: use ty only ([tool.ty]); mypy is intentionally not configured.

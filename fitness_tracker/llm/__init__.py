@@ -1,5 +1,5 @@
 """LLM integration exports."""
 
-from fitness_tracker.llm.open_ai_llm import OpenAILLM
+from fitness_tracker.llm.fitness_llm import FitnessLLM
 
-__all__ = ["OpenAILLM"]
+__all__ = ["FitnessLLM"]
