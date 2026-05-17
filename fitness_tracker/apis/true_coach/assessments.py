@@ -1,5 +1,6 @@
 """True Coach assessments API resource."""
 
+from fitness_tracker.apis.base import parse_response
 from fitness_tracker.apis.session import APISession
 from fitness_tracker.apis.true_coach.types import (
     AssessmentItem,
@@ -32,9 +33,7 @@ class TrueCoachAssessments:
         response = self._session.make_request(
             method="GET", endpoint=self.endpoint + f"/{assessment_id}"
         )
-        if response:
-            return AssessmentResponse(**response)
-        return None
+        return parse_response(response, AssessmentResponse)
 
     def get_weights(self) -> AssessmentResponse | None:
         """Load the configured body-weight assessment.

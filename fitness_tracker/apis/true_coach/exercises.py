@@ -1,5 +1,6 @@
 """True Coach exercises API resource."""
 
+from fitness_tracker.apis.base import parse_response
 from fitness_tracker.apis.session import APISession
 from fitness_tracker.apis.true_coach.types import ExerciseResponse
 
@@ -23,6 +24,4 @@ class TrueCoachExercises:
             ExerciseResponse | None: Parsed list payload, or ``None`` when empty.
         """
         data = self._session.make_request(method="GET", endpoint=self.endpoint)
-        if data:
-            return ExerciseResponse(**data)
-        return None
+        return parse_response(data, ExerciseResponse)

@@ -2,6 +2,7 @@
 
 from typing import Any, Literal
 
+from fitness_tracker.apis.base import parse_response
 from fitness_tracker.apis.session import APISession
 from fitness_tracker.apis.true_coach.types import (
     PutWorkoutItemRequest,
@@ -47,9 +48,7 @@ class TrueCoachWorkouts:
         params = {"order": order, "page": page, "per_page": per_page, "states": states_param}
 
         data = self._session.make_request(method="GET", endpoint=self.endpoint, json=params)
-        if data:
-            return WorkoutResponse(**data)
-        return None
+        return parse_response(data, WorkoutResponse)
 
     def update_workout_item(
         self, workout_item_id: int, workout_item: PutWorkoutItemRequest
@@ -67,9 +66,7 @@ class TrueCoachWorkouts:
         data = self._session.make_request(
             method="PUT", endpoint=endpoint, json={"workout_item": workout_item.model_dump()}
         )
-        if data:
-            return PutWorkoutItemResponse(**data)
-        return None
+        return parse_response(data, PutWorkoutItemResponse)
 
     def update_workout(self, workout_id: int, workout: dict[str, Any]) -> Any:
         """Replace workout fields (generic PUT).

@@ -1,5 +1,6 @@
 """Hevy App user info endpoint."""
 
+from fitness_tracker.apis.base import parse_response
 from fitness_tracker.apis.session import APISession
 from fitness_tracker.apis.hevy_app.types import UserInfoResponse
 
@@ -23,6 +24,4 @@ class HevyAppUsers:
             UserInfoResponse | None: User info wrapper, or ``None`` when empty.
         """
         data = self._session.make_request(method="GET", endpoint=self.endpoint)
-        if data:
-            return UserInfoResponse(**data)
-        return None
+        return parse_response(data, UserInfoResponse)

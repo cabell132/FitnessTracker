@@ -1,5 +1,6 @@
 """Hevy App routine folder endpoints."""
 
+from fitness_tracker.apis.base import parse_response
 from fitness_tracker.apis.session import APISession
 from fitness_tracker.apis.hevy_app.types import (
     PostRoutineFolderRequestBody,
@@ -32,9 +33,7 @@ class HevyAppRoutineFolders:
         """
         query = {"page": page, "pageSize": per_page}
         data = self._session.make_request(method="GET", endpoint=self.endpoint, params=query)
-        if data:
-            return RoutineFolderResponse(**data)
-        return None
+        return parse_response(data, RoutineFolderResponse)
 
     def get_folder(self, folder_id: int) -> RoutineFolder | None:
         """Fetch a single routine folder by id.
@@ -47,9 +46,7 @@ class HevyAppRoutineFolders:
         """
         endpoint = f"{self.endpoint}/{folder_id}"
         data = self._session.make_request(method="GET", endpoint=endpoint)
-        if data:
-            return RoutineFolder(**data)
-        return None
+        return parse_response(data, RoutineFolder)
 
     def create(self, folder: PostRoutineFolderRequestBody) -> RoutineFolder | None:
         """Create a new routine folder (inserted at index 0).
@@ -63,6 +60,4 @@ class HevyAppRoutineFolders:
         data = self._session.make_request(
             method="POST", endpoint=self.endpoint, json=folder.model_dump()
         )
-        if data:
-            return RoutineFolder(**data)
-        return None
+        return parse_response(data, RoutineFolder)

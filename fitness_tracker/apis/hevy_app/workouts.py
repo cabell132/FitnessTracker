@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime
 
+from fitness_tracker.apis.base import parse_response
 from fitness_tracker.apis.session import APISession
 from fitness_tracker.apis.hevy_app.types import (
     PaginatedWorkoutEvents,
@@ -36,9 +37,7 @@ class HevyAppWorkouts:
         """
         query = {"page": page, "pageSize": per_page}
         data = self._session.make_request(method="GET", endpoint=self.endpoint, params=query)
-        if data:
-            return WorkoutResponse(**data)
-        return None
+        return parse_response(data, WorkoutResponse)
 
     def get_workout(self, workout_id: str) -> Workout | None:
         """Fetch one workout by id.
@@ -51,9 +50,7 @@ class HevyAppWorkouts:
         """
         endpoint = f"{self.endpoint}/{workout_id}"
         data = self._session.make_request(method="GET", endpoint=endpoint)
-        if data:
-            return Workout(**data)
-        return None
+        return parse_response(data, Workout)
 
     def get_workout_count(self) -> int:
         """Return total workouts reported by the count endpoint.
@@ -84,9 +81,7 @@ class HevyAppWorkouts:
         query = {"page": page, "pageSize": per_page, "since": since.isoformat()}
         endpoint = f"{self.endpoint}/events"
         data = self._session.make_request(method="GET", endpoint=endpoint, params=query)
-        if data:
-            return PaginatedWorkoutEvents(**data)
-        return None
+        return parse_response(data, PaginatedWorkoutEvents)
 
     def update_workout(self, workout_id: str, workout: Workout) -> Workout | None:
         """Replace workout fields with a full ``Workout`` model.
@@ -125,8 +120,8 @@ class HevyAppWorkouts:
                 workout_data = data["workout"]
                 if isinstance(workout_data, list):
                     workout_data = workout_data[0]
-                return Workout(**workout_data)
-            return Workout(**data)
+                return parse_response(workout_data, Workout)
+            return parse_response(data, Workout)
         return None
 
     def create(self, workout: PostWorkoutsRequestBody) -> PostWorkoutsResponse | None:
@@ -141,6 +136,4 @@ class HevyAppWorkouts:
         data = self._session.make_request(
             method="POST", endpoint=self.endpoint, json=workout.model_dump()
         )
-        if data:
-            return PostWorkoutsResponse(**data)
-        return None
+        return parse_response(data, PostWorkoutsResponse)

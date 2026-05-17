@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from fitness_tracker.apis.base import parse_response
 from fitness_tracker.apis.session import APISession
 from fitness_tracker.apis.hevy_app.types import ExerciseHistoryResponse
 
@@ -43,6 +44,4 @@ class HevyAppExerciseHistory:
         if end_date is not None:
             query["end_date"] = end_date.isoformat()
         data = self._session.make_request(method="GET", endpoint=endpoint, params=query or None)
-        if data:
-            return ExerciseHistoryResponse(**data)
-        return None
+        return parse_response(data, ExerciseHistoryResponse)

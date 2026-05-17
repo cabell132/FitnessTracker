@@ -1,5 +1,6 @@
 """Hevy App exercise template endpoints."""
 
+from fitness_tracker.apis.base import parse_response
 from fitness_tracker.apis.session import APISession
 from fitness_tracker.apis.hevy_app.types import (
     CreateCustomExerciseRequestBody,
@@ -35,9 +36,7 @@ class HevyAppExercises:
         """
         query = {"page": page, "pageSize": per_page}
         data = self._session.make_request(method="GET", endpoint=self.endpoint, params=query)
-        if data:
-            return ExerciseResponse(**data)
-        return None
+        return parse_response(data, ExerciseResponse)
 
     def get_template(self, template_id: str) -> ExerciseTemplate | None:
         """Fetch a single exercise template by id.
@@ -50,9 +49,7 @@ class HevyAppExercises:
         """
         endpoint = f"{self.endpoint}/{template_id}"
         data = self._session.make_request(method="GET", endpoint=endpoint)
-        if data:
-            return ExerciseTemplate(**data)
-        return None
+        return parse_response(data, ExerciseTemplate)
 
     def create(
         self, exercise: CreateCustomExerciseRequestBody
@@ -68,6 +65,4 @@ class HevyAppExercises:
         data = self._session.make_request(
             method="POST", endpoint=self.endpoint, json=exercise.model_dump()
         )
-        if data:
-            return CreateCustomExerciseResponse(**data)
-        return None
+        return parse_response(data, CreateCustomExerciseResponse)

@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from fitness_tracker.apis.base import parse_response
 from fitness_tracker.apis.session import APISession
 from fitness_tracker.apis.hevy_app.types import (
     PostRoutinesRequestBody,
@@ -38,9 +39,7 @@ class HevyAppRoutines:
         """
         query = {"page": page, "pageSize": per_page}
         data = self._session.make_request(method="GET", endpoint=self.endpoint, params=query)
-        if data:
-            return RoutineResponse(**data)
-        return None
+        return parse_response(data, RoutineResponse)
 
     def get_routine(self, routine_id: str) -> Routine | None:
         """Fetch a single routine by id.
@@ -53,9 +52,7 @@ class HevyAppRoutines:
         """
         endpoint = f"{self.endpoint}/{routine_id}"
         data = self._session.make_request(method="GET", endpoint=endpoint)
-        if data:
-            return Routine(**data)
-        return None
+        return parse_response(data, Routine)
 
     def create(self, routine: PostRoutinesRequestBody) -> PostRoutinesResponse | None:
         """Create a routine from a typed request body.
@@ -69,9 +66,7 @@ class HevyAppRoutines:
         data = self._session.make_request(
             method="POST", endpoint=self.endpoint, json=routine.model_dump()
         )
-        if data:
-            return PostRoutinesResponse(**data)
-        return None
+        return parse_response(data, PostRoutinesResponse)
 
     def update(self, routine_id: str, routine: PutRoutinesRequestBody) -> Routine | None:
         """Update an existing routine.
@@ -87,9 +82,7 @@ class HevyAppRoutines:
         data = self._session.make_request(
             method="PUT", endpoint=endpoint, json=routine.model_dump()
         )
-        if data:
-            return Routine(**data)
-        return None
+        return parse_response(data, Routine)
 
     def delete(self, routine_id: str) -> dict[str, Any] | None:
         """Delete a routine via the web session.
