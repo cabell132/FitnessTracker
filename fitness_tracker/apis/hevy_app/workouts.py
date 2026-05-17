@@ -120,7 +120,7 @@ class HevyAppWorkouts:
                 workout_data = data["workout"]
                 if isinstance(workout_data, list):
                     workout_data = workout_data[0]
-                return parse_response(workout_data, Workout)
+                return Workout(**workout_data)
             return parse_response(data, Workout)
         return None
 
