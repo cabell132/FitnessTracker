@@ -101,7 +101,7 @@ class TrueCoachToHevyReviewService:
             name=item.name,
             info=item.info or "",
             selected_hevy_template=template,
-            proposed_sets=_parse_proposed_sets(item.info or ""),
+            proposed_sets=parse_prescribed_sets(item.info or ""),
             warnings=warnings,
         )
 
@@ -176,10 +176,6 @@ class TrueCoachToHevyReviewService:
         lines.append("Blockers: none")
         lines.append("")
         return lines
-
-
-def _parse_proposed_sets(info: str) -> list[PostRoutinesRequestSet]:
-    return parse_prescribed_sets(info)
 
 
 def _template_to_dict(template: HevyAppExercise | None) -> dict[str, str | None] | None:

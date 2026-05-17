@@ -12,9 +12,10 @@ from bs4 import BeautifulSoup
 
 from fitness_tracker.apis.hevy_app.types import PostRoutinesRequestSet
 
-SET_PATTERN = re.compile(
+PRESCRIBED_SETS_PATTERN = re.compile(
     r"(?P<count>\d+)\s*[xX]\s*(?P<reps>\d+(?:\s*-\s*\d+)?(?:\s*[+>]\s*\d+(?:\s*-\s*\d+)?)*)"
 )
+DROPSET_REP_SEPARATOR_PATTERN = re.compile(r"\s*[+>]\s*")
 
 
 def parse_workout_order(description: str) -> dict[int, dict[str, str | int | None]]:
@@ -135,19 +136,20 @@ def parse_prescribed_sets(description: str) -> list[PostRoutinesRequestSet]:
     Returns:
         list[PostRoutinesRequestSet]: Parsed Hevy set rows, or an empty list.
     """
-    match = SET_PATTERN.search(description)
+    match = PRESCRIBED_SETS_PATTERN.search(description)
     if not match:
         return []
 
-    count = int(match.group("count"))
-    rep_parts = re.split(r"\s*[+>]\s*", match.group("reps"))
-    reps = [_parse_rep_target(part) for part in rep_parts]
+    set_count = int(match.group("count"))
+    rep_parts = DROPSET_REP_SEPARATOR_PATTERN.split(match.group("reps"))
+    rep_targets = [_parse_rep_target(part) for part in rep_parts]
+
     sets: list[PostRoutinesRequestSet] = []
-    for _ in range(count):
-        sets.extend(
-            PostRoutinesRequestSet(type="normal" if index == 0 else "dropset", reps=rep)
-            for index, rep in enumerate(reps)
-        )
+    for _ in range(set_count):
+        for index, rep_target in enumerate(rep_targets):
+            set_type = "normal" if index == 0 else "dropset"
+            sets.append(PostRoutinesRequestSet(type=set_type, reps=rep_target))
+
     return sets
 
 
