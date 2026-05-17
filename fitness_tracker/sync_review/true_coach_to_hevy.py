@@ -19,6 +19,7 @@ from fitness_tracker.sync._true_coach_html import parse_prescribed_sets
 SET_DISPLAY_KEYS = ("type", "weight_kg", "reps", "distance_meters", "duration_seconds")
 BLOCKING_REQUIRED_TEMPLATE_STATUSES = frozenset({"missing", "ambiguous"})
 RequiredTemplateStatus = Literal["existing", "missing", "ambiguous"]
+PhaseKind = Literal["isometric_hold", "dynamic_reps"]
 
 
 class SyncReviewError(Exception):
@@ -44,6 +45,7 @@ class ReviewItem:
     selected_hevy_template: HevyAppExercise | None
     required_hevy_templates: list[RequiredHevyTemplate]
     proposed_sets: list[PostRoutinesRequestSet]
+    planned_blocks: list[PlannedBlock]
     warnings: list[str]
     blockers: list[str]
 
@@ -69,6 +71,15 @@ class TemplateOverrideRule:
 
 
 @dataclass(frozen=True)
+class TemplateMatchContext:
+    """Candidate item text used to match template override rules."""
+
+    item: TrueCoachWorkoutItem
+    selected_template: HevyAppExercise | None
+    text: str
+
+
+@dataclass(frozen=True)
 class RequiredHevyTemplate:
     """Required Hevy exercise template and local catalog resolution status."""
 
@@ -78,7 +89,45 @@ class RequiredHevyTemplate:
     matching_template_ids: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class PlannedBlock:
+    """One Hevy Routine exercise block planned from a True Coach Workout Item phase."""
+
+    source_id: int
+    phase_index: int
+    phase_kind: PhaseKind
+    source_text: str
+    notes: str
+    selected_hevy_template: HevyAppExercise | None
+    required_hevy_templates: list[RequiredHevyTemplate]
+    proposed_sets: list[PostRoutinesRequestSet]
+
+
+@dataclass(frozen=True)
+class ParsedPhase:
+    """Deterministic phase parsed from a mixed-mode Coach prescription."""
+
+    kind: PhaseKind
+    source_text: str
+    proposed_sets: list[PostRoutinesRequestSet]
+
+
+@dataclass(frozen=True)
+class PhaseTemplateSelection:
+    """Inputs for choosing a phase-specific Hevy template."""
+
+    phase_kind: PhaseKind
+    selected_template: HevyAppExercise | None
+    required_templates: list[RequiredHevyTemplate]
+
+
 DEFAULT_TEMPLATE_OVERRIDE_RULES_PATH = Path(__file__).with_name("template_override_rules.json")
+MIXED_PHASE_SPLIT_PATTERN = re.compile(r"\s+(?:then|followed by)\s+|[;,]\s*", re.IGNORECASE)
+DURATION_PHASE_PATTERN = re.compile(
+    r"(?P<count>\d+)\s*[xX]\s*(?P<seconds>\d+)\s*(?:s|sec|secs|second|seconds)\b",
+    re.IGNORECASE,
+)
+ISO_PHASE_PATTERN = re.compile(r"\b(?:iso|isometric|hold)\b", re.IGNORECASE)
 
 
 class TrueCoachToHevyReviewService:
@@ -133,6 +182,7 @@ class TrueCoachToHevyReviewService:
     def _review_item(self, uow: UnitOfWork, item: TrueCoachWorkoutItem) -> ReviewItem:
         template = self._selected_template(uow, item)
         required_templates = self._required_templates(uow, item, template)
+        planned_blocks = self._planned_blocks(uow, item, template)
         warnings = []
         if template is None:
             warnings.append("No linked Hevy exercise template found.")
@@ -143,8 +193,11 @@ class TrueCoachToHevyReviewService:
             selected_hevy_template=template,
             required_hevy_templates=required_templates,
             proposed_sets=parse_prescribed_sets(item.info or ""),
+            planned_blocks=planned_blocks,
             warnings=warnings,
-            blockers=_required_template_blockers(required_templates),
+            blockers=_required_template_blockers(
+                _required_templates_for_blockers(required_templates, planned_blocks)
+            ),
         )
 
     def _selected_template(
@@ -179,6 +232,66 @@ class TrueCoachToHevyReviewService:
             for spec in matched_specs
         ]
 
+    def _planned_blocks(
+        self,
+        uow: UnitOfWork,
+        item: TrueCoachWorkoutItem,
+        selected_template: HevyAppExercise | None,
+    ) -> list[PlannedBlock]:
+        phases = _parse_mixed_mode_phases(item.info or "")
+        if not phases:
+            return []
+
+        blocks: list[PlannedBlock] = []
+        for index, phase in enumerate(phases, start=1):
+            required_templates = (
+                self._required_templates_for_phase(
+                    uow,
+                    TemplateMatchContext(
+                        item=item,
+                        selected_template=selected_template,
+                        text=phase.source_text,
+                    ),
+                )
+                if phase.kind == "isometric_hold"
+                else []
+            )
+            phase_template = _selected_template_for_phase(
+                uow,
+                PhaseTemplateSelection(
+                    phase_kind=phase.kind,
+                    selected_template=selected_template,
+                    required_templates=required_templates,
+                ),
+            )
+            blocks.append(
+                PlannedBlock(
+                    source_id=item.id,
+                    phase_index=index,
+                    phase_kind=phase.kind,
+                    source_text=phase.source_text,
+                    notes=f"{phase.source_text}\nSource: {item.info or ''}",
+                    selected_hevy_template=phase_template,
+                    required_hevy_templates=required_templates,
+                    proposed_sets=phase.proposed_sets,
+                )
+            )
+        return blocks
+
+    def _required_templates_for_phase(
+        self,
+        uow: UnitOfWork,
+        context: TemplateMatchContext,
+    ) -> list[RequiredHevyTemplate]:
+        rules = _load_template_override_rules(DEFAULT_TEMPLATE_OVERRIDE_RULES_PATH)
+        matched_specs = [
+            rule.required_template for rule in rules if _rule_matches_text(rule, context)
+        ]
+        return [
+            _resolve_required_template(uow, spec, source_workout_item_id=context.item.id)
+            for spec in matched_specs
+        ]
+
     def _plan(self, workout: TrueCoachWorkout, items: list[ReviewItem]) -> dict[str, Any]:
         return {
             "workout": {
@@ -202,6 +315,7 @@ class TrueCoachToHevyReviewService:
                 for required_template in item.required_hevy_templates
             ],
             "proposed_sets": [_set_to_dict(proposed_set) for proposed_set in item.proposed_sets],
+            "planned_blocks": [_planned_block_to_dict(block) for block in item.planned_blocks],
             "warnings": item.warnings,
             "blockers": item.blockers,
         }
@@ -232,6 +346,10 @@ class TrueCoachToHevyReviewService:
             lines.extend(f"- {_format_set(proposed_set)}" for proposed_set in item.proposed_sets)
         else:
             lines.append("- unavailable")
+        if item.planned_blocks:
+            lines.append("Planned Hevy blocks:")
+            for block in item.planned_blocks:
+                lines.extend(_format_planned_block(block))
         if item.required_hevy_templates:
             lines.append("Required Hevy templates:")
             lines.extend(
@@ -274,13 +392,25 @@ def _rule_matches(
     item: TrueCoachWorkoutItem,
     selected_template: HevyAppExercise | None,
 ) -> bool:
+    return _rule_matches_text(
+        rule,
+        TemplateMatchContext(
+            item=item,
+            selected_template=selected_template,
+            text=item.info or item.comment or "",
+        ),
+    )
+
+
+def _rule_matches_text(rule: TemplateOverrideRule, context: TemplateMatchContext) -> bool:
     source_names = {name.casefold() for name in rule.source_template_names}
+    item = context.item
     candidate_names = {item.name.casefold()}
-    if selected_template is not None:
-        candidate_names.add(selected_template.name.casefold())
+    if context.selected_template is not None:
+        candidate_names.add(context.selected_template.name.casefold())
     if candidate_names.isdisjoint(source_names):
         return False
-    item_text = f"{item.name} {item.info or ''} {item.comment or ''}"
+    item_text = f"{item.name} {context.text} {item.comment or ''}"
     return all(pattern.search(item_text) for pattern in rule.item_patterns)
 
 
@@ -322,6 +452,75 @@ def _required_template_blockers(
     ]
 
 
+def _required_templates_for_blockers(
+    item_required_templates: list[RequiredHevyTemplate],
+    planned_blocks: list[PlannedBlock],
+) -> list[RequiredHevyTemplate]:
+    if not planned_blocks:
+        return item_required_templates
+    return [
+        required_template
+        for block in planned_blocks
+        for required_template in block.required_hevy_templates
+    ]
+
+
+def _parse_mixed_mode_phases(description: str) -> list[ParsedPhase]:
+    parts = [
+        part.strip()
+        for part in MIXED_PHASE_SPLIT_PATTERN.split(description)
+        if part and part.strip()
+    ]
+    if len(parts) < 2:
+        return []
+
+    phases = [_parse_phase(part) for part in parts]
+    if any(phase is None for phase in phases):
+        return []
+
+    parsed = [phase for phase in phases if phase is not None]
+    kinds = {phase.kind for phase in parsed}
+    if kinds != {"isometric_hold", "dynamic_reps"}:
+        return []
+    return parsed
+
+
+def _parse_phase(text: str) -> ParsedPhase | None:
+    if (duration_sets := _parse_duration_sets(text)) and ISO_PHASE_PATTERN.search(text):
+        return ParsedPhase(
+            kind="isometric_hold",
+            source_text=text,
+            proposed_sets=duration_sets,
+        )
+    if reps_sets := parse_prescribed_sets(text):
+        return ParsedPhase(kind="dynamic_reps", source_text=text, proposed_sets=reps_sets)
+    return None
+
+
+def _parse_duration_sets(text: str) -> list[PostRoutinesRequestSet]:
+    match = DURATION_PHASE_PATTERN.search(text)
+    if not match:
+        return []
+    return [
+        PostRoutinesRequestSet(type="normal", duration_seconds=int(match.group("seconds")))
+        for _ in range(int(match.group("count")))
+    ]
+
+
+def _selected_template_for_phase(
+    uow: UnitOfWork,
+    selection: PhaseTemplateSelection,
+) -> HevyAppExercise | None:
+    if selection.phase_kind == "dynamic_reps":
+        return selection.selected_template
+    if len(selection.required_templates) != 1:
+        return None
+    required_template = selection.required_templates[0]
+    if required_template.status != "existing" or len(required_template.matching_template_ids) != 1:
+        return None
+    return uow.get(HevyAppExercise, id=required_template.matching_template_ids[0])
+
+
 def _template_to_dict(template: HevyAppExercise | None) -> dict[str, str | None] | None:
     if template is None:
         return None
@@ -349,6 +548,22 @@ def _required_template_to_dict(
     }
 
 
+def _planned_block_to_dict(block: PlannedBlock) -> dict[str, Any]:
+    return {
+        "source_id": block.source_id,
+        "phase_index": block.phase_index,
+        "phase_kind": block.phase_kind,
+        "source_text": block.source_text,
+        "notes": block.notes,
+        "selected_hevy_template": _template_to_dict(block.selected_hevy_template),
+        "required_hevy_templates": [
+            _required_template_to_dict(required_template)
+            for required_template in block.required_hevy_templates
+        ],
+        "proposed_sets": [_set_to_dict(proposed_set) for proposed_set in block.proposed_sets],
+    }
+
+
 def _format_template(template: HevyAppExercise | None) -> str:
     if template is None:
         return "Selected Hevy template: unknown"
@@ -367,6 +582,34 @@ def _format_required_template(required_template: RequiredHevyTemplate) -> str:
         f"other muscles: {other_muscles} | status: {required_template.status} | "
         f"source IDs: {source_ids}"
     )
+
+
+def _format_planned_block(block: PlannedBlock) -> list[str]:
+    lines = [
+        f"- Block {block.phase_index}: {_format_phase_kind(block.phase_kind)}",
+        f"  Source ID: {block.source_id}",
+        f"  Source text: {block.source_text}",
+        f"  Notes: {block.notes}",
+        f"  {_format_template(block.selected_hevy_template)}",
+        "  Proposed sets:",
+    ]
+    if block.proposed_sets:
+        lines.extend(f"  - {_format_set(proposed_set)}" for proposed_set in block.proposed_sets)
+    else:
+        lines.append("  - unavailable")
+    if block.required_hevy_templates:
+        lines.append("  Required Hevy templates:")
+        lines.extend(
+            f"  - {_format_required_template(required_template)}"
+            for required_template in block.required_hevy_templates
+        )
+    return lines
+
+
+def _format_phase_kind(phase_kind: PhaseKind) -> str:
+    if phase_kind == "isometric_hold":
+        return "Isometric hold"
+    return "Dynamic reps"
 
 
 def _set_to_dict(value: PostRoutinesRequestSet) -> dict[str, int | float | str]:

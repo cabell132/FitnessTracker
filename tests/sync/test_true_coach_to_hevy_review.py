@@ -99,6 +99,58 @@ def test_sync_review_reports_ambiguous_isometric_knee_extension_template(
     assert item["blockers"] == ["Ambiguous required Hevy template: Isometric Seated Knee Extension"]
 
 
+def test_sync_review_splits_mixed_iso_hold_and_reps_prescription(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_mixed_mode_knee_extension_workout(store)
+
+    report, plan = _write_sync_review(tmp_path, db_path, workout_id=45)
+
+    assert report.index("Block 1: Isometric hold") < report.index("Block 2: Dynamic reps")
+    assert "BLOCKER: Missing required Hevy template: Isometric Seated Knee Extension" in report
+
+    item = plan["items"][0]
+    assert item["source_id"] == 1005
+    _assert_mixed_knee_extension_blocks(item)
+    assert item["blockers"] == ["Missing required Hevy template: Isometric Seated Knee Extension"]
+
+
+def _assert_mixed_knee_extension_blocks(item: dict) -> None:
+    blocks = item["planned_blocks"]
+    assert [block["source_id"] for block in blocks] == [1005, 1005]
+    assert [block["phase_kind"] for block in blocks] == ["isometric_hold", "dynamic_reps"]
+    assert blocks[0]["source_text"] == "2 x 30s iso hold"
+    assert blocks[0]["notes"] == "2 x 30s iso hold\nSource: 2 x 30s iso hold then 3 x 10-12"
+    assert blocks[0]["selected_hevy_template"] is None
+    assert blocks[0]["required_hevy_templates"] == [
+        {
+            "title": "Isometric Seated Knee Extension",
+            "expected_type": "duration",
+            "equipment_category": "machine",
+            "muscle_group": "quadriceps",
+            "other_muscles": [],
+            "status": "missing",
+            "source_workout_item_ids": [1005],
+            "matching_template_ids": [],
+        }
+    ]
+    assert blocks[0]["proposed_sets"] == [
+        {"type": "normal", "duration_seconds": 30},
+        {"type": "normal", "duration_seconds": 30},
+    ]
+    assert blocks[1]["source_text"] == "3 x 10-12"
+    assert blocks[1]["selected_hevy_template"]["id"] == "hevy-knee-extension"
+    assert blocks[1]["required_hevy_templates"] == []
+    assert blocks[1]["proposed_sets"] == [
+        {"type": "normal", "reps": 12},
+        {"type": "normal", "reps": 12},
+        {"type": "normal", "reps": 12},
+    ]
+
+
 def _write_sync_review(
     tmp_path: Path,
     db_path: Path,
@@ -327,6 +379,54 @@ def _seed_ambiguous_knee_extension_workout(store: Store) -> None:
                 state="pending",
                 position=1,
                 exercise_id=503,
+                assessment_id=None,
+            )
+        )
+
+
+def _seed_mixed_mode_knee_extension_workout(store: Store) -> None:
+    now = datetime(2026, 5, 17, tzinfo=UTC)
+    with store.unit_of_work() as uow:
+        uow.add(
+            TrueCoachWorkout(
+                id=45,
+                title="Knee Rehab Mixed",
+                due=now,
+                short_description="",
+                state="pending",
+                rest_day=False,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        uow.add(TrueCoachExercise(id=504, name="Seated Knee Extension", default=False))
+        uow.add(
+            HevyAppExercise(
+                id="hevy-knee-extension",
+                name="Seated Knee Extension",
+                type="reps_only",
+                equipment="machine",
+                default=True,
+            )
+        )
+        uow.add(
+            TrackerExercise(
+                name="Seated Knee Extension",
+                hevy_app_id="hevy-knee-extension",
+                true_coach_id=504,
+            )
+        )
+        uow.add(
+            TrueCoachWorkoutItem(
+                id=1005,
+                workout_id=45,
+                name="Seated Knee Extension",
+                info="2 x 30s iso hold then 3 x 10-12",
+                comment="",
+                is_circuit=False,
+                state="pending",
+                position=1,
+                exercise_id=504,
                 assessment_id=None,
             )
         )
