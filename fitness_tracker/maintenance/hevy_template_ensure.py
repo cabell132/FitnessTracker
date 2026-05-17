@@ -61,6 +61,15 @@ class TemplateEnsureResult:
     ambiguous: tuple[RequiredTemplate, ...]
 
 
+@dataclass(frozen=True)
+class RequiredTemplateGroups:
+    """Required templates split by resolution status."""
+
+    existing: tuple[RequiredTemplate, ...]
+    ambiguous: tuple[RequiredTemplate, ...]
+    missing: tuple[RequiredTemplate, ...]
+
+
 class HevyTemplateEnsureService:
     """Create missing Hevy templates from a generated sync review plan."""
 
@@ -87,43 +96,45 @@ class HevyTemplateEnsureService:
         Raises:
             TemplateEnsureError: If the plan contains ambiguous templates or creation fails.
         """
-        templates = _required_templates_from_plan(plan_path)
-        existing = tuple(template for template in templates if template.status == "existing")
-        ambiguous = tuple(template for template in templates if template.status == "ambiguous")
-        missing = tuple(template for template in templates if template.status == "missing")
-        if ambiguous:
-            details = "; ".join(_format_ambiguous_template(template) for template in ambiguous)
+        groups = _partition_required_templates(_required_templates_from_plan(plan_path))
+        if groups.ambiguous:
+            details = "; ".join(
+                _format_ambiguous_template(template) for template in groups.ambiguous
+            )
             msg = f"Ambiguous required Hevy template(s): {details}"
             raise TemplateEnsureError(msg)
         if dry_run:
             return TemplateEnsureResult(
                 created=(),
-                would_create=missing,
-                existing=existing,
-                ambiguous=ambiguous,
+                would_create=groups.missing,
+                existing=groups.existing,
+                ambiguous=groups.ambiguous,
             )
-        if self._hevy_exercises is None:
-            msg = "Hevy exercise API is required when --yes is used"
-            raise TemplateEnsureError(msg)
+        hevy_exercises = self._require_hevy_exercises()
 
         created = []
-        for template in missing:
-            created_id = self._create_remote_template(template)
+        for template in groups.missing:
+            created_id = self._create_remote_template(hevy_exercises, template)
             self._persist_created_template(template, created_id)
             created.append(template)
         return TemplateEnsureResult(
             created=tuple(created),
             would_create=(),
-            existing=existing,
-            ambiguous=ambiguous,
+            existing=groups.existing,
+            ambiguous=groups.ambiguous,
         )
 
-    def _create_remote_template(self, template: RequiredTemplate) -> str:
-        payload = _create_request(template)
+    def _require_hevy_exercises(self) -> HevyExerciseCreator:
         hevy_exercises = self._hevy_exercises
         if hevy_exercises is None:
             msg = "Hevy exercise API is required when --yes is used"
             raise TemplateEnsureError(msg)
+        return hevy_exercises
+
+    def _create_remote_template(
+        self, hevy_exercises: HevyExerciseCreator, template: RequiredTemplate
+    ) -> str:
+        payload = _create_request(template)
         response = hevy_exercises.create(payload)
         if response is None:
             msg = f"Hevy did not return an id for created template: {template.title}"
@@ -157,6 +168,28 @@ def _required_templates_from_plan(plan_path: Path) -> tuple[RequiredTemplate, ..
         key = (template.title.casefold(), template.status)
         by_key[key] = template
     return tuple(by_key.values())
+
+
+def _partition_required_templates(
+    templates: tuple[RequiredTemplate, ...],
+) -> RequiredTemplateGroups:
+    existing: list[RequiredTemplate] = []
+    ambiguous: list[RequiredTemplate] = []
+    missing: list[RequiredTemplate] = []
+
+    for template in templates:
+        if template.status == "existing":
+            existing.append(template)
+        elif template.status == "ambiguous":
+            ambiguous.append(template)
+        elif template.status == "missing":
+            missing.append(template)
+
+    return RequiredTemplateGroups(
+        existing=tuple(existing),
+        ambiguous=tuple(ambiguous),
+        missing=tuple(missing),
+    )
 
 
 def _required_template(raw_template: dict[str, Any]) -> RequiredTemplate:
