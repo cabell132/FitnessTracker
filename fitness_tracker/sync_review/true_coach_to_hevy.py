@@ -22,6 +22,7 @@ from fitness_tracker.database.models.hevy_app import HevyAppSets, HevyAppWorkout
 from fitness_tracker.database.models.true_coach import TrueCoachWorkout, TrueCoachWorkoutItem
 from fitness_tracker.database.uow import UnitOfWork
 from fitness_tracker.sync._true_coach_html import parse_prescribed_sets
+from fitness_tracker.sync.ports import HevyRoutineWriter
 
 SET_DISPLAY_KEYS = ("type", "weight_kg", "reps", "distance_meters", "duration_seconds")
 BLOCKING_REQUIRED_TEMPLATE_STATUSES = frozenset({"missing", "ambiguous"})
@@ -238,12 +239,12 @@ class TrueCoachToHevyReviewService:
             request_body=request_body,
         )
 
-    def apply(self, workout_id: int, *, routine_writer: Any) -> ApplyResult:
+    def apply(self, workout_id: int, *, routine_writer: HevyRoutineWriter) -> ApplyResult:
         """Create a Hevy Routine from a validated sync review plan.
 
         Args:
             workout_id (int): True Coach workout id.
-            routine_writer (Any): Object exposing ``create_routine``.
+            routine_writer (HevyRoutineWriter): Routine writer port.
 
         Returns:
             ApplyResult: Request body and local artifacts from the apply attempt.
@@ -476,31 +477,32 @@ def _build_hevy_routine_request(plan: dict[str, Any]) -> PostRoutinesRequestBody
 
 
 def _apply_blockers(plan: dict[str, Any]) -> list[str]:
-    blockers = [blocker for item in plan["items"] for blocker in item.get("blockers", [])]
+    items = plan["items"]
+    blockers = [blocker for item in items for blocker in item.get("blockers", [])]
     blockers.extend(
         f"Missing required Hevy exercise mapping: {item['name']}"
-        for item in plan["items"]
+        for item in items
         if not item.get("planned_blocks") and item.get("selected_hevy_template") is None
     )
     blockers.extend(
         f"Missing required Hevy exercise mapping: {block['source_text']}"
-        for item in plan["items"]
+        for item in items
         for block in item.get("planned_blocks", [])
         if block.get("selected_hevy_template") is None
     )
     blockers.extend(
         f"Unsplit required mixed-mode item: {item['name']}"
-        for item in plan["items"]
+        for item in items
         if _is_unsplit_required_mixed_mode_item(item)
     )
     blockers.extend(
         f"Invalid set payload for {item['name']}: no sets"
-        for item in plan["items"]
+        for item in items
         if not item.get("planned_blocks") and not item.get("proposed_sets")
     )
     blockers.extend(
         f"Invalid set payload for {block['source_text']}: no sets"
-        for item in plan["items"]
+        for item in items
         for block in item.get("planned_blocks", [])
         if not block.get("proposed_sets")
     )

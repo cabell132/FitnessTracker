@@ -24,8 +24,12 @@ from fitness_tracker.maintenance.hevy_template_ensure import (
     TemplateEnsureError,
     TemplateEnsureResult,
 )
-from fitness_tracker.sync_review import SyncReviewError, TrueCoachToHevyReviewService
-from fitness_tracker.sync_review.true_coach_to_hevy import SyncApplyError
+from fitness_tracker.sync.adapters import HevyRoutineWriterAdapter
+from fitness_tracker.sync_review import (
+    SyncApplyError,
+    SyncReviewError,
+    TrueCoachToHevyReviewService,
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -224,7 +228,10 @@ def _sync_apply_truecoach_to_hevy(args: argparse.Namespace) -> int:
             result = service.write_apply_request(args.workout_id)
         else:
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-            result = service.apply(args.workout_id, routine_writer=HevyAppClient().routines)
+            result = service.apply(
+                args.workout_id,
+                routine_writer=HevyRoutineWriterAdapter(HevyAppClient()),
+            )
     except (SyncApplyError, SyncReviewError) as exc:
         _emit(f"Error: {exc}")
         return 2
