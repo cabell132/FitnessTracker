@@ -20,6 +20,9 @@ from fitness_tracker.sync._true_coach_html import parse_prescribed_sets
 
 SET_DISPLAY_KEYS = ("type", "weight_kg", "reps", "distance_meters", "duration_seconds")
 BLOCKING_REQUIRED_TEMPLATE_STATUSES = frozenset({"missing", "ambiguous"})
+NO_LINKED_TEMPLATE_WARNING = "No linked Hevy exercise template found."
+NO_DETERMINISTIC_SET_PARSER_WARNING = "No deterministic set parser result found."
+NO_MATCHING_HISTORY_LOAD_WARNING = "No matching Athlete history load found."
 RequiredTemplateStatus = Literal["existing", "missing", "ambiguous"]
 PhaseKind = Literal["isometric_hold", "dynamic_reps"]
 WeightProvenance = Literal["athlete_history", "calculated_dropset"]
@@ -200,16 +203,16 @@ class TrueCoachToHevyReviewService:
         planned_blocks = self._planned_blocks(uow, item, template)
         proposed_sets = parse_prescribed_sets(item.info or "")
         proposed_sets, set_provenance = _enrich_sets_from_history(uow, template, proposed_sets)
-        warnings = []
+        warnings: list[str] = []
         if template is None:
-            warnings.append("No linked Hevy exercise template found.")
+            warnings.append(NO_LINKED_TEMPLATE_WARNING)
         if item.info and not proposed_sets and not planned_blocks:
-            warnings.append("No deterministic set parser result found.")
+            warnings.append(NO_DETERMINISTIC_SET_PARSER_WARNING)
         if _has_missing_history_load(template, proposed_sets) or any(
             _has_missing_history_load(block.selected_hevy_template, block.proposed_sets)
             for block in planned_blocks
         ):
-            warnings.append("No matching Athlete history load found.")
+            warnings.append(NO_MATCHING_HISTORY_LOAD_WARNING)
         return ReviewItem(
             source_id=item.id,
             name=item.name,
@@ -476,15 +479,7 @@ def _required_template_blockers(
 
 def _format_agent_next_actions(items: list[ReviewItem]) -> list[str]:
     lines = ["## Agent Next Actions", ""]
-    blocking_actions = [
-        _format_required_template_action(required_template)
-        for item in items
-        for required_template in _required_templates_for_blockers(
-            item.required_hevy_templates,
-            item.planned_blocks,
-        )
-        if required_template.status in BLOCKING_REQUIRED_TEMPLATE_STATUSES
-    ]
+    blocking_actions = _blocking_agent_actions(items)
     if blocking_actions:
         lines.append("Blocking actions:")
         lines.extend(f"- {action}" for action in blocking_actions)
@@ -497,6 +492,18 @@ def _format_agent_next_actions(items: list[ReviewItem]) -> list[str]:
         lines.extend(f"- {action}" for action in warning_actions)
     lines.append("")
     return lines
+
+
+def _blocking_agent_actions(items: list[ReviewItem]) -> list[str]:
+    return [
+        _format_required_template_action(required_template)
+        for item in items
+        for required_template in _required_templates_for_blockers(
+            item.required_hevy_templates,
+            item.planned_blocks,
+        )
+        if required_template.status in BLOCKING_REQUIRED_TEMPLATE_STATUSES
+    ]
 
 
 def _warning_actions(items: list[ReviewItem]) -> list[str]:
@@ -531,19 +538,19 @@ def _format_required_template_action(required_template: RequiredHevyTemplate) ->
 
 
 def _format_warning_action(item: ReviewItem, warning: str) -> str | None:
-    if warning == "No linked Hevy exercise template found.":
-        return (
-            "Add a True Coach to Hevy template mapping for True Coach "
-            f'Workout Item {item.source_id} "{item.name}" with info "{item.info}" '
-            f'and comment "{item.comment or "none"}".'
-        )
-    if warning == "No deterministic set parser result found.":
-        return (
-            "Add a deterministic set parser fixture or override for True Coach "
-            f'Workout Item {item.source_id} "{item.name}" with info "{item.info}" '
-            f'and comment "{item.comment or "none"}".'
-        )
+    source_text = _format_item_source_text(item)
+    if warning == NO_LINKED_TEMPLATE_WARNING:
+        return f"Add a True Coach to Hevy template mapping for True Coach {source_text}."
+    if warning == NO_DETERMINISTIC_SET_PARSER_WARNING:
+        return f"Add a deterministic set parser fixture or override for True Coach {source_text}."
     return None
+
+
+def _format_item_source_text(item: ReviewItem) -> str:
+    return (
+        f'Workout Item {item.source_id} "{item.name}" with info "{item.info}" '
+        f'and comment "{item.comment or "none"}"'
+    )
 
 
 def _required_templates_for_blockers(
