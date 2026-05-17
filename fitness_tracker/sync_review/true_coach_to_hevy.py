@@ -223,14 +223,14 @@ class TrueCoachToHevyReviewService:
         item: TrueCoachWorkoutItem,
         selected_template: HevyAppExercise | None,
     ) -> list[RequiredHevyTemplate]:
-        rules = _load_template_override_rules(DEFAULT_TEMPLATE_OVERRIDE_RULES_PATH)
-        matched_specs = [
-            rule.required_template for rule in rules if _rule_matches(rule, item, selected_template)
-        ]
-        return [
-            _resolve_required_template(uow, spec, source_workout_item_id=item.id)
-            for spec in matched_specs
-        ]
+        return self._required_templates_for_context(
+            uow,
+            TemplateMatchContext(
+                item=item,
+                selected_template=selected_template,
+                text=item.info or item.comment or "",
+            ),
+        )
 
     def _planned_blocks(
         self,
@@ -245,7 +245,7 @@ class TrueCoachToHevyReviewService:
         blocks: list[PlannedBlock] = []
         for index, phase in enumerate(phases, start=1):
             required_templates = (
-                self._required_templates_for_phase(
+                self._required_templates_for_context(
                     uow,
                     TemplateMatchContext(
                         item=item,
@@ -278,7 +278,7 @@ class TrueCoachToHevyReviewService:
             )
         return blocks
 
-    def _required_templates_for_phase(
+    def _required_templates_for_context(
         self,
         uow: UnitOfWork,
         context: TemplateMatchContext,
@@ -387,21 +387,6 @@ def _load_template_override_rules(path: Path) -> tuple[TemplateOverrideRule, ...
     )
 
 
-def _rule_matches(
-    rule: TemplateOverrideRule,
-    item: TrueCoachWorkoutItem,
-    selected_template: HevyAppExercise | None,
-) -> bool:
-    return _rule_matches_text(
-        rule,
-        TemplateMatchContext(
-            item=item,
-            selected_template=selected_template,
-            text=item.info or item.comment or "",
-        ),
-    )
-
-
 def _rule_matches_text(rule: TemplateOverrideRule, context: TemplateMatchContext) -> bool:
     source_names = {name.casefold() for name in rule.source_template_names}
     item = context.item
@@ -474,15 +459,17 @@ def _parse_mixed_mode_phases(description: str) -> list[ParsedPhase]:
     if len(parts) < 2:
         return []
 
-    phases = [_parse_phase(part) for part in parts]
-    if any(phase is None for phase in phases):
-        return []
+    phases: list[ParsedPhase] = []
+    for part in parts:
+        phase = _parse_phase(part)
+        if phase is None:
+            return []
+        phases.append(phase)
 
-    parsed = [phase for phase in phases if phase is not None]
-    kinds = {phase.kind for phase in parsed}
-    if kinds != {"isometric_hold", "dynamic_reps"}:
+    phase_kinds = {phase.kind for phase in phases}
+    if phase_kinds != {"isometric_hold", "dynamic_reps"}:
         return []
-    return parsed
+    return phases
 
 
 def _parse_phase(text: str) -> ParsedPhase | None:
