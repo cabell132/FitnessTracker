@@ -19,17 +19,99 @@ from fitness_tracker.database.models.true_coach import (
 
 def test_sync_review_cli_writes_ordered_report_and_plan(tmp_path: Path) -> None:
     db_path = tmp_path / "tracker.sqlite"
-    reports_dir = tmp_path / "reports"
     store = Store(create_engine(f"sqlite:///{db_path}"))
     store.init_db()
     _seed_workout(store)
 
+    report, plan = _write_sync_review(tmp_path, db_path, workout_id=42)
+
+    _assert_report(report)
+    _assert_plan(plan)
+
+
+def test_sync_review_reports_missing_single_leg_isometric_calf_raise_template(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_template_override_workout(store)
+
+    report, plan = _write_sync_review(tmp_path, db_path, workout_id=43)
+
+    assert "Selected Hevy template: Bodyweight Calf Raise (hevy-calf-raise)" in report
+    assert "Required Hevy templates:" in report
+    assert (
+        "- Single-Leg Isometric Calf Raise | type: duration | equipment: bodyweight | "
+        "muscle group: calves | other muscles: none | status: missing | source IDs: 1003"
+    ) in report
+    assert "BLOCKER: Missing required Hevy template: Single-Leg Isometric Calf Raise" in report
+
+    item = plan["items"][0]
+    assert item["selected_hevy_template"]["id"] == "hevy-calf-raise"
+    assert item["required_hevy_templates"] == [
+        {
+            "title": "Single-Leg Isometric Calf Raise",
+            "expected_type": "duration",
+            "equipment_category": "bodyweight",
+            "muscle_group": "calves",
+            "other_muscles": [],
+            "status": "missing",
+            "source_workout_item_ids": [1003],
+            "matching_template_ids": [],
+        }
+    ]
+    assert item["blockers"] == ["Missing required Hevy template: Single-Leg Isometric Calf Raise"]
+
+
+def test_sync_review_reports_ambiguous_isometric_knee_extension_template(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_template_override_workout(store)
+    _seed_ambiguous_knee_extension_workout(store)
+
+    report, plan = _write_sync_review(tmp_path, db_path, workout_id=44)
+
+    assert "Selected Hevy template: Seated Knee Extension (hevy-knee-extension)" in report
+    assert (
+        "- Isometric Seated Knee Extension | type: duration | equipment: machine | "
+        "muscle group: quadriceps | other muscles: none | status: ambiguous | source IDs: 1004"
+    ) in report
+    assert "BLOCKER: Ambiguous required Hevy template: Isometric Seated Knee Extension" in report
+
+    item = plan["items"][0]
+    assert item["selected_hevy_template"]["id"] == "hevy-knee-extension"
+    assert item["required_hevy_templates"] == [
+        {
+            "title": "Isometric Seated Knee Extension",
+            "expected_type": "duration",
+            "equipment_category": "machine",
+            "muscle_group": "quadriceps",
+            "other_muscles": [],
+            "status": "ambiguous",
+            "source_workout_item_ids": [1004],
+            "matching_template_ids": ["hevy-knee-iso-a", "hevy-knee-iso-b"],
+        }
+    ]
+    assert item["blockers"] == ["Ambiguous required Hevy template: Isometric Seated Knee Extension"]
+
+
+def _write_sync_review(
+    tmp_path: Path,
+    db_path: Path,
+    *,
+    workout_id: int,
+) -> tuple[str, dict]:
+    reports_dir = tmp_path / "reports"
     exit_code = main(
         [
             "sync-review",
             "truecoach-to-hevy",
             "--workout-id",
-            "42",
+            str(workout_id),
             "--database-url",
             f"sqlite:///{db_path}",
             "--output-dir",
@@ -38,12 +120,10 @@ def test_sync_review_cli_writes_ordered_report_and_plan(tmp_path: Path) -> None:
     )
 
     assert exit_code == 0
-    bundle_dir = reports_dir / "sync-review" / "truecoach-to-hevy" / "42"
+    bundle_dir = reports_dir / "sync-review" / "truecoach-to-hevy" / str(workout_id)
     report = (bundle_dir / "report.md").read_text()
     plan = json.loads((bundle_dir / "plan.json").read_text())
-
-    _assert_report(report)
-    _assert_plan(plan)
+    return report, plan
 
 
 def _assert_report(report: str) -> None:
@@ -133,6 +213,120 @@ def _seed_workout(store: Store) -> None:
                 state="pending",
                 position=1,
                 exercise_id=501,
+                assessment_id=None,
+            )
+        )
+
+
+def _seed_template_override_workout(store: Store) -> None:
+    now = datetime(2026, 5, 17, tzinfo=UTC)
+    with store.unit_of_work() as uow:
+        uow.add(
+            TrueCoachWorkout(
+                id=43,
+                title="Lower Strength",
+                due=now,
+                short_description="",
+                state="pending",
+                rest_day=False,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        uow.add(TrueCoachExercise(id=502, name="Bodyweight Calf Raise", default=False))
+        uow.add(
+            HevyAppExercise(
+                id="hevy-calf-raise",
+                name="Bodyweight Calf Raise",
+                type="reps_only",
+                equipment="bodyweight",
+                default=True,
+            )
+        )
+        uow.add(
+            TrackerExercise(
+                name="Bodyweight Calf Raise",
+                hevy_app_id="hevy-calf-raise",
+                true_coach_id=502,
+            )
+        )
+        uow.add(
+            TrueCoachWorkoutItem(
+                id=1003,
+                workout_id=43,
+                name="Bodyweight Calf Raise",
+                info="3 x 20s single leg iso hold ES",
+                comment="",
+                is_circuit=False,
+                state="pending",
+                position=1,
+                exercise_id=502,
+                assessment_id=None,
+            )
+        )
+
+
+def _seed_ambiguous_knee_extension_workout(store: Store) -> None:
+    now = datetime(2026, 5, 17, tzinfo=UTC)
+    with store.unit_of_work() as uow:
+        uow.add(
+            TrueCoachWorkout(
+                id=44,
+                title="Knee Rehab",
+                due=now,
+                short_description="",
+                state="pending",
+                rest_day=False,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        uow.add(TrueCoachExercise(id=503, name="Seated Knee Extension", default=False))
+        uow.add(
+            HevyAppExercise(
+                id="hevy-knee-extension",
+                name="Seated Knee Extension",
+                type="reps_only",
+                equipment="machine",
+                default=True,
+            )
+        )
+        uow.add(
+            HevyAppExercise(
+                id="hevy-knee-iso-a",
+                name="Isometric Seated Knee Extension",
+                type="duration",
+                equipment="machine",
+                default=False,
+            )
+        )
+        uow.add(
+            HevyAppExercise(
+                id="hevy-knee-iso-b",
+                name="Isometric Seated Knee Extension",
+                type="duration",
+                equipment="machine",
+                default=False,
+            )
+        )
+        uow.add(
+            TrackerExercise(
+                name="Seated Knee Extension",
+                hevy_app_id="hevy-knee-extension",
+                true_coach_id=503,
+            )
+        )
+        uow.add(
+            TrueCoachWorkoutItem(
+                id=1004,
+                workout_id=44,
+                name="Seated Knee Extension",
+                info="4 x 30s iso hold",
+                comment="",
+                is_circuit=False,
+                state="pending",
+                position=1,
+                exercise_id=503,
                 assessment_id=None,
             )
         )
