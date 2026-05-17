@@ -13,7 +13,9 @@ from bs4 import BeautifulSoup
 from fitness_tracker.apis.hevy_app.types import PostRoutinesRequestSet
 
 PRESCRIBED_SETS_PATTERN = re.compile(
-    r"(?P<count>\d+)\s*[xX]\s*(?P<reps>\d+(?:\s*-\s*\d+)?(?:\s*[+>]\s*\d+(?:\s*-\s*\d+)?)*)"
+    r"(?P<count>\d+)\s*[xX]\s*"
+    r"(?P<reps>\d+(?:\s*-\s*\d+)?(?:\s*[+>]\s*\d+(?:\s*-\s*\d+)?)*)"
+    r"(?:\s*@\s*(?P<load>\d+(?:\.\d+)?)\s*(?:kg)?)?"
 )
 DROPSET_REP_SEPARATOR_PATTERN = re.compile(r"\s*[+>]\s*")
 
@@ -143,12 +145,13 @@ def parse_prescribed_sets(description: str) -> list[PostRoutinesRequestSet]:
     set_count = int(match.group("count"))
     rep_parts = DROPSET_REP_SEPARATOR_PATTERN.split(match.group("reps"))
     rep_targets = [_parse_rep_target(part) for part in rep_parts]
+    load = _parse_optional_load(match.group("load"))
 
     sets: list[PostRoutinesRequestSet] = []
     for _ in range(set_count):
         for index, rep_target in enumerate(rep_targets):
             set_type = "normal" if index == 0 else "dropset"
-            sets.append(PostRoutinesRequestSet(type=set_type, reps=rep_target))
+            sets.append(PostRoutinesRequestSet(type=set_type, reps=rep_target, weight_kg=load))
 
     return sets
 
@@ -156,3 +159,9 @@ def parse_prescribed_sets(description: str) -> list[PostRoutinesRequestSet]:
 def _parse_rep_target(value: str) -> int:
     bounds = [int(part.strip()) for part in value.split("-")]
     return max(bounds)
+
+
+def _parse_optional_load(value: str | None) -> float | None:
+    if value is None:
+        return None
+    return float(value)

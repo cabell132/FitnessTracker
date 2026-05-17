@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections import deque
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
@@ -12,6 +13,7 @@ from typing import Any, Literal
 from fitness_tracker.apis.hevy_app.types import PostRoutinesRequestSet
 from fitness_tracker.database import Store
 from fitness_tracker.database.models import HevyAppExercise, TrueCoachExercise
+from fitness_tracker.database.models.hevy_app import HevyAppSets, HevyAppWorkout, HevyAppWorkoutItem
 from fitness_tracker.database.models.true_coach import TrueCoachWorkout, TrueCoachWorkoutItem
 from fitness_tracker.database.uow import UnitOfWork
 from fitness_tracker.sync._true_coach_html import parse_prescribed_sets
@@ -20,6 +22,9 @@ SET_DISPLAY_KEYS = ("type", "weight_kg", "reps", "distance_meters", "duration_se
 BLOCKING_REQUIRED_TEMPLATE_STATUSES = frozenset({"missing", "ambiguous"})
 RequiredTemplateStatus = Literal["existing", "missing", "ambiguous"]
 PhaseKind = Literal["isometric_hold", "dynamic_reps"]
+WeightProvenance = Literal["athlete_history", "calculated_dropset"]
+type SetSignature = tuple[str, str, int]
+type SetProvenance = dict[str, WeightProvenance]
 
 
 class SyncReviewError(Exception):
@@ -45,6 +50,7 @@ class ReviewItem:
     selected_hevy_template: HevyAppExercise | None
     required_hevy_templates: list[RequiredHevyTemplate]
     proposed_sets: list[PostRoutinesRequestSet]
+    set_provenance: list[SetProvenance]
     planned_blocks: list[PlannedBlock]
     warnings: list[str]
     blockers: list[str]
@@ -101,6 +107,7 @@ class PlannedBlock:
     selected_hevy_template: HevyAppExercise | None
     required_hevy_templates: list[RequiredHevyTemplate]
     proposed_sets: list[PostRoutinesRequestSet]
+    set_provenance: list[SetProvenance]
 
 
 @dataclass(frozen=True)
@@ -119,6 +126,13 @@ class PhaseTemplateSelection:
     phase_kind: PhaseKind
     selected_template: HevyAppExercise | None
     required_templates: list[RequiredHevyTemplate]
+
+
+@dataclass(frozen=True)
+class HistoricalLoad:
+    """A usable Athlete-history load for one planned Routine set."""
+
+    weight_kg: float
 
 
 DEFAULT_TEMPLATE_OVERRIDE_RULES_PATH = Path(__file__).with_name("template_override_rules.json")
@@ -183,16 +197,24 @@ class TrueCoachToHevyReviewService:
         template = self._selected_template(uow, item)
         required_templates = self._required_templates(uow, item, template)
         planned_blocks = self._planned_blocks(uow, item, template)
+        proposed_sets = parse_prescribed_sets(item.info or "")
+        proposed_sets, set_provenance = _enrich_sets_from_history(uow, template, proposed_sets)
         warnings = []
         if template is None:
             warnings.append("No linked Hevy exercise template found.")
+        if _has_missing_history_load(template, proposed_sets) or any(
+            _has_missing_history_load(block.selected_hevy_template, block.proposed_sets)
+            for block in planned_blocks
+        ):
+            warnings.append("No matching Athlete history load found.")
         return ReviewItem(
             source_id=item.id,
             name=item.name,
             info=item.info or "",
             selected_hevy_template=template,
             required_hevy_templates=required_templates,
-            proposed_sets=parse_prescribed_sets(item.info or ""),
+            proposed_sets=proposed_sets,
+            set_provenance=set_provenance,
             planned_blocks=planned_blocks,
             warnings=warnings,
             blockers=_required_template_blockers(
@@ -264,6 +286,9 @@ class TrueCoachToHevyReviewService:
                     required_templates=required_templates,
                 ),
             )
+            proposed_sets, set_provenance = _enrich_sets_from_history(
+                uow, phase_template, phase.proposed_sets
+            )
             blocks.append(
                 PlannedBlock(
                     source_id=item.id,
@@ -273,7 +298,8 @@ class TrueCoachToHevyReviewService:
                     notes=f"{phase.source_text}\nSource: {item.info or ''}",
                     selected_hevy_template=phase_template,
                     required_hevy_templates=required_templates,
-                    proposed_sets=phase.proposed_sets,
+                    proposed_sets=proposed_sets,
+                    set_provenance=set_provenance,
                 )
             )
         return blocks
@@ -314,7 +340,12 @@ class TrueCoachToHevyReviewService:
                 _required_template_to_dict(required_template)
                 for required_template in item.required_hevy_templates
             ],
-            "proposed_sets": [_set_to_dict(proposed_set) for proposed_set in item.proposed_sets],
+            "proposed_sets": [
+                _set_to_dict(proposed_set) | _provenance_to_dict(provenance)
+                for proposed_set, provenance in zip(
+                    item.proposed_sets, item.set_provenance, strict=True
+                )
+            ],
             "planned_blocks": [_planned_block_to_dict(block) for block in item.planned_blocks],
             "warnings": item.warnings,
             "blockers": item.blockers,
@@ -508,6 +539,133 @@ def _selected_template_for_phase(
     return uow.get(HevyAppExercise, id=required_template.matching_template_ids[0])
 
 
+def _enrich_sets_from_history(
+    uow: UnitOfWork,
+    template: HevyAppExercise | None,
+    planned_sets: list[PostRoutinesRequestSet],
+) -> tuple[list[PostRoutinesRequestSet], list[SetProvenance]]:
+    provenance = [{} for _ in planned_sets]
+    if template is None or not _is_weight_capable(template) or not planned_sets:
+        return planned_sets, provenance
+
+    enriched_sets = list(planned_sets)
+    historical_loads = _historical_loads_by_signature(uow, template.id)
+    last_normal_load: float | None = None
+    for index, planned_set in enumerate(planned_sets):
+        if planned_set.weight_kg is not None:
+            last_normal_load = _updated_last_normal_load(
+                planned_set, planned_set.weight_kg, last_normal_load
+            )
+            continue
+        signature = _set_history_signature(planned_set)
+        if signature is None:
+            continue
+        historical_load = _next_historical_load(historical_loads, signature)
+        if historical_load is not None:
+            enriched_sets[index] = _copy_set_with_weight(planned_set, historical_load.weight_kg)
+            provenance[index] = _weight_provenance("athlete_history")
+            last_normal_load = _updated_last_normal_load(
+                planned_set, historical_load.weight_kg, last_normal_load
+            )
+        elif planned_set.type == "dropset" and last_normal_load is not None:
+            enriched_sets[index] = _copy_set_with_weight(
+                planned_set, _dropset_load(last_normal_load)
+            )
+            provenance[index] = _weight_provenance("calculated_dropset")
+    return enriched_sets, provenance
+
+
+def _is_weight_capable(template: HevyAppExercise) -> bool:
+    return template.type in {"weight_reps", "weight_duration", "short_distance_weight"}
+
+
+def _has_missing_history_load(
+    template: HevyAppExercise | None,
+    planned_sets: list[PostRoutinesRequestSet],
+) -> bool:
+    if template is None or not _is_weight_capable(template):
+        return False
+    return any(
+        planned_set.weight_kg is None
+        and (planned_set.reps is not None or planned_set.duration_seconds is not None)
+        for planned_set in planned_sets
+    )
+
+
+def _historical_loads_by_signature(
+    uow: UnitOfWork,
+    exercise_template_id: str,
+) -> dict[SetSignature, deque[HistoricalLoad]]:
+    rows = (
+        uow.query(HevyAppSets)
+        .join(HevyAppWorkoutItem, HevyAppSets.workout_item_id == HevyAppWorkoutItem.id)
+        .join(HevyAppWorkout, HevyAppWorkoutItem.workout_id == HevyAppWorkout.id)
+        .filter(HevyAppWorkoutItem.exercise_id == exercise_template_id)
+        .filter(HevyAppSets.weight_kg.isnot(None))
+        .order_by(HevyAppWorkout.start_time.desc(), HevyAppWorkoutItem.index, HevyAppSets.index)
+        .all()
+    )
+    historical_loads: dict[SetSignature, deque[HistoricalLoad]] = {}
+    for set_row in rows:
+        signature = _set_history_signature(set_row)
+        if signature is None:
+            continue
+        historical_loads.setdefault(signature, deque()).append(
+            HistoricalLoad(weight_kg=float(set_row.weight_kg))
+        )
+    return historical_loads
+
+
+def _set_history_signature(value: Any) -> SetSignature | None:
+    set_type = value.type
+    if value.reps is not None:
+        return (set_type, "reps", int(value.reps))
+    if value.duration_seconds is not None:
+        return (set_type, "duration_seconds", int(value.duration_seconds))
+    return None
+
+
+def _next_historical_load(
+    historical_loads: dict[SetSignature, deque[HistoricalLoad]],
+    signature: SetSignature,
+) -> HistoricalLoad | None:
+    loads = historical_loads.get(signature)
+    if not loads:
+        return None
+    return loads.popleft()
+
+
+def _updated_last_normal_load(
+    planned_set: PostRoutinesRequestSet,
+    weight_kg: float,
+    current: float | None,
+) -> float | None:
+    if planned_set.type == "normal":
+        return weight_kg
+    return current
+
+
+def _dropset_load(normal_load: float) -> float:
+    return round(normal_load * 0.8, 1)
+
+
+def _weight_provenance(source: WeightProvenance) -> SetProvenance:
+    return {"weight_kg": source}
+
+
+def _copy_set_with_weight(
+    planned_set: PostRoutinesRequestSet,
+    weight_kg: float,
+) -> PostRoutinesRequestSet:
+    return PostRoutinesRequestSet(
+        type=planned_set.type,
+        weight_kg=weight_kg,
+        reps=planned_set.reps,
+        distance_meters=planned_set.distance_meters,
+        duration_seconds=planned_set.duration_seconds,
+    )
+
+
 def _template_to_dict(template: HevyAppExercise | None) -> dict[str, str | None] | None:
     if template is None:
         return None
@@ -547,7 +705,12 @@ def _planned_block_to_dict(block: PlannedBlock) -> dict[str, Any]:
             _required_template_to_dict(required_template)
             for required_template in block.required_hevy_templates
         ],
-        "proposed_sets": [_set_to_dict(proposed_set) for proposed_set in block.proposed_sets],
+        "proposed_sets": [
+            _set_to_dict(proposed_set) | _provenance_to_dict(provenance)
+            for proposed_set, provenance in zip(
+                block.proposed_sets, block.set_provenance, strict=True
+            )
+        ],
     }
 
 
@@ -603,6 +766,10 @@ def _set_to_dict(value: PostRoutinesRequestSet) -> dict[str, int | float | str]:
     if hasattr(value, "model_dump"):
         return value.model_dump(exclude_none=True)
     return value.dict(exclude_none=True)
+
+
+def _provenance_to_dict(provenance: SetProvenance) -> dict[str, SetProvenance]:
+    return {"_provenance": provenance} if provenance else {}
 
 
 def _format_set(value: PostRoutinesRequestSet) -> str:

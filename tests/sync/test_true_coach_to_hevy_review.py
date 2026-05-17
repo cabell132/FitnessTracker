@@ -8,7 +8,12 @@ from sqlalchemy import create_engine
 
 from fitness_tracker.cli import main
 from fitness_tracker.database import Store
-from fitness_tracker.database.models.hevy_app import HevyAppExercise
+from fitness_tracker.database.models.hevy_app import (
+    HevyAppExercise,
+    HevyAppSets,
+    HevyAppWorkout,
+    HevyAppWorkoutItem,
+)
 from fitness_tracker.database.models.tracker import Exercise as TrackerExercise
 from fitness_tracker.database.models.true_coach import (
     TrueCoachExercise,
@@ -116,6 +121,149 @@ def test_sync_review_splits_mixed_iso_hold_and_reps_prescription(
     assert item["source_id"] == 1005
     _assert_mixed_knee_extension_blocks(item)
     assert item["blockers"] == ["Missing required Hevy template: Isometric Seated Knee Extension"]
+
+
+def test_sync_review_enriches_weight_reps_loads_from_recent_matching_history(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_workout(store)
+    _seed_bench_history(store)
+
+    report, plan = _write_sync_review(tmp_path, db_path, workout_id=42)
+
+    assert "- type: normal; weight_kg: 80.0; reps: 12" in report
+
+    bench_item = plan["items"][0]
+    assert bench_item["proposed_sets"] == [
+        {
+            "type": "normal",
+            "weight_kg": 80.0,
+            "reps": 12,
+            "_provenance": {"weight_kg": "athlete_history"},
+        },
+        {
+            "type": "normal",
+            "weight_kg": 80.0,
+            "reps": 12,
+            "_provenance": {"weight_kg": "athlete_history"},
+        },
+        {
+            "type": "normal",
+            "weight_kg": 80.0,
+            "reps": 12,
+            "_provenance": {"weight_kg": "athlete_history"},
+        },
+    ]
+
+
+def test_sync_review_does_not_override_explicit_coach_loads(tmp_path: Path) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_workout(store)
+    _seed_bench_history(store)
+    with store.unit_of_work() as uow:
+        item = uow.tc_get_workout_item(id=1001)
+        assert item is not None
+        item.info = "3 x 12 @ 90kg"
+
+    _, plan = _write_sync_review(tmp_path, db_path, workout_id=42)
+
+    assert plan["items"][0]["proposed_sets"] == [
+        {"type": "normal", "weight_kg": 90.0, "reps": 12},
+        {"type": "normal", "weight_kg": 90.0, "reps": 12},
+        {"type": "normal", "weight_kg": 90.0, "reps": 12},
+    ]
+
+
+def test_sync_review_enriches_dropsets_from_matching_dropset_history(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_workout(store)
+    with store.unit_of_work() as uow:
+        item = uow.tc_get_workout_item(id=1001)
+        assert item is not None
+        item.info = "2 x 10+10"
+    _seed_bench_dropset_history(store)
+
+    _, plan = _write_sync_review(tmp_path, db_path, workout_id=42)
+
+    assert plan["items"][0]["proposed_sets"] == [
+        {
+            "type": "normal",
+            "weight_kg": 100.0,
+            "reps": 10,
+            "_provenance": {"weight_kg": "athlete_history"},
+        },
+        {
+            "type": "dropset",
+            "weight_kg": 82.5,
+            "reps": 10,
+            "_provenance": {"weight_kg": "athlete_history"},
+        },
+        {
+            "type": "normal",
+            "weight_kg": 100.0,
+            "reps": 10,
+            "_provenance": {"weight_kg": "athlete_history"},
+        },
+        {
+            "type": "dropset",
+            "weight_kg": 80.0,
+            "reps": 10,
+            "_provenance": {"weight_kg": "athlete_history"},
+        },
+    ]
+
+
+def test_sync_review_calculates_conservative_dropset_load_when_history_is_missing(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_workout(store)
+    with store.unit_of_work() as uow:
+        item = uow.tc_get_workout_item(id=1001)
+        assert item is not None
+        item.info = "1 x 10+10"
+    _seed_bench_normal_history(store, reps=10, weight_kg=100.0)
+
+    _, plan = _write_sync_review(tmp_path, db_path, workout_id=42)
+
+    assert plan["items"][0]["proposed_sets"] == [
+        {
+            "type": "normal",
+            "weight_kg": 100.0,
+            "reps": 10,
+            "_provenance": {"weight_kg": "athlete_history"},
+        },
+        {
+            "type": "dropset",
+            "weight_kg": 80.0,
+            "reps": 10,
+            "_provenance": {"weight_kg": "calculated_dropset"},
+        },
+    ]
+
+
+def test_sync_review_treats_missing_history_as_warning_not_blocker(tmp_path: Path) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_workout(store)
+
+    _, plan = _write_sync_review(tmp_path, db_path, workout_id=42)
+
+    bench_item = plan["items"][0]
+    assert bench_item["warnings"] == ["No matching Athlete history load found."]
+    assert bench_item["blockers"] == []
 
 
 def _assert_mixed_knee_extension_blocks(item: dict) -> None:
@@ -268,6 +416,86 @@ def _seed_workout(store: Store) -> None:
                 assessment_id=None,
             )
         )
+
+
+def _seed_bench_history(store: Store) -> None:
+    _seed_bench_normal_history(store, reps=12, weight_kg=80.0)
+
+
+def _seed_bench_normal_history(store: Store, *, reps: int, weight_kg: float) -> None:
+    now = datetime(2026, 5, 10, tzinfo=UTC)
+    with store.unit_of_work() as uow:
+        uow.add(
+            HevyAppWorkout(
+                id="hevy-history-1",
+                title="Upper Strength Logged",
+                description="",
+                start_time=now,
+                end_time=now,
+            )
+        )
+        uow.add(
+            HevyAppWorkoutItem(
+                id=2001,
+                workout_id="hevy-history-1",
+                index=0,
+                name="Barbell Bench Press",
+                notes="",
+                superset_id=None,
+                exercise_id="hevy-bench",
+            )
+        )
+        for index in range(3):
+            uow.add(
+                HevyAppSets(
+                    workout_item_id=2001,
+                    index=index,
+                    type="normal",
+                    weight_kg=weight_kg,
+                    reps=reps,
+                )
+            )
+
+
+def _seed_bench_dropset_history(store: Store) -> None:
+    now = datetime(2026, 5, 10, tzinfo=UTC)
+    rows = [
+        ("normal", 100.0),
+        ("dropset", 82.5),
+        ("normal", 100.0),
+        ("dropset", 80.0),
+    ]
+    with store.unit_of_work() as uow:
+        uow.add(
+            HevyAppWorkout(
+                id="hevy-dropset-history-1",
+                title="Upper Strength Logged",
+                description="",
+                start_time=now,
+                end_time=now,
+            )
+        )
+        uow.add(
+            HevyAppWorkoutItem(
+                id=2002,
+                workout_id="hevy-dropset-history-1",
+                index=0,
+                name="Barbell Bench Press",
+                notes="",
+                superset_id=None,
+                exercise_id="hevy-bench",
+            )
+        )
+        for index, (set_type, weight_kg) in enumerate(rows):
+            uow.add(
+                HevyAppSets(
+                    workout_item_id=2002,
+                    index=index,
+                    type=set_type,
+                    weight_kg=weight_kg,
+                    reps=10,
+                )
+            )
 
 
 def _seed_template_override_workout(store: Store) -> None:

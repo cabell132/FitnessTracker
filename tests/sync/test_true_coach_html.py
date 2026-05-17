@@ -128,6 +128,16 @@ def test_fallback_sets_uses_rep_range_upper_bound() -> None:
     ]
 
 
+def test_fallback_sets_preserves_explicit_coach_load() -> None:
+    sets = fallback_sets("3 x 12 @ 90kg")
+
+    assert [set_.model_dump(exclude_none=True) for set_ in sets] == [
+        {"type": "normal", "weight_kg": 90.0, "reps": 12},
+        {"type": "normal", "weight_kg": 90.0, "reps": 12},
+        {"type": "normal", "weight_kg": 90.0, "reps": 12},
+    ]
+
+
 def test_fallback_sets_parses_plus_notation_as_dropsets() -> None:
     sets = fallback_sets("3 x 10+10")
 
