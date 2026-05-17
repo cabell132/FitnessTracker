@@ -97,9 +97,6 @@ class TrackerMixin(CrudMixin):
         Args:
             true_coach_id (int): ``TrueCoachWorkoutItem.id`` / ``WorkoutItem.true_coach_id``.
             hevy_app_id (int): ``HevyAppWorkoutItem.id`` to store on the tracker row.
-
-        Returns:
-            None
         """
         item = self.get(TrackerWorkoutItem, true_coach_id=true_coach_id)
         if item:
@@ -111,9 +108,6 @@ class TrackerMixin(CrudMixin):
         Args:
             metric_item_id (int): Primary key of the ``MetricItem`` row.
             true_coach_id (int): ``TrueCoachAssessmentItem.id`` from the API response.
-
-        Returns:
-            None
         """
         item = self.get(TrackerMetricItem, id=metric_item_id)
         if item:

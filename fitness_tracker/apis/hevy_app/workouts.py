@@ -111,8 +111,7 @@ class HevyAppWorkouts:
                     "superset_id": exercise.superset_id,
                     "notes": exercise.notes or None,
                     "sets": [
-                        workout_set.model_dump(exclude={"index"})
-                        for workout_set in exercise.sets
+                        workout_set.model_dump(exclude={"index"}) for workout_set in exercise.sets
                     ],
                 }
                 for exercise in workout.exercises

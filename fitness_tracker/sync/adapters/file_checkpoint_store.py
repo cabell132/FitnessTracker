@@ -59,9 +59,6 @@ class FileCheckpointStore:
         Args:
             key (str): Checkpoint name.
             value (datetime): Timestamp to persist.
-
-        Returns:
-            None
         """
         data: dict[str, str] = {}
         if self.path.exists():
@@ -101,8 +98,5 @@ class InMemoryCheckpointStore:
         Args:
             key (str): Checkpoint name.
             value (datetime): Timestamp.
-
-        Returns:
-            None
         """
         self._data[key] = value

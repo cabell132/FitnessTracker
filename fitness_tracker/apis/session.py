@@ -100,11 +100,12 @@ class APISession:
                 configured DELETE behavior.
 
         Raises:
-            APIError: On transport errors or HTTP error responses (concrete type is
-                ``self._error_class``).
+            self._error_class: On transport errors or HTTP error responses.
         """
         url = self.make_url(endpoint)
-        with WideEvent(operation="api_request", api=self._api_name, method=method, url=url) as event:
+        with WideEvent(
+            operation="api_request", api=self._api_name, method=method, url=url
+        ) as event:
             with requests.Session() as session:
                 try:
                     response = session.request(

@@ -7,7 +7,11 @@ import pytest
 from fitness_tracker.apis.hevy_app.types import Exercise as HevyExercisePayload
 from fitness_tracker.apis.hevy_app.types import Set, Workout
 from fitness_tracker.database.models import Exercise as TrackerExercise
-from fitness_tracker.database.models.hevy_app import HevyAppExercise, HevyAppWorkout, HevyAppWorkoutItem
+from fitness_tracker.database.models.hevy_app import (
+    HevyAppExercise,
+    HevyAppWorkout,
+    HevyAppWorkoutItem,
+)
 from fitness_tracker.maintenance.hevy_exercise_migration import (
     HevyExerciseTemplateMigrationService,
     MigrationError,
@@ -44,8 +48,16 @@ def test_plan_reports_counts_and_conflicts(store) -> None:
 
 def test_plan_rejects_type_or_equipment_mismatch_without_force(store) -> None:
     with store.unit_of_work() as uow:
-        uow.add(HevyAppExercise(id="source", name="Source", type="weight_reps", equipment="machine", default=False))
-        uow.add(HevyAppExercise(id="target", name="Target", type="duration", equipment="machine", default=True))
+        uow.add(
+            HevyAppExercise(
+                id="source", name="Source", type="weight_reps", equipment="machine", default=False
+            )
+        )
+        uow.add(
+            HevyAppExercise(
+                id="target", name="Target", type="duration", equipment="machine", default=True
+            )
+        )
     service = HevyExerciseTemplateMigrationService(store)
 
     with pytest.raises(MigrationError, match="type/equipment differ"):
@@ -101,8 +113,16 @@ def test_apply_continues_when_remote_workout_is_already_migrated(store) -> None:
 
 def _seed(store, *, include_target_in_same_workout: bool) -> None:
     with store.unit_of_work() as uow:
-        uow.add(HevyAppExercise(id="source", name="Source", type="weight_reps", equipment="machine", default=False))
-        uow.add(HevyAppExercise(id="target", name="Target", type="weight_reps", equipment="machine", default=True))
+        uow.add(
+            HevyAppExercise(
+                id="source", name="Source", type="weight_reps", equipment="machine", default=False
+            )
+        )
+        uow.add(
+            HevyAppExercise(
+                id="target", name="Target", type="weight_reps", equipment="machine", default=True
+            )
+        )
         uow.add(TrackerExercise(id=7, name="Source", hevy_app_id="source", true_coach_id=123))
         uow.add(
             HevyAppWorkout(
@@ -122,10 +142,22 @@ def _seed(store, *, include_target_in_same_workout: bool) -> None:
                 end_time=datetime(2026, 1, 2, 1, tzinfo=UTC),
             )
         )
-        uow.add(HevyAppWorkoutItem(workout_id="w1", index=0, name="Source", notes="", exercise_id="source"))
-        uow.add(HevyAppWorkoutItem(workout_id="w2", index=0, name="Source", notes="", exercise_id="source"))
+        uow.add(
+            HevyAppWorkoutItem(
+                workout_id="w1", index=0, name="Source", notes="", exercise_id="source"
+            )
+        )
+        uow.add(
+            HevyAppWorkoutItem(
+                workout_id="w2", index=0, name="Source", notes="", exercise_id="source"
+            )
+        )
         if include_target_in_same_workout:
-            uow.add(HevyAppWorkoutItem(workout_id="w1", index=1, name="Target", notes="", exercise_id="target"))
+            uow.add(
+                HevyAppWorkoutItem(
+                    workout_id="w1", index=1, name="Target", notes="", exercise_id="target"
+                )
+            )
 
 
 def _api_workout(workout_id: str, exercise_ids: list[str]) -> Workout:

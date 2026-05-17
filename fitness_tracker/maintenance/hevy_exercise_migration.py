@@ -27,10 +27,25 @@ class HevyWorkoutClient(Protocol):
     """Subset of the Hevy workout client needed by this migration."""
 
     def get_workout(self, workout_id: str) -> Workout | None:
-        """Fetch a workout by ID."""
+        """Fetch a workout by ID.
+
+        Args:
+            workout_id (str): Hevy workout ID.
+
+        Returns:
+            Workout | None: Matching workout if found.
+        """
 
     def update_workout(self, workout_id: str, workout: Workout) -> Workout | None:
-        """Replace a workout by ID."""
+        """Replace a workout by ID.
+
+        Args:
+            workout_id (str): Hevy workout ID.
+            workout (Workout): Replacement workout payload.
+
+        Returns:
+            Workout | None: Updated workout if returned by the API.
+        """
 
 
 class MigrationError(RuntimeError):
@@ -110,7 +125,19 @@ class HevyExerciseTemplateMigrationService:
     def plan(  # noqa: PLR0915
         self, source_id: str, target_id: str, *, force: bool = False
     ) -> MigrationPlan:
-        """Build and validate a migration plan without mutating anything."""
+        """Build and validate a migration plan without mutating anything.
+
+        Args:
+            source_id (str): Hevy exercise template ID to replace.
+            target_id (str): Hevy exercise template ID to use instead.
+            force (bool): Allow mismatched source and target type/equipment.
+
+        Returns:
+            MigrationPlan: Validated migration plan.
+
+        Raises:
+            MigrationError: If source/target templates are invalid or unsafe.
+        """
         with self._store.unit_of_work() as uow:
             source = uow.get(HevyAppExercise, id=source_id)
             target = uow.get(HevyAppExercise, id=target_id)
@@ -131,9 +158,7 @@ class HevyExerciseTemplateMigrationService:
                 )
                 raise MigrationError(msg)
 
-            affected_items = (
-                uow.query(HevyAppWorkoutItem).filter_by(exercise_id=source_id).count()
-            )
+            affected_items = uow.query(HevyAppWorkoutItem).filter_by(exercise_id=source_id).count()
             workout_ids = [
                 row[0]
                 for row in (
@@ -187,7 +212,22 @@ class HevyExerciseTemplateMigrationService:
         backup_path: Path | None = None,
         report_path: Path | None = None,
     ) -> MigrationResult:
-        """Apply a migration to Hevy first, then update local database rows."""
+        """Apply a migration to Hevy first, then update local database rows.
+
+        Args:
+            source_id (str): Hevy exercise template ID to replace.
+            target_id (str): Hevy exercise template ID to use instead.
+            force (bool): Allow mismatched source and target type/equipment.
+            limit (int | None): Maximum number of affected workouts to update.
+            backup_path (Path | None): Optional SQLite backup destination.
+            report_path (Path | None): Optional JSON migration report destination.
+
+        Returns:
+            MigrationResult: API and database update summary.
+
+        Raises:
+            MigrationError: If the migration cannot be planned or applied.
+        """
         if self._hevy_workouts is None:
             msg = "A Hevy workout client is required when applying a migration"
             raise MigrationError(msg)
@@ -257,7 +297,9 @@ class HevyExerciseTemplateMigrationService:
                     exercise.exercise_template_id = target_id
                     replaced += 1
             if replaced == 0:
-                if any(exercise.exercise_template_id == target_id for exercise in workout.exercises):
+                if any(
+                    exercise.exercise_template_id == target_id for exercise in workout.exercises
+                ):
                     results.append(
                         WorkoutMigrationResult(workout_id=workout_id, replaced_exercises=0)
                     )
@@ -265,7 +307,9 @@ class HevyExerciseTemplateMigrationService:
                 msg = f"Hevy workout contains neither source nor target template: {workout_id}"
                 raise MigrationError(msg)
             client.update_workout(workout_id, workout)
-            results.append(WorkoutMigrationResult(workout_id=workout_id, replaced_exercises=replaced))
+            results.append(
+                WorkoutMigrationResult(workout_id=workout_id, replaced_exercises=replaced)
+            )
         return results
 
     def _find_conflicts(

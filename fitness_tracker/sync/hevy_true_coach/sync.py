@@ -42,7 +42,15 @@ class HevyToTrueCoachSyncronizer:
         true_coach_workout_item: TrueCoachWorkoutItem,
         result: str,
     ) -> PutWorkoutItemRequest:
-        """Build the PUT payload from the latest local True Coach row."""
+        """Build the PUT payload from the latest local True Coach row.
+
+        Args:
+            true_coach_workout_item (TrueCoachWorkoutItem): Local True Coach item row.
+            result (str): Formatted workout result text.
+
+        Returns:
+            PutWorkoutItemRequest: API update payload.
+        """
         tc_pos = cast(int | None, true_coach_workout_item.position)
         info = str(true_coach_workout_item.info or "")
         return PutWorkoutItemRequest(
@@ -69,7 +77,15 @@ class HevyToTrueCoachSyncronizer:
         self,
         workout_id: int,
     ) -> tuple[TrueCoachWorkoutPayload, list[TrueCoachWorkoutItemPayload]] | None:
-        """Fetch the latest True Coach snapshot for one workout from recent pages."""
+        """Fetch the latest True Coach snapshot for one workout from recent pages.
+
+        Args:
+            workout_id (int): True Coach workout ID.
+
+        Returns:
+            tuple[TrueCoachWorkoutPayload, list[TrueCoachWorkoutItemPayload]] | None:
+                Matching workout and items when found.
+        """
         page = 1
         total_pages = 1
         while page <= total_pages:
@@ -91,7 +107,15 @@ class HevyToTrueCoachSyncronizer:
         return None
 
     def _refresh_true_coach_workout(self, uow: UnitOfWork, workout_id: int) -> bool:
-        """Repair stale local True Coach rows from the latest API snapshot."""
+        """Repair stale local True Coach rows from the latest API snapshot.
+
+        Args:
+            uow (UnitOfWork): Active unit of work.
+            workout_id (int): True Coach workout ID.
+
+        Returns:
+            bool: True when fresh API rows were found and stored.
+        """
         latest = self._get_recent_true_coach_workout(workout_id)
         if latest is None:
             return False
@@ -112,6 +136,7 @@ class HevyToTrueCoachSyncronizer:
             hevy_workout_id (str): Hevy workout primary key.
 
         Raises:
+            TrueCoachAPIError: If True Coach update calls fail.
             TypeError: If the Hevy workout is missing.
             ValueError: If Hevy/True Coach item pairing is inconsistent.
         """

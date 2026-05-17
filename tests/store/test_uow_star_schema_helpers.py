@@ -11,7 +11,13 @@ from fitness_tracker.database.models.hevy_app import (
     HevyAppWorkout,
     HevyAppWorkoutItem,
 )
-from fitness_tracker.database.models.tracker import Exercise, Metric, MetricItem, Workout, WorkoutItem
+from fitness_tracker.database.models.tracker import (
+    Exercise,
+    Metric,
+    MetricItem,
+    Workout,
+    WorkoutItem,
+)
 from fitness_tracker.database.models.true_coach import (
     TrueCoachAssessment,
     TrueCoachWorkout,
@@ -34,7 +40,11 @@ def test_should_return_only_tc_items_missing_hevy_links_when_mixed_items_exist(
         uow.add(Exercise(id=70, name="Ex", true_coach_id=None, hevy_app_id=None))
         uow.add(TrueCoachWorkoutItem(id=7001, workout_id=700, name="A", state="open", position=0))
         uow.add(TrueCoachWorkoutItem(id=7002, workout_id=700, name="B", state="open", position=1))
-        uow.add(HevyAppWorkoutItem(id=8001, workout_id=700, index=0, name="B", notes="", exercise_id=None))
+        uow.add(
+            HevyAppWorkoutItem(
+                id=8001, workout_id=700, index=0, name="B", notes="", exercise_id=None
+            )
+        )
         uow.flush()
         uow.add(
             WorkoutItem(
@@ -74,10 +84,14 @@ def test_should_return_only_hevy_items_not_yet_on_workout_items(store: Store) ->
         uow.add(Exercise(id=71, name="Ex2", true_coach_id=None, hevy_app_id=None))
         uow.add(TrueCoachWorkoutItem(id=7011, workout_id=701, name="A", state="open", position=0))
         uow.add(
-            HevyAppWorkoutItem(id=8101, workout_id=701, index=0, name="H1", notes="", exercise_id=None)
+            HevyAppWorkoutItem(
+                id=8101, workout_id=701, index=0, name="H1", notes="", exercise_id=None
+            )
         )
         uow.add(
-            HevyAppWorkoutItem(id=8102, workout_id=701, index=1, name="H2", notes="", exercise_id=None)
+            HevyAppWorkoutItem(
+                id=8102, workout_id=701, index=1, name="H2", notes="", exercise_id=None
+            )
         )
         uow.flush()
         uow.add(
@@ -107,9 +121,7 @@ def test_should_set_hevy_app_id_when_link_workout_item_hevy_id_called(store: Sto
         uow.add(Exercise(id=72, name="E3", true_coach_id=None, hevy_app_id=None))
         uow.add(TrueCoachWorkoutItem(id=7021, workout_id=702, name="X", state="open", position=0))
         uow.flush()
-        uow.add(
-            WorkoutItem(workout_id=tw.id, position=0, exercise_id=72, true_coach_id=7021)
-        )
+        uow.add(WorkoutItem(workout_id=tw.id, position=0, exercise_id=72, true_coach_id=7021))
 
     with store.unit_of_work() as uow:
         uow.link_workout_item_hevy_id(true_coach_id=7021, hevy_app_id=9900)
@@ -159,7 +171,9 @@ def _seed_workout_item_exercise_update_scenario(store: Store) -> None:
         uow.flush()
         uow.add(Exercise(id=73, name="Wrong", true_coach_id=None, hevy_app_id=None))
         uow.add(Exercise(id=74, name="Right", true_coach_id=None, hevy_app_id="hex99"))
-        uow.add(TrueCoachWorkoutItem(id=7031, workout_id=703, name="Item", state="open", position=0))
+        uow.add(
+            TrueCoachWorkoutItem(id=7031, workout_id=703, name="Item", state="open", position=0)
+        )
         uow.add(
             HevyAppWorkoutItem(
                 id=8200,

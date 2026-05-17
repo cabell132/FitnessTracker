@@ -15,7 +15,11 @@ from fitness_tracker.database.models.hevy_app import (
     HevyAppWorkout,
     HevyAppWorkoutItem,
 )
-from fitness_tracker.database.models.tracker import Exercise, Workout as TrackerWorkout, WorkoutItem as TrackerWorkoutItem
+from fitness_tracker.database.models.tracker import (
+    Exercise,
+    Workout as TrackerWorkout,
+    WorkoutItem as TrackerWorkoutItem,
+)
 from fitness_tracker.database.models.true_coach import TrueCoachWorkout, TrueCoachWorkoutItem
 from fitness_tracker.sync.hevy_true_coach.sync import HevyToTrueCoachSyncronizer
 
@@ -51,8 +55,16 @@ def test_should_skip_hevy_workout_when_true_coach_workout_is_missing(store) -> N
 def test_should_refresh_stale_true_coach_item_on_404_and_continue(store) -> None:  # noqa: PLR0915
     """A missing remote item should trigger local refresh instead of aborting the run."""
     with store.unit_of_work() as uow:
-        uow.add(HevyAppExercise(id="hevy-a", name="First", type="reps_only", equipment="body", default=True))
-        uow.add(HevyAppExercise(id="hevy-b", name="Second", type="reps_only", equipment="body", default=True))
+        uow.add(
+            HevyAppExercise(
+                id="hevy-a", name="First", type="reps_only", equipment="body", default=True
+            )
+        )
+        uow.add(
+            HevyAppExercise(
+                id="hevy-b", name="Second", type="reps_only", equipment="body", default=True
+            )
+        )
 
         uow.add(Exercise(name="First", hevy_app_id="hevy-a"))
         uow.add(Exercise(name="Second", hevy_app_id="hevy-b"))
@@ -88,7 +100,14 @@ def test_should_refresh_stale_true_coach_item_on_404_and_continue(store) -> None
         )
         uow.flush()
 
-        uow.add(TrackerWorkout(title="Active Recovery", description="", hevy_app_id="hevy-workout-1", true_coach_id=100))
+        uow.add(
+            TrackerWorkout(
+                title="Active Recovery",
+                description="",
+                hevy_app_id="hevy-workout-1",
+                true_coach_id=100,
+            )
+        )
         uow.flush()
         tracker_workout = uow.get(TrackerWorkout, true_coach_id=100)
         assert tracker_workout is not None

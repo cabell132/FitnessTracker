@@ -32,8 +32,5 @@ class CheckpointStore(Protocol):
         Args:
             key (str): Logical checkpoint name.
             value (datetime): Timestamp to store.
-
-        Returns:
-            None
         """
         ...
