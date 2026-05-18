@@ -48,12 +48,12 @@ def test_plan_reports_counts_and_conflicts(store) -> None:
 
 def test_plan_rejects_type_or_equipment_mismatch_without_force(store) -> None:
     with store.unit_of_work() as uow:
-        uow.add(
+        uow.session.add(
             HevyAppExercise(
                 id="source", name="Source", type="weight_reps", equipment="machine", default=False
             )
         )
-        uow.add(
+        uow.session.add(
             HevyAppExercise(
                 id="target", name="Target", type="duration", equipment="machine", default=True
             )
@@ -84,11 +84,11 @@ def test_apply_updates_hevy_first_then_local_rows(store) -> None:
     )
     assert result.db_workout_items_updated == 2
     with store.unit_of_work() as uow:
-        assert uow.get_all(HevyAppWorkoutItem, exercise_id="source") == []
-        target_items = uow.get_all(HevyAppWorkoutItem, exercise_id="target")
+        assert uow.session.get_all(HevyAppWorkoutItem, exercise_id="source") == []
+        target_items = uow.session.get_all(HevyAppWorkoutItem, exercise_id="target")
         assert len(target_items) == 2
         assert {item.name for item in target_items} == {"Target"}
-        tracker = uow.get(TrackerExercise, id=7)
+        tracker = uow.session.get(TrackerExercise, id=7)
         assert tracker.hevy_app_id == "target"
         assert tracker.name == "Target"
 
@@ -108,23 +108,25 @@ def test_apply_continues_when_remote_workout_is_already_migrated(store) -> None:
     assert [item.replaced_exercises for item in result.api_updates] == [0, 1]
     assert len(fake.updated) == 1
     with store.unit_of_work() as uow:
-        assert uow.get_all(HevyAppWorkoutItem, exercise_id="source") == []
+        assert uow.session.get_all(HevyAppWorkoutItem, exercise_id="source") == []
 
 
 def _seed(store, *, include_target_in_same_workout: bool) -> None:
     with store.unit_of_work() as uow:
-        uow.add(
+        uow.session.add(
             HevyAppExercise(
                 id="source", name="Source", type="weight_reps", equipment="machine", default=False
             )
         )
-        uow.add(
+        uow.session.add(
             HevyAppExercise(
                 id="target", name="Target", type="weight_reps", equipment="machine", default=True
             )
         )
-        uow.add(TrackerExercise(id=7, name="Source", hevy_app_id="source", true_coach_id=123))
-        uow.add(
+        uow.session.add(
+            TrackerExercise(id=7, name="Source", hevy_app_id="source", true_coach_id=123)
+        )
+        uow.session.add(
             HevyAppWorkout(
                 id="w1",
                 title="Workout 1",
@@ -133,7 +135,7 @@ def _seed(store, *, include_target_in_same_workout: bool) -> None:
                 end_time=datetime(2026, 1, 1, 1, tzinfo=UTC),
             )
         )
-        uow.add(
+        uow.session.add(
             HevyAppWorkout(
                 id="w2",
                 title="Workout 2",
@@ -142,18 +144,18 @@ def _seed(store, *, include_target_in_same_workout: bool) -> None:
                 end_time=datetime(2026, 1, 2, 1, tzinfo=UTC),
             )
         )
-        uow.add(
+        uow.session.add(
             HevyAppWorkoutItem(
                 workout_id="w1", index=0, name="Source", notes="", exercise_id="source"
             )
         )
-        uow.add(
+        uow.session.add(
             HevyAppWorkoutItem(
                 workout_id="w2", index=0, name="Source", notes="", exercise_id="source"
             )
         )
         if include_target_in_same_workout:
-            uow.add(
+            uow.session.add(
                 HevyAppWorkoutItem(
                     workout_id="w1", index=1, name="Target", notes="", exercise_id="target"
                 )

@@ -1,4 +1,4 @@
-"""Generic CRUD operations shared by all UnitOfWork domain mixins."""
+"""Generic CRUD operations shared by repository implementations."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ _SQL_DIR = Path("fitness_tracker/database/SQL")
 class CrudMixin:
     """Generic CRUD operations backed by a SQLAlchemy session.
 
-    Subclasses (or the final UnitOfWork) must set ``_session`` before use.
+    Subclasses must set ``_session`` before use.
     """
 
     _session: Session

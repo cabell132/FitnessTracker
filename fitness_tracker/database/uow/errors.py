@@ -1,4 +1,4 @@
-"""Domain-specific errors for UnitOfWork operations."""
+"""Domain-specific persistence errors."""
 
 
 class HevyAppPersistenceError(Exception):

@@ -52,7 +52,7 @@ def test_ensure_from_plan_dry_run_reports_missing_templates_without_writes(
     assert "Would create Hevy template: Single-Leg Isometric Calf Raise" in capsys.readouterr().out
     assert fake_client.exercises.created == []
     with store.unit_of_work() as uow:
-        assert uow.get_all(HevyAppExercise) == []
+        assert uow.session.get_all(HevyAppExercise) == []
 
 
 def test_ensure_from_plan_yes_creates_and_persists_missing_template(
@@ -82,7 +82,7 @@ def test_ensure_from_plan_yes_creates_and_persists_missing_template(
         "Single-Leg Isometric Calf Raise"
     ]
     with store.unit_of_work() as uow:
-        exercise = uow.get(HevyAppExercise, id="9001")
+        exercise = uow.session.get(HevyAppExercise, id="9001")
         assert exercise is not None
         assert exercise.name == "Single-Leg Isometric Calf Raise"
         assert exercise.type == "duration"
@@ -115,7 +115,7 @@ def test_ensure_from_plan_skips_existing_template(
     assert "Already exists: Isometric Seated Knee Extension" in capsys.readouterr().out
     assert fake_client.exercises.created == []
     with store.unit_of_work() as uow:
-        assert uow.get_all(HevyAppExercise) == []
+        assert uow.session.get_all(HevyAppExercise) == []
 
 
 def test_ensure_from_plan_refuses_ambiguous_templates_without_writes(
@@ -146,7 +146,7 @@ def test_ensure_from_plan_refuses_ambiguous_templates_without_writes(
     )
     assert fake_client.exercises.created == []
     with store.unit_of_work() as uow:
-        assert uow.get_all(HevyAppExercise) == []
+        assert uow.session.get_all(HevyAppExercise) == []
 
 
 def _store(tmp_path: Path) -> tuple[Store, str]:

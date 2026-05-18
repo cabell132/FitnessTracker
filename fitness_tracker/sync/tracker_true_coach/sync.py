@@ -43,7 +43,7 @@ class TrackerToTrueCoachSyncronizer:
     def sync_assessments(self) -> None:
         """Sync all the assessments."""
         with self._store.unit_of_work() as uow:
-            rows = uow.select_tracker_tc_assessments()
+            rows = uow.cross_domain.select_tracker_tc_assessments()
 
             for row in rows:
                 assessment_item = self.sync_assessment(
@@ -51,8 +51,8 @@ class TrackerToTrueCoachSyncronizer:
                     str(row["date"]),
                     str(row["value"]),
                 )
-                uow.tc_add_assessment_item(assessment_item)
-                uow.link_metric_item_to_true_coach(
+                uow.true_coach.add_assessment_item(assessment_item)
+                uow.tracker.link_metric_item_to_true_coach(
                     metric_item_id=row["id"],
                     true_coach_id=assessment_item.id,
                 )

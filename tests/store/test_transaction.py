@@ -14,7 +14,7 @@ def test_auto_commit_on_clean_exit(store: Store) -> None:
         store (Store): In-memory store fixture.
     """
     with store.unit_of_work() as uow:
-        uow.add(
+        uow.session.add(
             HevyAppExercise(
                 id="tx1",
                 name="Row",
@@ -34,7 +34,7 @@ def test_rollback_on_exception(store: Store) -> None:
         store (Store): In-memory store fixture.
     """
     with pytest.raises(RuntimeError), store.unit_of_work() as uow:  # noqa: PT012
-        uow.add(
+        uow.session.add(
             HevyAppExercise(
                 id="tx2",
                 name="Fly",
@@ -43,7 +43,7 @@ def test_rollback_on_exception(store: Store) -> None:
                 default=True,
             )
         )
-        uow.flush()
+        uow.session.flush()
         msg = "intentional"
         raise RuntimeError(msg)
 
@@ -58,8 +58,8 @@ def test_flush_makes_ids_visible(store: Store) -> None:
     """
     with store.unit_of_work() as uow:
         tag = TrueCoachTag(name="push", category="pattern")
-        uow.add(tag)
-        uow.flush()
+        uow.session.add(tag)
+        uow.session.flush()
         assert tag.id is not None
 
     result = store.query_one(TrueCoachTag, name="push")

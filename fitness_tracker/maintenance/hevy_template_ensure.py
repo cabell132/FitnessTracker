@@ -152,7 +152,7 @@ class HevyTemplateEnsureService:
             is_custom=True,
         )
         with self._store.unit_of_work() as uow:
-            uow.hevy_add_exercise(exercise)
+            uow.hevy.add_exercise(exercise)
 
 
 def _required_templates_from_plan(plan_path: Path) -> tuple[RequiredTemplate, ...]:

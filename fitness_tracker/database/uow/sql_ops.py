@@ -1,4 +1,4 @@
-"""Cross-schema SQL operations for UnitOfWork."""
+"""Cross-schema SQL repository operations."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from fitness_tracker.database.uow.base import CrudMixin
 
 
 class SqlOpsMixin(CrudMixin):
-    """Named SQL file wrappers mixed into UnitOfWork."""
+    """Named SQL file wrappers for cross-domain repositories."""
 
     def link_hevy_tracker_workout_items(self, true_coach_id: int) -> None:
         """Run SQL to link Hevy and tracker workout items.

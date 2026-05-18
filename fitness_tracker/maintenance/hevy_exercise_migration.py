@@ -20,7 +20,7 @@ from fitness_tracker.database.models.hevy_app import (
     HevyAppWorkout,
     HevyAppWorkoutItem,
 )
-from fitness_tracker.database.uow import UnitOfWork
+from fitness_tracker.database.tx import Tx
 
 
 class HevyWorkoutClient(Protocol):
@@ -139,8 +139,8 @@ class HevyExerciseTemplateMigrationService:
             MigrationError: If source/target templates are invalid or unsafe.
         """
         with self._store.unit_of_work() as uow:
-            source = uow.get(HevyAppExercise, id=source_id)
-            target = uow.get(HevyAppExercise, id=target_id)
+            source = uow.session.get(HevyAppExercise, id=source_id)
+            target = uow.session.get(HevyAppExercise, id=target_id)
             if source is None:
                 msg = f"Source Hevy exercise template does not exist: {source_id}"
                 raise MigrationError(msg)
@@ -158,11 +158,13 @@ class HevyExerciseTemplateMigrationService:
                 )
                 raise MigrationError(msg)
 
-            affected_items = uow.query(HevyAppWorkoutItem).filter_by(exercise_id=source_id).count()
+            affected_items = (
+                uow.session.query(HevyAppWorkoutItem).filter_by(exercise_id=source_id).count()
+            )
             workout_ids = [
                 row[0]
                 for row in (
-                    uow.query(HevyAppWorkoutItem.workout_id)
+                    uow.session.query(HevyAppWorkoutItem.workout_id)
                     .filter_by(exercise_id=source_id)
                     .distinct()
                     .order_by(HevyAppWorkoutItem.workout_id)
@@ -170,16 +172,16 @@ class HevyExerciseTemplateMigrationService:
                 )
             ]
             target_existing_items = (
-                uow.query(HevyAppWorkoutItem).filter_by(exercise_id=target_id).count()
+                uow.session.query(HevyAppWorkoutItem).filter_by(exercise_id=target_id).count()
             )
             target_existing_workouts = (
-                uow.query(HevyAppWorkoutItem.workout_id)
+                uow.session.query(HevyAppWorkoutItem.workout_id)
                 .filter_by(exercise_id=target_id)
                 .distinct()
                 .count()
             )
             date_row = (
-                uow.query(
+                uow.session.query(
                     func.min(HevyAppWorkout.start_time),
                     func.max(HevyAppWorkout.start_time),
                 )
@@ -247,7 +249,7 @@ class HevyExerciseTemplateMigrationService:
         target_name = plan.target.name
         with self._store.unit_of_work() as uow:
             db_updated = (
-                uow.query(HevyAppWorkoutItem)
+                uow.session.query(HevyAppWorkoutItem)
                 .filter(
                     HevyAppWorkoutItem.workout_id.in_(selected_workout_ids),
                     HevyAppWorkoutItem.exercise_id == source_id,
@@ -260,13 +262,13 @@ class HevyExerciseTemplateMigrationService:
                     synchronize_session=False,
                 )
             )
-            tracker_row = uow.get(Exercise, hevy_app_id=source_id)
+            tracker_row = uow.session.get(Exercise, hevy_app_id=source_id)
             tracker_id = None
             if tracker_row is not None:
                 tracker_id = tracker_row.id
                 tracker_row.hevy_app_id = target_id
                 tracker_row.name = target_name
-                uow.merge(tracker_row)
+                uow.session.merge(tracker_row)
 
         result = MigrationResult(
             plan=plan,
@@ -314,12 +316,12 @@ class HevyExerciseTemplateMigrationService:
 
     def _find_conflicts(
         self,
-        uow: UnitOfWork,
+        uow: Tx,
         source_id: str,
         target_id: str,
     ) -> list[WorkoutConflict]:
         rows = (
-            uow.query(HevyAppWorkout)
+            uow.session.query(HevyAppWorkout)
             .options(joinedload(HevyAppWorkout.workout_items))
             .join(HevyAppWorkoutItem)
             .filter(HevyAppWorkoutItem.exercise_id.in_([source_id, target_id]))

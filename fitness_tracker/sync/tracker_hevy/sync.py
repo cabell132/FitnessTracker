@@ -54,8 +54,8 @@ class TrackerToHevySyncronizer:
             workout_id (int): The true coach workout id to syncronize.
         """
         with self._store.unit_of_work() as uow:
-            workout = uow.tracker_get_workout(true_coach_id=workout_id)
-            placeholder_exercises = uow.hevy_get_placeholders()
+            workout = uow.tracker.get_workout(true_coach_id=workout_id)
+            placeholder_exercises = uow.hevy.get_placeholders()
 
             if workout is not None and workout.true_coach is not None:
                 tc_workout = workout.true_coach
@@ -81,7 +81,7 @@ class TrackerToHevySyncronizer:
                         else:
                             hevy_app_exercise = placeholder_exercises.pop(0)
                             if hevy_app_exercise.name != "#####PLACEHOLDER#####":
-                                uow.tracker_add_exercise(exercise)
+                                uow.tracker.add_exercise(exercise)
                     else:
                         hevy_app_exercise = placeholder_exercises.pop(0)
 

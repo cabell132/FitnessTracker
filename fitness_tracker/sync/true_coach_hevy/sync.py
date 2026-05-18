@@ -51,11 +51,11 @@ class TrueCoachToHevySyncronizer:
             workout_id (int): The workout id to syncronize.
         """
         with self._store.unit_of_work() as uow:
-            true_coach_workout = uow.tc_get_workout(id=workout_id)
-            placeholder_exercises = uow.hevy_get_placeholders()
+            true_coach_workout = uow.true_coach.get_workout(id=workout_id)
+            placeholder_exercises = uow.hevy.get_placeholders()
 
             if true_coach_workout:
-                uow.tracker_add_workout(true_coach_workout)
+                uow.tracker.add_workout(true_coach_workout)
                 desc = str(true_coach_workout.short_description or "")
                 order = utils.get_workout_order(desc)
                 superset_index = utils.get_superset_index(order)
@@ -73,9 +73,9 @@ class TrueCoachToHevySyncronizer:
                         notes = str(item.info or "")
                         if not isinstance(hevy_app_exercise, HevyAppExercise):
                             hevy_app_exercise = placeholder_exercises.pop(0)
-                            uow.tracker_add_exercise(exercise)
+                            uow.tracker.add_exercise(exercise)
                             notes = f"{item.name}\n\n{item.info or ''}"
-                    elif exercise_instance := uow.tracker_get_exercise(name=item.name):
+                    elif exercise_instance := uow.tracker.get_exercise(name=item.name):
                         if hevy_app_exercise := exercise_instance.hevy_app:
                             notes = str(item.info or "")
                         else:
@@ -84,7 +84,7 @@ class TrueCoachToHevySyncronizer:
 
                     else:
                         exercise_instance = TrackerExercise(name=item.name)
-                        uow.insert_ignore(exercise_instance)
+                        uow.session.insert_ignore(exercise_instance)
                         hevy_app_exercise = placeholder_exercises.pop(0)
                         notes = f"{item.name}\n\n{item.info or ''}"
 
@@ -135,4 +135,4 @@ class TrueCoachToHevySyncronizer:
 
                 self._target.routines.create(routine_request)
 
-            uow.insert_tc_tracker_workout_items()
+            uow.cross_domain.insert_tc_tracker_workout_items()

@@ -19,7 +19,7 @@ from fitness_tracker.database.models import (
     HevyAppWorkoutItem,
     TrueCoachWorkoutItem,
 )
-from fitness_tracker.database.uow import UnitOfWork
+from fitness_tracker.database.tx import Tx
 from fitness_tracker.sync.hevy_true_coach.utils import mapping
 from logs import WideEvent
 
@@ -106,11 +106,11 @@ class HevyToTrueCoachSyncronizer:
             page += 1
         return None
 
-    def _refresh_true_coach_workout(self, uow: UnitOfWork, workout_id: int) -> bool:
+    def _refresh_true_coach_workout(self, uow: Tx, workout_id: int) -> bool:
         """Repair stale local True Coach rows from the latest API snapshot.
 
         Args:
-            uow (UnitOfWork): Active unit of work.
+            uow (Tx): Active unit of work.
             workout_id (int): True Coach workout ID.
 
         Returns:
@@ -121,12 +121,12 @@ class HevyToTrueCoachSyncronizer:
             return False
 
         workout, workout_items = latest
-        uow.tc_add_workout(workout)
+        uow.true_coach.add_workout(workout)
         for workout_item in workout_items:
-            uow.tc_add_workout_item(workout_item)
-        uow.insert_tc_tracker_workout_items()
-        uow.flush()
-        uow.expire_all()
+            uow.true_coach.add_workout_item(workout_item)
+        uow.cross_domain.insert_tc_tracker_workout_items()
+        uow.session.flush()
+        uow.session.expire_all()
         return True
 
     def sync_workout(self, hevy_workout_id: str) -> None:  # noqa: C901, PLR0912, PLR0915
@@ -149,7 +149,7 @@ class HevyToTrueCoachSyncronizer:
             ) as evt,
             self._store.unit_of_work() as uow,
         ):
-            hevy_app_workout = uow.hevy_get_workout(id=hevy_workout_id)
+            hevy_app_workout = uow.hevy.get_workout(id=hevy_workout_id)
             if not isinstance(hevy_app_workout, HevyAppWorkout):
                 msg = f"Workout with id {hevy_workout_id} not found"
                 raise TypeError(msg)
@@ -172,7 +172,7 @@ class HevyToTrueCoachSyncronizer:
             repairs_applied = 0
 
             for item_id in hevy_app_workout_item_ids:
-                item = uow.get(HevyAppWorkoutItem, id=item_id)
+                item = uow.session.get(HevyAppWorkoutItem, id=item_id)
                 if not isinstance(item, HevyAppWorkoutItem):
                     items_skipped += 1
                     continue
@@ -207,7 +207,7 @@ class HevyToTrueCoachSyncronizer:
                                 items_skipped += 1
                                 continue
                             repairs_applied += 1
-                            item = uow.get(HevyAppWorkoutItem, id=item_id)
+                            item = uow.session.get(HevyAppWorkoutItem, id=item_id)
                             if not isinstance(item, HevyAppWorkoutItem):
                                 items_skipped += 1
                                 continue
@@ -224,7 +224,7 @@ class HevyToTrueCoachSyncronizer:
                                 update_workout_item,
                             )
 
-                        uow.tc_update_workout_item(update_workout_item)
+                        uow.true_coach.update_workout_item(update_workout_item)
                         items_synced += 1
                     else:
                         items_skipped += 1

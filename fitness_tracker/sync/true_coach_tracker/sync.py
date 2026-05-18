@@ -4,7 +4,7 @@ from fitness_tracker.apis import TrueCoachClient
 from fitness_tracker.apis.true_coach.types import Workout, WorkoutItem, WorkoutResponse
 from fitness_tracker.database import Store
 from fitness_tracker.database.models import TrueCoachExercise
-from fitness_tracker.database.uow import UnitOfWork
+from fitness_tracker.database.tx import Tx
 
 
 class TrueCoachToFitnessTrackerSyncronizer:
@@ -20,20 +20,20 @@ class TrueCoachToFitnessTrackerSyncronizer:
         self._store = store
         self._source = source
 
-    def sync_workout(self, uow: UnitOfWork, workout: Workout) -> None:
+    def sync_workout(self, uow: Tx, workout: Workout) -> None:
         """Syncronize the workout with the given id.
 
         Args:
-            uow (UnitOfWork): Active unit of work.
+            uow (Tx): Active unit of work.
             workout (Workout): The workout to syncronize.
         """
-        uow.tc_add_workout(workout)
+        uow.true_coach.add_workout(workout)
 
-    def sync_workout_item(self, uow: UnitOfWork, workout_item: WorkoutItem) -> None:
+    def sync_workout_item(self, uow: Tx, workout_item: WorkoutItem) -> None:
         """Syncronize the workout item with the given id.
 
         Args:
-            uow (UnitOfWork): Active unit of work.
+            uow (Tx): Active unit of work.
             workout_item (WorkoutItem): The workout item to syncronize.
         """
         if workout_item.exercise_id is not None:
@@ -41,10 +41,10 @@ class TrueCoachToFitnessTrackerSyncronizer:
                 name=workout_item.name,
                 id=workout_item.exercise_id,
             )
-            uow.merge(exercise)
-            uow.tracker_add_exercise(exercise)
+            uow.session.merge(exercise)
+            uow.tracker.add_exercise(exercise)
 
-        uow.tc_add_workout_item(workout_item)
+        uow.true_coach.add_workout_item(workout_item)
 
     def sync_workouts(self, workouts: WorkoutResponse) -> None:
         """Add a list of workouts.

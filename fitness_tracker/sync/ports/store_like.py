@@ -6,7 +6,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Protocol, runtime_checkable
 
-from fitness_tracker.database.uow import UnitOfWork
+from fitness_tracker.database.tx import Tx
 
 
 @runtime_checkable
@@ -19,10 +19,10 @@ class StoreLike(Protocol):
     """
 
     @contextmanager
-    def unit_of_work(self) -> Iterator[UnitOfWork]:
-        """Yield a UnitOfWork that commits on clean exit and rolls back on error.
+    def unit_of_work(self) -> Iterator[Tx]:
+        """Yield a Tx that commits on clean exit and rolls back on error.
 
         Returns:
-            Iterator[UnitOfWork]: Transaction-scoped context for all database operations.
+            Iterator[Tx]: Transaction-scoped context for all database operations.
         """
         ...

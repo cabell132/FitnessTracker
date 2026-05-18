@@ -125,13 +125,13 @@ class AppleHealthToFitnessTrackerSyncronizer:
                 if "Date" not in df.columns:
                     continue
                 df = df.set_index("Date")
-                uow.ah_add_data_records(df)
+                uow.apple_health.add_data_records(df)
 
         sync_datetimes["Metrics"] = datetime.now(UTC)
         self.save_sync_datetimes(sync_datetimes)
 
         with self._store.unit_of_work() as uow:
-            uow.insert_apple_health_metrics()
+            uow.cross_domain.insert_apple_health_metrics()
 
     def sync_workouts(self) -> None:
         """Pull new workout CSVs from Dropbox and load them into the database."""
@@ -146,7 +146,7 @@ class AppleHealthToFitnessTrackerSyncronizer:
         with self._store.unit_of_work() as uow:
             for file_metadata in new_files:
                 df = self.load_csv_from_dropbox(file_metadata)
-                uow.ah_add_workouts(df)
+                uow.apple_health.add_workouts(df)
 
         sync_datetimes["Workout"] = datetime.now(UTC)
         self.save_sync_datetimes(sync_datetimes)

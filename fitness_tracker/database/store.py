@@ -6,29 +6,33 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any, TypeVar
 
+from fitness_tracker.apis import HevyAppClient
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from fitness_tracker.database.models.base import BaseModel
-from fitness_tracker.database.uow import UnitOfWork
+from fitness_tracker.database.tx import Tx
 
 T = TypeVar("T", bound=BaseModel)
 
 
 class Store:
-    """Factory that owns a SQLAlchemy Engine and vends UnitOfWork instances.
+    """Factory that owns a SQLAlchemy Engine and vends transaction containers.
 
     Attributes:
         engine: The SQLAlchemy engine backing all database operations.
     """
 
-    def __init__(self, engine: Engine) -> None:
+    def __init__(self, engine: Engine, hevy_client: HevyAppClient | None = None) -> None:
         """Create a store bound to the given engine.
 
         Args:
             engine (Engine): SQLAlchemy engine for the fitness tracker database.
+            hevy_client (HevyAppClient | None): Optional Hevy API client used by
+                the Hevy repository to backfill missing exercise templates.
         """
         self._engine = engine
+        self._hevy_client = hevy_client
 
     # -- lifecycle -----------------------------------------------------------
 
@@ -43,22 +47,25 @@ class Store:
     # -- unit of work --------------------------------------------------------
 
     @contextmanager
-    def unit_of_work(self) -> Iterator[UnitOfWork]:
-        """Yield a UnitOfWork that commits on clean exit and rolls back on error.
+    def unit_of_work(self) -> Iterator[Tx]:
+        """Yield a Tx that commits on clean exit and rolls back on error.
 
         Yields:
-            UnitOfWork: Transaction-scoped context for all database operations.
+            Tx: Transaction-scoped repository container.
 
         Raises:
             Exception: Re-raised after rollback if the worker block fails.
         """
         session = Session(self._engine, expire_on_commit=False)
-        uow = UnitOfWork(session)
+        fetch_template = (
+            self._hevy_client.exercises.get_template if self._hevy_client is not None else None
+        )
+        tx = Tx(session, fetch_template=fetch_template)
         try:
-            yield uow
-            uow.commit()
+            yield tx
+            session.commit()
         except Exception:
-            uow.rollback()
+            session.rollback()
             raise
         finally:
             session.close()

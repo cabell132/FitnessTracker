@@ -1,4 +1,4 @@
-"""Hevy App domain operations for UnitOfWork."""
+"""Hevy App domain repository operations."""
 
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ class HevyExerciseTemplateSource(Protocol):
 
 
 class HevyMixin(CrudMixin):
-    """Hevy App persistence helpers mixed into UnitOfWork."""
+    """Hevy App persistence helper methods."""
 
     def hevy_add_exercises(self, exercises: HevyExerciseResponse) -> None:
         """Persist all exercise templates from a paginated API response.

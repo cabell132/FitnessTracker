@@ -1,4 +1,4 @@
-"""Apple Health domain operations for UnitOfWork."""
+"""Apple Health domain repository operations."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from fitness_tracker.database.uow.base import CrudMixin
 
 
 class AppleHealthMixin(CrudMixin):
-    """Apple Health persistence helpers mixed into UnitOfWork."""
+    """Apple Health persistence helper methods."""
 
     def ah_add_data_type(self, column: str) -> AppleHealthDataType | None:
         """Parse a CSV column header into a data type and persist it.

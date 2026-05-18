@@ -1,4 +1,4 @@
-"""Smoke tests for True Coach tag deduplication on UnitOfWork."""
+"""Smoke tests for True Coach tag deduplication on Tx."""
 
 from fitness_tracker.database.models.true_coach import TrueCoachTag
 from fitness_tracker.database.store import Store
@@ -11,7 +11,7 @@ def test_ensure_tags_creates_and_reuses(store: Store) -> None:
         store (Store): In-memory store fixture.
     """
     with store.unit_of_work() as uow:
-        uow._tc_ensure_tags(exercise_id=1, tags=["push", "push"], category="pattern")
+        uow.true_coach.add_exercise_tags(exercise_id=1, tags=["push", "push"], category="pattern")
 
     results = store.query_all(TrueCoachTag, category="pattern")
     assert len(results) == 1

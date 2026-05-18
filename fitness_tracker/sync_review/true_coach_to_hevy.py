@@ -20,7 +20,7 @@ from fitness_tracker.database import Store
 from fitness_tracker.database.models import HevyAppExercise, TrueCoachExercise
 from fitness_tracker.database.models.hevy_app import HevyAppSets, HevyAppWorkout, HevyAppWorkoutItem
 from fitness_tracker.database.models.true_coach import TrueCoachWorkout, TrueCoachWorkoutItem
-from fitness_tracker.database.uow import UnitOfWork
+from fitness_tracker.database.tx import Tx
 from fitness_tracker.sync._true_coach_html import parse_prescribed_sets
 from fitness_tracker.sync.ports import HevyRoutineWriter
 
@@ -193,7 +193,7 @@ class TrueCoachToHevyReviewService:
             SyncReviewError: If the workout does not exist in the local snapshot.
         """
         with self._store.unit_of_work() as uow:
-            workout = uow.tc_get_workout(id=workout_id)
+            workout = uow.true_coach.get_workout(id=workout_id)
             if workout is None:
                 msg = f"True Coach workout {workout_id} was not found in the local DB"
                 raise SyncReviewError(msg)
@@ -253,7 +253,7 @@ class TrueCoachToHevyReviewService:
         routine_writer.create_routine(result.request_body)
         return result
 
-    def _review_item(self, uow: UnitOfWork, item: TrueCoachWorkoutItem) -> ReviewItem:
+    def _review_item(self, uow: Tx, item: TrueCoachWorkoutItem) -> ReviewItem:
         template = self._selected_template(uow, item)
         required_templates = self._required_templates(uow, item, template)
         planned_blocks = self._planned_blocks(uow, item, template)
@@ -287,7 +287,7 @@ class TrueCoachToHevyReviewService:
 
     def _selected_template(
         self,
-        uow: UnitOfWork,
+        uow: Tx,
         item: TrueCoachWorkoutItem,
     ) -> HevyAppExercise | None:
         exercise = item.exercise
@@ -297,14 +297,14 @@ class TrueCoachToHevyReviewService:
             return exercise.hevy_app
         if item.tracker and isinstance(item.tracker.exercise.hevy_app, HevyAppExercise):
             return item.tracker.exercise.hevy_app
-        tracker_exercise = uow.tracker_get_exercise(name=item.name)
+        tracker_exercise = uow.tracker.get_exercise(name=item.name)
         if tracker_exercise and isinstance(tracker_exercise.hevy_app, HevyAppExercise):
             return tracker_exercise.hevy_app
         return None
 
     def _required_templates(
         self,
-        uow: UnitOfWork,
+        uow: Tx,
         item: TrueCoachWorkoutItem,
         selected_template: HevyAppExercise | None,
     ) -> list[RequiredHevyTemplate]:
@@ -319,7 +319,7 @@ class TrueCoachToHevyReviewService:
 
     def _planned_blocks(
         self,
-        uow: UnitOfWork,
+        uow: Tx,
         item: TrueCoachWorkoutItem,
         selected_template: HevyAppExercise | None,
     ) -> list[PlannedBlock]:
@@ -369,7 +369,7 @@ class TrueCoachToHevyReviewService:
 
     def _required_templates_for_context(
         self,
-        uow: UnitOfWork,
+        uow: Tx,
         context: TemplateMatchContext,
     ) -> list[RequiredHevyTemplate]:
         rules = _load_template_override_rules(DEFAULT_TEMPLATE_OVERRIDE_RULES_PATH)
@@ -604,14 +604,14 @@ def _rule_matches_text(rule: TemplateOverrideRule, context: TemplateMatchContext
 
 
 def _resolve_required_template(
-    uow: UnitOfWork,
+    uow: Tx,
     spec: RequiredTemplateSpec,
     *,
     source_workout_item_id: int,
 ) -> RequiredHevyTemplate:
     matching_templates = [
         template
-        for template in uow.get_all(HevyAppExercise)
+        for template in uow.session.get_all(HevyAppExercise)
         if template.name.casefold() == spec.title.casefold()
     ]
     matching_ids = tuple(sorted(template.id for template in matching_templates))
@@ -775,7 +775,7 @@ def _parse_duration_sets(text: str) -> list[PostRoutinesRequestSet]:
 
 
 def _selected_template_for_phase(
-    uow: UnitOfWork,
+    uow: Tx,
     selection: PhaseTemplateSelection,
 ) -> HevyAppExercise | None:
     if selection.phase_kind == "dynamic_reps":
@@ -785,11 +785,11 @@ def _selected_template_for_phase(
     required_template = selection.required_templates[0]
     if required_template.status != "existing" or len(required_template.matching_template_ids) != 1:
         return None
-    return uow.get(HevyAppExercise, id=required_template.matching_template_ids[0])
+    return uow.session.get(HevyAppExercise, id=required_template.matching_template_ids[0])
 
 
 def _enrich_sets_from_history(
-    uow: UnitOfWork,
+    uow: Tx,
     template: HevyAppExercise | None,
     planned_sets: list[PostRoutinesRequestSet],
 ) -> tuple[list[PostRoutinesRequestSet], list[SetProvenance]]:
@@ -842,11 +842,11 @@ def _has_missing_history_load(
 
 
 def _historical_loads_by_signature(
-    uow: UnitOfWork,
+    uow: Tx,
     exercise_template_id: str,
 ) -> dict[SetSignature, deque[HistoricalLoad]]:
     rows = (
-        uow.query(HevyAppSets)
+        uow.session.query(HevyAppSets)
         .join(HevyAppWorkoutItem, HevyAppSets.workout_item_id == HevyAppWorkoutItem.id)
         .join(HevyAppWorkout, HevyAppWorkoutItem.workout_id == HevyAppWorkout.id)
         .filter(HevyAppWorkoutItem.exercise_id == exercise_template_id)

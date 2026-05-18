@@ -1,8 +1,9 @@
-"""Smoke tests for Hevy domain helpers on UnitOfWork."""
+"""Smoke tests for Hevy domain helpers on Tx."""
 
 from datetime import datetime
 
 import pytest
+from sqlalchemy import create_engine
 
 from fitness_tracker.apis.hevy_app.types import Exercise, ExerciseTemplate, Workout as HevyWorkoutPayload
 from fitness_tracker.config import Config
@@ -17,7 +18,7 @@ def test_hevy_get_workout_returns_none(store: Store) -> None:
         store (Store): In-memory store fixture.
     """
     with store.unit_of_work() as uow:
-        assert uow.hevy_get_workout(id="missing") is None
+        assert uow.hevy.get_workout(id="missing") is None
 
 
 def test_hevy_get_placeholders_empty(store: Store) -> None:
@@ -27,7 +28,7 @@ def test_hevy_get_placeholders_empty(store: Store) -> None:
         store (Store): In-memory store fixture.
     """
     with store.unit_of_work() as uow:
-        assert uow.hevy_get_placeholders() == []
+        assert uow.hevy.get_placeholders() == []
 
 
 def test_hevy_add_and_delete_workout(store: Store) -> None:
@@ -38,7 +39,7 @@ def test_hevy_add_and_delete_workout(store: Store) -> None:
     """
     dt = datetime(2025, 1, 1, 10, 0, 0)  # noqa: DTZ001
     with store.unit_of_work() as uow:
-        uow.merge(
+        uow.session.merge(
             HevyAppWorkout(
                 id="w1",
                 title="Push Day",
@@ -51,11 +52,11 @@ def test_hevy_add_and_delete_workout(store: Store) -> None:
         )
 
     with store.unit_of_work() as uow:
-        assert uow.hevy_get_workout(id="w1") is not None
-        uow.hevy_delete_workout(id="w1")
+        assert uow.hevy.get_workout(id="w1") is not None
+        uow.hevy.delete_workout(id="w1")
 
     with store.unit_of_work() as uow:
-        assert uow.hevy_get_workout(id="w1") is None
+        assert uow.hevy.get_workout(id="w1") is None
 
 
 def test_hevy_add_workout_item_normalizes_false_superset_id(store: Store) -> None:
@@ -174,8 +175,15 @@ def test_hevy_add_workout_item_fetches_missing_template_from_injected_source(
             requested.append(template_id)
             return template
 
-    with store.unit_of_work() as uow:
-        uow.merge(
+    class FakeHevyClient:
+        exercises = FakeExercises()
+
+    engine = create_engine("sqlite:///:memory:")
+    store_with_fetcher = Store(engine, hevy_client=FakeHevyClient())
+    store_with_fetcher.init_db()
+
+    with store_with_fetcher.unit_of_work() as uow:
+        uow.session.merge(
             HevyAppWorkout(
                 id="w1",
                 title="Leg Day",
@@ -186,13 +194,12 @@ def test_hevy_add_workout_item_fetches_missing_template_from_injected_source(
                 updated_at=datetime(2025, 1, 1, 10, 0, 0),  # noqa: DTZ001
             )
         )
-        uow.hevy_add_workout_item(
+        uow.hevy.add_workout_item(
             workout_id="w1",
             exercise=exercise,
-            exercise_template_source=FakeExercises(),
         )
 
     assert requested == ["template-1"]
-    persisted = store.query_one(HevyAppExercise, id="template-1")
+    persisted = store_with_fetcher.query_one(HevyAppExercise, id="template-1")
     assert persisted is not None
     assert persisted.name == "Goblet Squat"

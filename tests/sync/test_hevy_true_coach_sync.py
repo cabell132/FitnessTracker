@@ -31,7 +31,7 @@ def _ts() -> datetime:
 def test_should_skip_hevy_workout_when_true_coach_workout_is_missing(store) -> None:
     """Manual Hevy workouts without a True Coach link should not abort the sync run."""
     with store.unit_of_work() as uow:
-        uow.add(
+        uow.session.add(
             HevyAppWorkout(
                 id="manual-hevy-workout",
                 title="Manual workout",
@@ -55,27 +55,27 @@ def test_should_skip_hevy_workout_when_true_coach_workout_is_missing(store) -> N
 def test_should_refresh_stale_true_coach_item_on_404_and_continue(store) -> None:  # noqa: PLR0915
     """A missing remote item should trigger local refresh instead of aborting the run."""
     with store.unit_of_work() as uow:
-        uow.add(
+        uow.session.add(
             HevyAppExercise(
                 id="hevy-a", name="First", type="reps_only", equipment="body", default=True
             )
         )
-        uow.add(
+        uow.session.add(
             HevyAppExercise(
                 id="hevy-b", name="Second", type="reps_only", equipment="body", default=True
             )
         )
 
-        uow.add(Exercise(name="First", hevy_app_id="hevy-a"))
-        uow.add(Exercise(name="Second", hevy_app_id="hevy-b"))
-        uow.flush()
+        uow.session.add(Exercise(name="First", hevy_app_id="hevy-a"))
+        uow.session.add(Exercise(name="Second", hevy_app_id="hevy-b"))
+        uow.session.flush()
 
-        ex_first = uow.get(Exercise, name="First")
-        ex_second = uow.get(Exercise, name="Second")
+        ex_first = uow.session.get(Exercise, name="First")
+        ex_second = uow.session.get(Exercise, name="Second")
         assert ex_first is not None
         assert ex_second is not None
 
-        uow.add(
+        uow.session.add(
             TrueCoachWorkout(
                 id=100,
                 title="Active Recovery",
@@ -87,7 +87,7 @@ def test_should_refresh_stale_true_coach_item_on_404_and_continue(store) -> None
                 updated_at=_ts(),
             )
         )
-        uow.add(
+        uow.session.add(
             HevyAppWorkout(
                 id="hevy-workout-1",
                 title="08 Apr 2026\nActive Recovery\n100",
@@ -98,9 +98,9 @@ def test_should_refresh_stale_true_coach_item_on_404_and_continue(store) -> None
                 updated_at=_ts(),
             )
         )
-        uow.flush()
+        uow.session.flush()
 
-        uow.add(
+        uow.session.add(
             TrackerWorkout(
                 title="Active Recovery",
                 description="",
@@ -108,11 +108,11 @@ def test_should_refresh_stale_true_coach_item_on_404_and_continue(store) -> None
                 true_coach_id=100,
             )
         )
-        uow.flush()
-        tracker_workout = uow.get(TrackerWorkout, true_coach_id=100)
+        uow.session.flush()
+        tracker_workout = uow.session.get(TrackerWorkout, true_coach_id=100)
         assert tracker_workout is not None
 
-        uow.add(
+        uow.session.add(
             HevyAppWorkoutItem(
                 workout_id="hevy-workout-1",
                 index=0,
@@ -122,7 +122,7 @@ def test_should_refresh_stale_true_coach_item_on_404_and_continue(store) -> None
                 exercise_id="hevy-a",
             )
         )
-        uow.add(
+        uow.session.add(
             HevyAppWorkoutItem(
                 workout_id="hevy-workout-1",
                 index=1,
@@ -132,17 +132,17 @@ def test_should_refresh_stale_true_coach_item_on_404_and_continue(store) -> None
                 exercise_id="hevy-b",
             )
         )
-        uow.flush()
+        uow.session.flush()
 
-        first_item = uow.get(HevyAppWorkoutItem, workout_id="hevy-workout-1", index=0)
-        second_item = uow.get(HevyAppWorkoutItem, workout_id="hevy-workout-1", index=1)
+        first_item = uow.session.get(HevyAppWorkoutItem, workout_id="hevy-workout-1", index=0)
+        second_item = uow.session.get(HevyAppWorkoutItem, workout_id="hevy-workout-1", index=1)
         assert first_item is not None
         assert second_item is not None
 
-        uow.add(HevyAppSets(workout_item_id=first_item.id, index=0, type="normal", reps=10))
-        uow.add(HevyAppSets(workout_item_id=second_item.id, index=0, type="normal", reps=8))
+        uow.session.add(HevyAppSets(workout_item_id=first_item.id, index=0, type="normal", reps=10))
+        uow.session.add(HevyAppSets(workout_item_id=second_item.id, index=0, type="normal", reps=8))
 
-        uow.add(
+        uow.session.add(
             TrueCoachWorkoutItem(
                 id=500,
                 workout_id=100,
@@ -156,7 +156,7 @@ def test_should_refresh_stale_true_coach_item_on_404_and_continue(store) -> None
                 assessment_id=None,
             )
         )
-        uow.add(
+        uow.session.add(
             TrueCoachWorkoutItem(
                 id=502,
                 workout_id=100,
@@ -170,9 +170,9 @@ def test_should_refresh_stale_true_coach_item_on_404_and_continue(store) -> None
                 assessment_id=None,
             )
         )
-        uow.flush()
+        uow.session.flush()
 
-        uow.add(
+        uow.session.add(
             TrackerWorkoutItem(
                 workout_id=tracker_workout.id,
                 position=1,
@@ -182,7 +182,7 @@ def test_should_refresh_stale_true_coach_item_on_404_and_continue(store) -> None
                 rest=90,
             )
         )
-        uow.add(
+        uow.session.add(
             TrackerWorkoutItem(
                 workout_id=tracker_workout.id,
                 position=2,

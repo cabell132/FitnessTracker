@@ -1,4 +1,4 @@
-"""Generic CRUD operations via the UnitOfWork."""
+"""Generic CRUD operations via the Tx."""
 
 from fitness_tracker.database.models.hevy_app import HevyAppExercise
 from fitness_tracker.database.models.apple_health import AppleHealthWorkoutType
@@ -12,7 +12,7 @@ def test_add_and_get(store: Store) -> None:
         store (Store): In-memory store fixture.
     """
     with store.unit_of_work() as uow:
-        uow.add(
+        uow.session.add(
             HevyAppExercise(
                 id="ex1",
                 name="Bench Press",
@@ -34,7 +34,7 @@ def test_merge_updates(store: Store) -> None:
         store (Store): In-memory store fixture.
     """
     with store.unit_of_work() as uow:
-        uow.add(
+        uow.session.add(
             HevyAppExercise(
                 id="ex2",
                 name="Squat",
@@ -45,7 +45,7 @@ def test_merge_updates(store: Store) -> None:
         )
 
     with store.unit_of_work() as uow:
-        uow.merge(
+        uow.session.merge(
             HevyAppExercise(
                 id="ex2",
                 name="Back Squat",
@@ -67,7 +67,7 @@ def test_delete(store: Store) -> None:
         store (Store): In-memory store fixture.
     """
     with store.unit_of_work() as uow:
-        uow.add(
+        uow.session.add(
             HevyAppExercise(
                 id="ex3",
                 name="Deadlift",
@@ -78,9 +78,9 @@ def test_delete(store: Store) -> None:
         )
 
     with store.unit_of_work() as uow:
-        row = uow.get(HevyAppExercise, id="ex3")
+        row = uow.session.get(HevyAppExercise, id="ex3")
         assert row is not None
-        uow.delete(row)
+        uow.session.delete(row)
 
     assert store.query_one(HevyAppExercise, id="ex3") is None
 
@@ -92,7 +92,7 @@ def test_get_all(store: Store) -> None:
         store (Store): In-memory store fixture.
     """
     with store.unit_of_work() as uow:
-        uow.add(
+        uow.session.add(
             HevyAppExercise(
                 id="a1",
                 name="Curl",
@@ -101,7 +101,7 @@ def test_get_all(store: Store) -> None:
                 default=True,
             )
         )
-        uow.add(
+        uow.session.add(
             HevyAppExercise(
                 id="a2",
                 name="Press",
@@ -112,7 +112,7 @@ def test_get_all(store: Store) -> None:
         )
 
     with store.unit_of_work() as uow:
-        results = uow.get_all(HevyAppExercise, equipment="dumbbell")
+        results = uow.session.get_all(HevyAppExercise, equipment="dumbbell")
         assert len(results) == 2
 
 

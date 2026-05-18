@@ -1,4 +1,4 @@
-"""True Coach domain operations for UnitOfWork."""
+"""True Coach domain repository operations."""
 
 from __future__ import annotations
 
@@ -59,7 +59,7 @@ def _parse_utc_iso_micros_z(s: str) -> datetime:
 
 
 class TrueCoachMixin(CrudMixin):
-    """True Coach persistence helpers mixed into UnitOfWork."""
+    """True Coach persistence helper methods."""
 
     def tc_add_exercises(self, exercises: TCExerciseResponse) -> None:
         """Persist exercises from an API response.

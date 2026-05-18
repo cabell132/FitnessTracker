@@ -182,7 +182,7 @@ def test_sync_review_does_not_override_explicit_coach_loads(tmp_path: Path) -> N
     _seed_workout(store)
     _seed_bench_history(store)
     with store.unit_of_work() as uow:
-        item = uow.tc_get_workout_item(id=1001)
+        item = uow.true_coach.get_workout_item(id=1001)
         assert item is not None
         item.info = "3 x 12 @ 90kg"
 
@@ -203,7 +203,7 @@ def test_sync_review_enriches_dropsets_from_matching_dropset_history(
     store.init_db()
     _seed_workout(store)
     with store.unit_of_work() as uow:
-        item = uow.tc_get_workout_item(id=1001)
+        item = uow.true_coach.get_workout_item(id=1001)
         assert item is not None
         item.info = "2 x 10+10"
     _seed_bench_dropset_history(store)
@@ -246,7 +246,7 @@ def test_sync_review_calculates_conservative_dropset_load_when_history_is_missin
     store.init_db()
     _seed_workout(store)
     with store.unit_of_work() as uow:
-        item = uow.tc_get_workout_item(id=1001)
+        item = uow.true_coach.get_workout_item(id=1001)
         assert item is not None
         item.info = "1 x 10+10"
     _seed_bench_normal_history(store, reps=10, weight_kg=100.0)
@@ -645,7 +645,7 @@ def _assert_plan(plan: dict) -> None:
 def _seed_workout(store: Store) -> None:
     now = datetime(2026, 5, 17, tzinfo=UTC)
     with store.unit_of_work() as uow:
-        uow.add(
+        uow.session.add(
             TrueCoachWorkout(
                 id=42,
                 title="Upper Strength",
@@ -657,8 +657,8 @@ def _seed_workout(store: Store) -> None:
                 updated_at=now,
             )
         )
-        uow.add(TrueCoachExercise(id=501, name="Bench Press", default=False))
-        uow.add(
+        uow.session.add(TrueCoachExercise(id=501, name="Bench Press", default=False))
+        uow.session.add(
             HevyAppExercise(
                 id="hevy-bench",
                 name="Barbell Bench Press",
@@ -667,8 +667,10 @@ def _seed_workout(store: Store) -> None:
                 default=True,
             )
         )
-        uow.add(TrackerExercise(name="Bench Press", hevy_app_id="hevy-bench", true_coach_id=501))
-        uow.add(
+        uow.session.add(
+            TrackerExercise(name="Bench Press", hevy_app_id="hevy-bench", true_coach_id=501)
+        )
+        uow.session.add(
             TrueCoachWorkoutItem(
                 id=1002,
                 workout_id=42,
@@ -682,7 +684,7 @@ def _seed_workout(store: Store) -> None:
                 assessment_id=None,
             )
         )
-        uow.add(
+        uow.session.add(
             TrueCoachWorkoutItem(
                 id=1001,
                 workout_id=42,
@@ -705,7 +707,7 @@ def _seed_bench_history(store: Store) -> None:
 def _seed_bench_normal_history(store: Store, *, reps: int, weight_kg: float) -> None:
     now = datetime(2026, 5, 10, tzinfo=UTC)
     with store.unit_of_work() as uow:
-        uow.add(
+        uow.session.add(
             HevyAppWorkout(
                 id="hevy-history-1",
                 title="Upper Strength Logged",
@@ -714,7 +716,7 @@ def _seed_bench_normal_history(store: Store, *, reps: int, weight_kg: float) -> 
                 end_time=now,
             )
         )
-        uow.add(
+        uow.session.add(
             HevyAppWorkoutItem(
                 id=2001,
                 workout_id="hevy-history-1",
@@ -726,7 +728,7 @@ def _seed_bench_normal_history(store: Store, *, reps: int, weight_kg: float) -> 
             )
         )
         for index in range(3):
-            uow.add(
+            uow.session.add(
                 HevyAppSets(
                     workout_item_id=2001,
                     index=index,
@@ -746,7 +748,7 @@ def _seed_bench_dropset_history(store: Store) -> None:
         ("dropset", 80.0),
     ]
     with store.unit_of_work() as uow:
-        uow.add(
+        uow.session.add(
             HevyAppWorkout(
                 id="hevy-dropset-history-1",
                 title="Upper Strength Logged",
@@ -755,7 +757,7 @@ def _seed_bench_dropset_history(store: Store) -> None:
                 end_time=now,
             )
         )
-        uow.add(
+        uow.session.add(
             HevyAppWorkoutItem(
                 id=2002,
                 workout_id="hevy-dropset-history-1",
@@ -767,7 +769,7 @@ def _seed_bench_dropset_history(store: Store) -> None:
             )
         )
         for index, (set_type, weight_kg) in enumerate(rows):
-            uow.add(
+            uow.session.add(
                 HevyAppSets(
                     workout_item_id=2002,
                     index=index,
@@ -781,7 +783,7 @@ def _seed_bench_dropset_history(store: Store) -> None:
 def _seed_template_override_workout(store: Store) -> None:
     now = datetime(2026, 5, 17, tzinfo=UTC)
     with store.unit_of_work() as uow:
-        uow.add(
+        uow.session.add(
             TrueCoachWorkout(
                 id=43,
                 title="Lower Strength",
@@ -793,8 +795,8 @@ def _seed_template_override_workout(store: Store) -> None:
                 updated_at=now,
             )
         )
-        uow.add(TrueCoachExercise(id=502, name="Bodyweight Calf Raise", default=False))
-        uow.add(
+        uow.session.add(TrueCoachExercise(id=502, name="Bodyweight Calf Raise", default=False))
+        uow.session.add(
             HevyAppExercise(
                 id="hevy-calf-raise",
                 name="Bodyweight Calf Raise",
@@ -803,14 +805,14 @@ def _seed_template_override_workout(store: Store) -> None:
                 default=True,
             )
         )
-        uow.add(
+        uow.session.add(
             TrackerExercise(
                 name="Bodyweight Calf Raise",
                 hevy_app_id="hevy-calf-raise",
                 true_coach_id=502,
             )
         )
-        uow.add(
+        uow.session.add(
             TrueCoachWorkoutItem(
                 id=1003,
                 workout_id=43,
@@ -829,7 +831,7 @@ def _seed_template_override_workout(store: Store) -> None:
 def _seed_ambiguous_knee_extension_workout(store: Store) -> None:
     now = datetime(2026, 5, 17, tzinfo=UTC)
     with store.unit_of_work() as uow:
-        uow.add(
+        uow.session.add(
             TrueCoachWorkout(
                 id=44,
                 title="Knee Rehab",
@@ -841,8 +843,8 @@ def _seed_ambiguous_knee_extension_workout(store: Store) -> None:
                 updated_at=now,
             )
         )
-        uow.add(TrueCoachExercise(id=503, name="Seated Knee Extension", default=False))
-        uow.add(
+        uow.session.add(TrueCoachExercise(id=503, name="Seated Knee Extension", default=False))
+        uow.session.add(
             HevyAppExercise(
                 id="hevy-knee-extension",
                 name="Seated Knee Extension",
@@ -851,7 +853,7 @@ def _seed_ambiguous_knee_extension_workout(store: Store) -> None:
                 default=True,
             )
         )
-        uow.add(
+        uow.session.add(
             HevyAppExercise(
                 id="hevy-knee-iso-a",
                 name="Isometric Seated Knee Extension",
@@ -860,7 +862,7 @@ def _seed_ambiguous_knee_extension_workout(store: Store) -> None:
                 default=False,
             )
         )
-        uow.add(
+        uow.session.add(
             HevyAppExercise(
                 id="hevy-knee-iso-b",
                 name="Isometric Seated Knee Extension",
@@ -869,14 +871,14 @@ def _seed_ambiguous_knee_extension_workout(store: Store) -> None:
                 default=False,
             )
         )
-        uow.add(
+        uow.session.add(
             TrackerExercise(
                 name="Seated Knee Extension",
                 hevy_app_id="hevy-knee-extension",
                 true_coach_id=503,
             )
         )
-        uow.add(
+        uow.session.add(
             TrueCoachWorkoutItem(
                 id=1004,
                 workout_id=44,
@@ -895,7 +897,7 @@ def _seed_ambiguous_knee_extension_workout(store: Store) -> None:
 def _seed_mixed_mode_knee_extension_workout(store: Store) -> None:
     now = datetime(2026, 5, 17, tzinfo=UTC)
     with store.unit_of_work() as uow:
-        uow.add(
+        uow.session.add(
             TrueCoachWorkout(
                 id=45,
                 title="Knee Rehab Mixed",
@@ -907,8 +909,8 @@ def _seed_mixed_mode_knee_extension_workout(store: Store) -> None:
                 updated_at=now,
             )
         )
-        uow.add(TrueCoachExercise(id=504, name="Seated Knee Extension", default=False))
-        uow.add(
+        uow.session.add(TrueCoachExercise(id=504, name="Seated Knee Extension", default=False))
+        uow.session.add(
             HevyAppExercise(
                 id="hevy-knee-extension",
                 name="Seated Knee Extension",
@@ -917,14 +919,14 @@ def _seed_mixed_mode_knee_extension_workout(store: Store) -> None:
                 default=True,
             )
         )
-        uow.add(
+        uow.session.add(
             TrackerExercise(
                 name="Seated Knee Extension",
                 hevy_app_id="hevy-knee-extension",
                 true_coach_id=504,
             )
         )
-        uow.add(
+        uow.session.add(
             TrueCoachWorkoutItem(
                 id=1005,
                 workout_id=45,
@@ -943,7 +945,7 @@ def _seed_mixed_mode_knee_extension_workout(store: Store) -> None:
 def _seed_parser_gap_workout(store: Store) -> None:
     now = datetime(2026, 5, 17, tzinfo=UTC)
     with store.unit_of_work() as uow:
-        uow.add(
+        uow.session.add(
             TrueCoachWorkout(
                 id=46,
                 title="Parser Gap",
@@ -955,8 +957,8 @@ def _seed_parser_gap_workout(store: Store) -> None:
                 updated_at=now,
             )
         )
-        uow.add(TrueCoachExercise(id=505, name="Tempo Press", default=False))
-        uow.add(
+        uow.session.add(TrueCoachExercise(id=505, name="Tempo Press", default=False))
+        uow.session.add(
             HevyAppExercise(
                 id="hevy-tempo-press",
                 name="Tempo Press",
@@ -965,10 +967,10 @@ def _seed_parser_gap_workout(store: Store) -> None:
                 default=True,
             )
         )
-        uow.add(
+        uow.session.add(
             TrackerExercise(name="Tempo Press", hevy_app_id="hevy-tempo-press", true_coach_id=505)
         )
-        uow.add(
+        uow.session.add(
             TrueCoachWorkoutItem(
                 id=1006,
                 workout_id=46,
@@ -987,7 +989,7 @@ def _seed_parser_gap_workout(store: Store) -> None:
 def _seed_clean_plan_workout(store: Store) -> None:
     now = datetime(2026, 5, 17, tzinfo=UTC)
     with store.unit_of_work() as uow:
-        uow.add(
+        uow.session.add(
             TrueCoachWorkout(
                 id=47,
                 title="Clean Plan",
@@ -999,8 +1001,8 @@ def _seed_clean_plan_workout(store: Store) -> None:
                 updated_at=now,
             )
         )
-        uow.add(TrueCoachExercise(id=506, name="Push Up", default=False))
-        uow.add(
+        uow.session.add(TrueCoachExercise(id=506, name="Push Up", default=False))
+        uow.session.add(
             HevyAppExercise(
                 id="hevy-push-up",
                 name="Push Up",
@@ -1009,8 +1011,10 @@ def _seed_clean_plan_workout(store: Store) -> None:
                 default=True,
             )
         )
-        uow.add(TrackerExercise(name="Push Up", hevy_app_id="hevy-push-up", true_coach_id=506))
-        uow.add(
+        uow.session.add(
+            TrackerExercise(name="Push Up", hevy_app_id="hevy-push-up", true_coach_id=506)
+        )
+        uow.session.add(
             TrueCoachWorkoutItem(
                 id=1007,
                 workout_id=47,
@@ -1029,7 +1033,7 @@ def _seed_clean_plan_workout(store: Store) -> None:
 def _seed_clean_weight_plan_workout(store: Store) -> None:
     now = datetime(2026, 5, 17, tzinfo=UTC)
     with store.unit_of_work() as uow:
-        uow.add(
+        uow.session.add(
             TrueCoachWorkout(
                 id=48,
                 title="Pull Strength",
@@ -1041,8 +1045,8 @@ def _seed_clean_weight_plan_workout(store: Store) -> None:
                 updated_at=now,
             )
         )
-        uow.add(TrueCoachExercise(id=507, name="Row", default=False))
-        uow.add(
+        uow.session.add(TrueCoachExercise(id=507, name="Row", default=False))
+        uow.session.add(
             HevyAppExercise(
                 id="hevy-row",
                 name="Row",
@@ -1051,8 +1055,8 @@ def _seed_clean_weight_plan_workout(store: Store) -> None:
                 default=True,
             )
         )
-        uow.add(TrackerExercise(name="Row", hevy_app_id="hevy-row", true_coach_id=507))
-        uow.add(
+        uow.session.add(TrackerExercise(name="Row", hevy_app_id="hevy-row", true_coach_id=507))
+        uow.session.add(
             TrueCoachWorkoutItem(
                 id=1008,
                 workout_id=48,
@@ -1071,7 +1075,7 @@ def _seed_clean_weight_plan_workout(store: Store) -> None:
 def _seed_unsplit_mixed_mode_workout(store: Store) -> None:
     now = datetime(2026, 5, 17, tzinfo=UTC)
     with store.unit_of_work() as uow:
-        uow.add(
+        uow.session.add(
             TrueCoachWorkout(
                 id=49,
                 title="Knee Rehab Unsplit",
@@ -1083,8 +1087,8 @@ def _seed_unsplit_mixed_mode_workout(store: Store) -> None:
                 updated_at=now,
             )
         )
-        uow.add(TrueCoachExercise(id=508, name="Seated Knee Extension", default=False))
-        uow.add(
+        uow.session.add(TrueCoachExercise(id=508, name="Seated Knee Extension", default=False))
+        uow.session.add(
             HevyAppExercise(
                 id="hevy-knee-extension",
                 name="Seated Knee Extension",
@@ -1093,14 +1097,14 @@ def _seed_unsplit_mixed_mode_workout(store: Store) -> None:
                 default=True,
             )
         )
-        uow.add(
+        uow.session.add(
             TrackerExercise(
                 name="Seated Knee Extension",
                 hevy_app_id="hevy-knee-extension",
                 true_coach_id=508,
             )
         )
-        uow.add(
+        uow.session.add(
             TrueCoachWorkoutItem(
                 id=1009,
                 workout_id=49,
@@ -1119,7 +1123,7 @@ def _seed_unsplit_mixed_mode_workout(store: Store) -> None:
 def _seed_notes_preserved_workout(store: Store) -> None:
     now = datetime(2026, 5, 17, tzinfo=UTC)
     with store.unit_of_work() as uow:
-        uow.add(
+        uow.session.add(
             TrueCoachWorkout(
                 id=50,
                 title="Nuance Day",
@@ -1131,8 +1135,8 @@ def _seed_notes_preserved_workout(store: Store) -> None:
                 updated_at=now,
             )
         )
-        uow.add(TrueCoachExercise(id=509, name="Bench Press", default=False))
-        uow.add(
+        uow.session.add(TrueCoachExercise(id=509, name="Bench Press", default=False))
+        uow.session.add(
             HevyAppExercise(
                 id="hevy-bench",
                 name="Barbell Bench Press",
@@ -1141,8 +1145,10 @@ def _seed_notes_preserved_workout(store: Store) -> None:
                 default=True,
             )
         )
-        uow.add(TrackerExercise(name="Bench Press", hevy_app_id="hevy-bench", true_coach_id=509))
-        uow.add(
+        uow.session.add(
+            TrackerExercise(name="Bench Press", hevy_app_id="hevy-bench", true_coach_id=509)
+        )
+        uow.session.add(
             TrueCoachWorkoutItem(
                 id=1010,
                 workout_id=50,

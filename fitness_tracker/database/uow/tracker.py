@@ -1,4 +1,4 @@
-"""Fitness tracker domain operations for UnitOfWork."""
+"""Fitness tracker domain repository operations."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from fitness_tracker.database.uow.base import CrudMixin
 
 
 class TrackerMixin(CrudMixin):
-    """Canonical fitness tracker persistence helpers mixed into UnitOfWork."""
+    """Canonical fitness tracker persistence helper methods."""
 
     def tracker_add_workout(self, workout: TrueCoachWorkout) -> None:
         """Insert a canonical workout row linked from a True Coach workout.

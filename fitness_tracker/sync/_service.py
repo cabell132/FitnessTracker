@@ -247,4 +247,4 @@ class SyncService:
                 second=0,
                 microsecond=0,
             )
-            return uow.tc_get_workouts(due=due)
+            return uow.true_coach.get_workouts(due=due)

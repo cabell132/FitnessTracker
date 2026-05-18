@@ -44,12 +44,13 @@ class SyncDeps:
         Returns:
             SyncDeps: Fully wired dependency bundle.
         """
+        hevy = HevyAppClient(
+            api_key=cfg.hevy_api_key.get_secret_value(),
+            web_api_key=cfg.hevy_web_api_key.get_secret_value(),
+        )
         return cls(
-            store=Store(engine),
-            hevy=HevyAppClient(
-                api_key=cfg.hevy_api_key.get_secret_value(),
-                web_api_key=cfg.hevy_web_api_key.get_secret_value(),
-            ),
+            store=Store(engine, hevy_client=hevy),
+            hevy=hevy,
             true_coach=TrueCoachClient(
                 email=cfg.email,
                 password=cfg.truecoach_password.get_secret_value(),
