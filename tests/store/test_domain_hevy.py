@@ -5,9 +5,17 @@ from datetime import datetime
 import pytest
 from sqlalchemy import create_engine
 
-from fitness_tracker.apis.hevy_app.types import Exercise, ExerciseTemplate, Workout as HevyWorkoutPayload
+from fitness_tracker.apis.hevy_app.types import (
+    Exercise,
+    ExerciseTemplate,
+    Workout as HevyWorkoutPayload,
+)
 from fitness_tracker.config import Config
-from fitness_tracker.database.models.hevy_app import HevyAppExercise, HevyAppWorkout, HevyAppWorkoutItem
+from fitness_tracker.database.models.hevy_app import (
+    HevyAppExercise,
+    HevyAppWorkout,
+    HevyAppWorkoutItem,
+)
 from fitness_tracker.database.store import Store
 
 

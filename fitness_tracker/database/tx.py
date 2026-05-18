@@ -361,3 +361,12 @@ class Tx:
         self.apple_health: AppleHealthRepo = AppleHealthRepoImpl(session)
         self.cross_domain: CrossDomainOps = CrossDomainOpsImpl(session)
         self.session = SessionOpsImpl(session)
+
+    def add(self, obj: BaseModel) -> None:
+        self.session.add(obj)
+
+    def hevy_add_workout_item(self, workout_id: str, exercise: HevyExercise) -> None:
+        self.hevy.add_workout_item(workout_id, exercise)
+
+    def hevy_add_workout(self, workout: HevyWorkout) -> None:
+        self.hevy.add_workout(workout)

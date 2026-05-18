@@ -30,6 +30,7 @@ from fitness_tracker.sync_review import (
     SyncApplyError,
     SyncReviewError,
     TrueCoachToHevyReviewService,
+    TrueCoachWorkoutBackfillDiscoveryService,
 )
 
 
@@ -50,6 +51,11 @@ def main(argv: list[str] | None = None) -> int:
         return _ensure_hevy_templates_from_plan(args)
     if args.command == "sync-review" and args.sync_review_command == "truecoach-to-hevy":
         return _sync_review_truecoach_to_hevy(args)
+    if (
+        args.command == "sync-review"
+        and args.sync_review_command == "truecoach-workout-backfill-candidates"
+    ):
+        return _sync_review_truecoach_workout_backfill_candidates(args)
     if args.command == "sync-apply" and args.sync_apply_command == "truecoach-to-hevy":
         return _sync_apply_truecoach_to_hevy(args)
     parser.print_help()
@@ -110,6 +116,17 @@ def _add_sync_review_parser(
         "--database-url", help="SQLAlchemy database URL. Defaults to DATABASE_URL."
     )
     truecoach_to_hevy.add_argument(
+        "--output-dir",
+        default="reports",
+        help="Report root. Defaults to reports.",
+    )
+
+    backfill_candidates = sync_review_subparsers.add_parser("truecoach-workout-backfill-candidates")
+    backfill_candidates.add_argument("--db", help="SQLite database path. Prefer --database-url.")
+    backfill_candidates.add_argument(
+        "--database-url", help="SQLAlchemy database URL. Defaults to DATABASE_URL."
+    )
+    backfill_candidates.add_argument(
         "--output-dir",
         default="reports",
         help="Report root. Defaults to reports.",
@@ -226,6 +243,17 @@ def _sync_review_truecoach_to_hevy(args: argparse.Namespace) -> int:
         _emit(f"Error: {exc}")
         return 2
     _emit(f"Wrote sync review: {bundle.directory}")
+    return 0
+
+
+def _sync_review_truecoach_workout_backfill_candidates(args: argparse.Namespace) -> int:
+    store = Store(_engine_from_args(args))
+    service = TrueCoachWorkoutBackfillDiscoveryService(
+        store=store,
+        output_root=Path(args.output_dir),
+    )
+    bundle = service.write_report()
+    _emit(f"Wrote backfill candidate report: {bundle.report_path}")
     return 0
 
 

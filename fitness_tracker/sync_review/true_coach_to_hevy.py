@@ -331,7 +331,7 @@ class TrueCoachToHevyReviewService:
             ),
         )
 
-    def _planned_blocks(
+    def _planned_blocks(  # noqa: PLR0913
         self,
         uow: Tx,
         item: TrueCoachWorkoutItem,
@@ -570,7 +570,7 @@ def _request_exercise_from_block(block: dict[str, Any]) -> PostRoutinesRequestEx
     )
 
 
-def _request_exercise(
+def _request_exercise(  # noqa: PLR0913
     *,
     template_id: str,
     superset_id: int | None,
