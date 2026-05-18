@@ -158,8 +158,8 @@ class HevyMixin(CrudMixin):
             workout_id=workout_id,
             index=exercise.index,
             name=exercise.title,
-            notes=exercise.notes,
-            superset_id=exercise.superset_id,
+            notes=exercise.notes or "",
+            superset_id=exercise.superset_id or None,
             exercise_id=exercise.exercise_template_id,
         )
         if instance := self.get(
@@ -196,7 +196,7 @@ class HevyMixin(CrudMixin):
         instance = HevyAppWorkout(
             id=workout.id,
             title=workout.title,
-            description=workout.description,
+            description=workout.description or "",
             start_time=parse(workout.start_time),
             end_time=parse(workout.end_time),
             updated_at=parse(workout.updated_at),

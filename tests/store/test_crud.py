@@ -1,6 +1,7 @@
 """Generic CRUD operations via the UnitOfWork."""
 
 from fitness_tracker.database.models.hevy_app import HevyAppExercise
+from fitness_tracker.database.models.apple_health import AppleHealthWorkoutType
 from fitness_tracker.database.store import Store
 
 
@@ -113,3 +114,10 @@ def test_get_all(store: Store) -> None:
     with store.unit_of_work() as uow:
         results = uow.get_all(HevyAppExercise, equipment="dumbbell")
         assert len(results) == 2
+
+
+def test_insert_values_omits_unset_autoincrement_primary_key() -> None:
+    """Verify PostgreSQL can use the sequence for generated primary keys."""
+    values = AppleHealthWorkoutType(name="Outdoor Walk").insert_values()
+
+    assert values == {"name": "Outdoor Walk"}

@@ -93,7 +93,7 @@ class HevyAppWorkoutItem(BaseModel):
     index = Column(Integer, nullable=False)
     name = Column(String, nullable=False)
     notes = Column(String, nullable=False)
-    superset_id = Column(Integer, default=False)
+    superset_id = Column(Integer, nullable=True)
     exercise_id = Column(
         String, ForeignKey("HevyAppExercise.id"), nullable=True
     )  # Links to the Exercise table

@@ -124,7 +124,15 @@ class BaseModel(Base):
         Returns:
             dict[str, Any]: Column-value mapping for this row.
         """
-        return self.to_dict()
+        values = self.to_dict()
+        for column in inspect(self.__class__).c:
+            if (
+                column.primary_key
+                and column.autoincrement is True
+                and values.get(column.name) is None
+            ):
+                values.pop(column.name)
+        return values
 
     def pformat(self, indent: str = "   ") -> str:
         """Pretty-print column values aligned in columns.

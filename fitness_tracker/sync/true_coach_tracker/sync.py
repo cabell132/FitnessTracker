@@ -36,13 +36,15 @@ class TrueCoachToFitnessTrackerSyncronizer:
             uow (UnitOfWork): Active unit of work.
             workout_item (WorkoutItem): The workout item to syncronize.
         """
-        uow.tc_add_workout_item(workout_item)
+        if workout_item.exercise_id is not None:
+            exercise = TrueCoachExercise(
+                name=workout_item.name,
+                id=workout_item.exercise_id,
+            )
+            uow.merge(exercise)
+            uow.tracker_add_exercise(exercise)
 
-        exercise = TrueCoachExercise(
-            name=workout_item.name,
-            id=workout_item.exercise_id,
-        )
-        uow.tracker_add_exercise(exercise)
+        uow.tc_add_workout_item(workout_item)
 
     def sync_workouts(self, workouts: WorkoutResponse) -> None:
         """Add a list of workouts.
