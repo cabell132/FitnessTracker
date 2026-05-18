@@ -25,6 +25,7 @@ from fitness_tracker.database.models.apple_health import (
 )
 from fitness_tracker.database.models.hevy_app import HevyAppExercise, HevyAppWorkoutItem
 from fitness_tracker.database.models.tracker import (
+    Exercise as TrackerExercise,
     Sets,
     Workout as TrackerWorkout,
     WorkoutItem as TrackerWorkoutItem,
@@ -204,6 +205,15 @@ class BackfillLinkContext:
     workout_id: int
     workout: Any
     plan: dict[str, Any]
+    decisions: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class SyntheticTrackerItemContext:
+    """Inputs needed to resolve one synthetic split tracker item."""
+
+    tracker_workout: TrackerWorkout
+    item: dict[str, Any]
     decisions: dict[str, Any]
 
 
@@ -515,9 +525,13 @@ class TrueCoachWorkoutBackfillReviewService:
             for request_index, item in enumerate(
                 _requestable_plan_items(context.plan, context.decisions)
             ):
-                tracker_item = uow.session.get(
-                    TrackerWorkoutItem,
-                    id=item["tracker_workout_item_id"],
+                tracker_item = _tracker_item_for_created_hevy_row(
+                    uow.session,
+                    SyntheticTrackerItemContext(
+                        tracker_workout=tracker_workout,
+                        item=item,
+                        decisions=context.decisions,
+                    ),
                 )
                 hevy_item = uow.session.execute(
                     select(HevyAppWorkoutItem).where(
@@ -543,6 +557,81 @@ class TrueCoachWorkoutBackfillReviewService:
                 ):
                     local_set.hevy_app_id = hevy_set.id
         return unlinked_tracker_item_ids
+
+
+def _tracker_item_for_created_hevy_row(
+    session: Any,
+    context: SyntheticTrackerItemContext,
+) -> TrackerWorkoutItem | None:
+    item = context.item
+    if not _is_expanded_circuit_movement_item(item):
+        return session.get(TrackerWorkoutItem, id=item["tracker_workout_item_id"])
+    template_id = _request_exercise_template_id(item, context.decisions)
+    if template_id is None:
+        return None
+    exercise = _tracker_exercise_for_synthetic_item(
+        session=session,
+        name=item["name"],
+        hevy_app_id=template_id,
+    )
+    tracker_item = _existing_synthetic_tracker_item(
+        session,
+        context,
+        exercise_id=exercise.id,
+    )
+    if tracker_item is not None:
+        return tracker_item
+    tracker_item = TrackerWorkoutItem(
+        workout_id=context.tracker_workout.id,
+        position=item["position"],
+        exercise_id=exercise.id,
+        true_coach_id=item["source_id"],
+    )
+    session.add(tracker_item)
+    session.flush()
+    return tracker_item
+
+
+def _tracker_exercise_for_synthetic_item(
+    *,
+    session: Any,
+    name: str,
+    hevy_app_id: str,
+) -> TrackerExercise:
+    exercise = session.execute(
+        select(TrackerExercise).where(TrackerExercise.hevy_app_id == hevy_app_id)
+    ).scalar_one_or_none()
+    if exercise is not None:
+        return exercise
+    exercise = session.execute(
+        select(TrackerExercise).where(TrackerExercise.name == name)
+    ).scalar_one_or_none()
+    if exercise is not None:
+        exercise.hevy_app_id = hevy_app_id
+        session.flush()
+        return exercise
+    exercise = TrackerExercise(name=name, hevy_app_id=hevy_app_id)
+    session.add(exercise)
+    session.flush()
+    return exercise
+
+
+def _existing_synthetic_tracker_item(
+    session: Any,
+    context: SyntheticTrackerItemContext,
+    *,
+    exercise_id: int,
+) -> TrackerWorkoutItem | None:
+    source_id = context.item["source_id"]
+    if source_id is None:
+        return None
+    return session.execute(
+        select(TrackerWorkoutItem).where(
+            TrackerWorkoutItem.workout_id == context.tracker_workout.id,
+            TrackerWorkoutItem.true_coach_id == source_id,
+            TrackerWorkoutItem.exercise_id == exercise_id,
+        )
+    ).scalar_one_or_none()
 
 
 def _create_missing_local_sets(
@@ -593,8 +682,25 @@ def _review_items(
 ) -> list[BackfillReviewItem]:
     items: list[BackfillReviewItem] = []
     for item in tracker_items:
+        if _is_persisted_synthetic_circuit_tracker_item(item, tracker_items):
+            continue
         items.extend(_review_item(item, templates, superset_ids_by_position))
     return items
+
+
+def _is_persisted_synthetic_circuit_tracker_item(item: Any, tracker_items: list[Any]) -> bool:
+    true_coach_item = item.true_coach
+    if true_coach_item is None or not bool(true_coach_item.is_circuit):
+        return False
+    if item.exercise is None or item.exercise.hevy_app is None:
+        return False
+    return any(
+        other.id != item.id
+        and other.true_coach_id == item.true_coach_id
+        and other.exercise is not None
+        and other.exercise.hevy_app is None
+        for other in tracker_items
+    )
 
 
 def _review_item(  # noqa: C901, PLR0915

@@ -1315,6 +1315,58 @@ def test_workout_backfill_apply_links_created_hevy_workout_to_tracker_rows(
         ] == [1, 2, 3, 4, 5]
 
 
+def test_workout_backfill_apply_persists_synthetic_tracker_items_for_split_circuit(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    _add_choice_templates(store, [("hevy-burpees", "Burpees"), ("hevy-plank", "Plank")])
+    _add_circuit_backfill_item(
+        store,
+        info="2 Rounds\n10 Burpees\nPlank 30s",
+        comment="2 min 10 sec\n2 min 15 sec",
+    )
+    decisions_path = _write_timestamp_decisions(tmp_path)
+    service = TrueCoachWorkoutBackfillReviewService(store=store, output_root=tmp_path / "reports")
+    writer = _RecordingWorkoutWriter(
+        response=_split_circuit_hevy_workout_response(workout_id="hevy-created-455045484")
+    )
+
+    service.apply(
+        455045484,
+        workout_writer=writer,
+        decisions_path=decisions_path,
+    )
+
+    with store.unit_of_work() as uow:
+        tracker_workout = uow.tracker.get_workout(true_coach_id=455045484)
+        assert tracker_workout is not None
+        tracker_items = sorted(
+            (item for item in tracker_workout.workout_items if item.hevy_app_id is not None),
+            key=lambda item: item.hevy_app_id or 0,
+        )
+        assert [(item.exercise.name, item.hevy_app_id) for item in tracker_items] == [
+            ("Bench Press", 1),
+            ("Chest Supported Row", 2),
+            ("Burpees", 3),
+            ("Plank", 4),
+        ]
+        assert [item.true_coach_id for item in tracker_items] == [8101, 8102, 8106, 8106]
+        assert [item.exercise.hevy_app_id for item in tracker_items] == [
+            "hevy-bench",
+            "hevy-row",
+            "hevy-burpees",
+            "hevy-plank",
+        ]
+        assert [
+            set_row.hevy_app_id
+            for item in tracker_items
+            for set_row in sorted(item.sets, key=lambda row: row.index)
+        ] == [1, 2, 3, 4, 5, 6, 7, 8, 9]
+
+
 def test_workout_backfill_apply_repairs_local_links_from_existing_remote_marker(
     tmp_path: Path,
 ) -> None:
@@ -1381,6 +1433,64 @@ def test_workout_backfill_repair_uses_linked_remote_workout_without_creating(  #
         assert tracker_workout is not None
         tracker_items = sorted(tracker_workout.workout_items, key=lambda item: item.position)
         assert [item.hevy_app_id for item in tracker_items] == [1, 2]
+
+
+def test_workout_backfill_repair_reuses_synthetic_tracker_items_for_split_circuit(  # noqa: PLR0915
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    _add_choice_templates(store, [("hevy-burpees", "Burpees"), ("hevy-plank", "Plank")])
+    _add_circuit_backfill_item(
+        store,
+        info="2 Rounds\n10 Burpees\nPlank 30s",
+        comment="2 min 10 sec\n2 min 15 sec",
+    )
+    with store.unit_of_work() as uow:
+        workout = uow.tracker.get_workout(true_coach_id=455045484)
+        assert workout is not None
+        workout.hevy_app_id = "hevy-linked-455045484"
+    decisions_path = _write_timestamp_decisions(tmp_path)
+    service = TrueCoachWorkoutBackfillReviewService(store=store, output_root=tmp_path / "reports")
+    writer = _RecordingWorkoutWriter(
+        existing_workout=_split_circuit_hevy_workout_response(
+            workout_id="hevy-linked-455045484"
+        ).workout[0],
+    )
+
+    service.repair_local_links(
+        455045484,
+        workout_writer=writer,
+        decisions_path=decisions_path,
+    )
+    service.repair_local_links(
+        455045484,
+        workout_writer=writer,
+        decisions_path=decisions_path,
+    )
+
+    with store.unit_of_work() as uow:
+        tracker_workout = uow.tracker.get_workout(true_coach_id=455045484)
+        assert tracker_workout is not None
+        synthetic_items = sorted(
+            (
+                item
+                for item in tracker_workout.workout_items
+                if item.true_coach_id == 8106 and item.exercise.hevy_app_id is not None
+            ),
+            key=lambda item: item.hevy_app_id or 0,
+        )
+        assert [(item.exercise.name, item.hevy_app_id) for item in synthetic_items] == [
+            ("Burpees", 3),
+            ("Plank", 4),
+        ]
+        assert [
+            set_row.hevy_app_id
+            for item in synthetic_items
+            for set_row in sorted(item.sets, key=lambda row: row.index)
+        ] == [6, 7, 8, 9]
 
 
 def test_workout_backfill_apply_writes_recovery_artifact_when_local_linking_fails(
@@ -2056,6 +2166,45 @@ def _hevy_workout_response(workout_id: str) -> PostWorkoutsResponse:
             )
         ]
     )
+
+
+def _split_circuit_hevy_workout_response(workout_id: str) -> PostWorkoutsResponse:
+    response = _hevy_workout_response(workout_id)
+    response.workout[0].exercises.extend(
+        [
+            HevyWorkoutExercise(
+                index=2,
+                title="Burpees",
+                notes=(
+                    "Circuit source: 2 Rounds\n10 Burpees\nPlank 30s\n"
+                    "Movement target: 10\nCompleted rounds: 2\n"
+                    "Completed round times: 2 min 10 sec; 2 min 15 sec"
+                ),
+                exercise_template_id="hevy-burpees",
+                superset_id=1,
+                sets=[
+                    HevySet(index=0, type="normal", reps=10),
+                    HevySet(index=1, type="normal", reps=10),
+                ],
+            ),
+            HevyWorkoutExercise(
+                index=3,
+                title="Plank",
+                notes=(
+                    "Circuit source: 2 Rounds\n10 Burpees\nPlank 30s\n"
+                    "Movement target: 30s\nCompleted rounds: 2\n"
+                    "Completed round times: 2 min 10 sec; 2 min 15 sec"
+                ),
+                exercise_template_id="hevy-plank",
+                superset_id=1,
+                sets=[
+                    HevySet(index=0, type="normal", duration_seconds=30),
+                    HevySet(index=1, type="normal", duration_seconds=30),
+                ],
+            ),
+        ]
+    )
+    return response
 
 
 def _write_backfill_review(db_path: Path, tmp_path: Path) -> Path:
