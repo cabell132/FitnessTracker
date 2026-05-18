@@ -1488,16 +1488,31 @@ def _build_hevy_workout_request(
         description=f"Backfill from True Coach Workout {workout['id']}",
         start_time=workout_decisions.get("selected_start_time"),
         end_time=workout_decisions.get("selected_end_time"),
-        exercises=[
+        exercises=_request_exercises(plan["items"], decisions, superset_allocator),
+    )
+
+
+def _request_exercises(
+    items: list[dict[str, Any]],
+    decisions: dict[str, Any] | None,
+    superset_allocator: _WorkoutRequestSupersetAllocator,
+) -> list[PostWorkoutsRequestExercise]:
+    exercises = []
+    for item in items:
+        template_id = _request_exercise_template_id(item, decisions)
+        if template_id is None or not item["sets"]:
+            continue
+        exercises.append(
             _request_exercise(
                 item,
-                decisions,
+                template_id=template_id,
                 superset_id=superset_allocator.superset_id_for_item(item),
             )
-            for item in plan["items"]
-            if _request_exercise_template_id(item, decisions) is not None and item["sets"]
-        ],
-    )
+        )
+    return exercises
+
+
+_ExpandedCircuitSupersetKey = tuple[int | None, int]
 
 
 class _WorkoutRequestSupersetAllocator:
@@ -1506,21 +1521,21 @@ class _WorkoutRequestSupersetAllocator:
             item["superset_id"] for item in items if item.get("superset_id") is not None
         )
         self._next_id = max(superset_ids, default=-1) + 1
-        self._circuit_superset_ids: dict[tuple[int | None, int], int] = {}
+        self._expanded_circuit_superset_ids: dict[_ExpandedCircuitSupersetKey, int] = {}
 
     def superset_id_for_item(self, item: dict[str, Any]) -> int | None:
         if item.get("superset_id") is not None:
             return int(item["superset_id"])
-        if not _is_split_circuit_movement_item(item):
+        if not _is_expanded_circuit_movement_item(item):
             return None
         key = (item.get("source_id"), int(item["tracker_workout_item_id"]))
-        if key not in self._circuit_superset_ids:
-            self._circuit_superset_ids[key] = self._next_id
+        if key not in self._expanded_circuit_superset_ids:
+            self._expanded_circuit_superset_ids[key] = self._next_id
             self._next_id += 1
-        return self._circuit_superset_ids[key]
+        return self._expanded_circuit_superset_ids[key]
 
 
-def _is_split_circuit_movement_item(item: dict[str, Any]) -> bool:
+def _is_expanded_circuit_movement_item(item: dict[str, Any]) -> bool:
     return (
         "movement_target" in item
         and "original_prescription_text" in item
@@ -1530,11 +1545,10 @@ def _is_split_circuit_movement_item(item: dict[str, Any]) -> bool:
 
 def _request_exercise(
     item: dict[str, Any],
-    decisions: dict[str, Any] | None,
     *,
+    template_id: str | None,
     superset_id: int | None,
 ) -> PostWorkoutsRequestExercise:
-    template_id = _request_exercise_template_id(item, decisions)
     if template_id is None:
         msg = f"Missing Hevy template for request exercise: {item['name']}"
         raise WorkoutBackfillReviewError(msg)
