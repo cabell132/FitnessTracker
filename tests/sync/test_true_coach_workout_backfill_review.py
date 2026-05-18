@@ -531,11 +531,76 @@ def test_workout_backfill_review_leaves_no_confidence_timing_unset(
     bundle_dir = _write_backfill_review(db_path, tmp_path)
     evidence = json.loads((bundle_dir / "apple-health-evidence.json").read_text(encoding="utf-8"))
     request = json.loads((bundle_dir / "hevy-workout-request.json").read_text(encoding="utf-8"))
+    decisions = json.loads((bundle_dir / "backfill-decisions.json").read_text(encoding="utf-8"))
+    validation = json.loads((bundle_dir / "decision-validation.json").read_text(encoding="utf-8"))
 
     assert request["workout"]["start_time"] is None
     assert request["workout"]["end_time"] is None
     assert evidence["heart_rate_summaries"] == []
     assert evidence["candidate_windows"] == []
+    assert decisions == {
+        "version": 1,
+        "workout": {
+            "id": 455045484,
+            "selected_start_time": None,
+            "selected_end_time": None,
+        },
+    }
+    assert validation == {
+        "blockers": ["Missing required decision: selected Workout timestamps"],
+        "warnings": [],
+    }
+
+
+def test_workout_backfill_review_applies_editable_timestamp_decisions(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    decisions_path = tmp_path / "decisions.json"
+    decisions_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "workout": {
+                    "id": 455045484,
+                    "selected_start_time": "2024-04-10T17:05:00Z",
+                    "selected_end_time": "2024-04-10T18:02:00Z",
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    exit_code = main(
+        [
+            "sync-review",
+            "truecoach-workout-backfill",
+            "--workout-id",
+            "455045484",
+            "--database-url",
+            f"sqlite:///{db_path}",
+            "--output-dir",
+            str(tmp_path / "reports"),
+            "--decisions",
+            str(decisions_path),
+        ]
+    )
+
+    assert exit_code == 0
+    bundle_dir = tmp_path / "reports" / "sync-review" / "truecoach-workout-backfill" / "455045484"
+    plan = json.loads((bundle_dir / "plan.json").read_text(encoding="utf-8"))
+    request = json.loads((bundle_dir / "hevy-workout-request.json").read_text(encoding="utf-8"))
+    validation = json.loads((bundle_dir / "decision-validation.json").read_text(encoding="utf-8"))
+
+    assert request["workout"]["start_time"] == "2024-04-10T17:05:00Z"
+    assert request["workout"]["end_time"] == "2024-04-10T18:02:00Z"
+    assert validation == {"blockers": [], "warnings": []}
+    assert "decisions" not in plan
+    assert "selected_start_time" not in plan["workout"]
 
 
 def _add_empty_backfill_item(

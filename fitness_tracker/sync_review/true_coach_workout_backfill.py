@@ -41,6 +41,8 @@ class WorkoutBackfillReviewBundle:
     plan_path: Path
     request_path: Path
     apple_health_evidence_path: Path
+    decisions_path: Path
+    decision_validation_path: Path
 
 
 @dataclass(frozen=True)
@@ -49,6 +51,8 @@ class WorkoutBackfillReviewArtifacts:
 
     plan: dict[str, Any]
     request: PostWorkoutsRequestBody
+    decisions: dict[str, Any]
+    decision_validation: dict[str, list[str]]
     apple_health_evidence: dict[str, Any]
     report: str
 
@@ -80,6 +84,16 @@ class AppleHealthEvidenceContext:
     due: datetime
 
 
+@dataclass(frozen=True)
+class BackfillReportContext:
+    """Inputs for rendering a Workout backfill review report."""
+
+    workout: TrueCoachWorkout
+    plan: dict[str, Any]
+    apple_health_evidence: dict[str, Any]
+    decision_validation: dict[str, list[str]]
+
+
 class TrueCoachWorkoutBackfillReviewService:
     """Create a review bundle for one completed True Coach Workout backfill."""
 
@@ -93,24 +107,44 @@ class TrueCoachWorkoutBackfillReviewService:
         self._store = store
         self._output_root = output_root
 
-    def write_review(self, workout_id: int) -> WorkoutBackfillReviewBundle:
+    def write_review(
+        self,
+        workout_id: int,
+        decisions_path: Path | None = None,
+    ) -> WorkoutBackfillReviewBundle:
         """Write deterministic plan, draft Hevy Workout request, and report.
 
         Args:
             workout_id (int): True Coach Workout id.
+            decisions_path (Path | None): Optional editable decisions JSON to apply.
 
         Returns:
             WorkoutBackfillReviewBundle: Paths written by the service.
         """
-        artifacts = self._build_artifacts(workout_id)
-        bundle_dir, plan_path, request_path, apple_health_evidence_path, report_path = (
-            _bundle_paths(self._output_root, workout_id)
-        )
+        decisions = _load_decisions(decisions_path) if decisions_path is not None else None
+        artifacts = self._build_artifacts(workout_id, decisions)
+        (
+            bundle_dir,
+            plan_path,
+            request_path,
+            apple_health_evidence_path,
+            report_path,
+            output_decisions_path,
+            decision_validation_path,
+        ) = _bundle_paths(self._output_root, workout_id)
         plan_path.write_text(
             json.dumps(artifacts.plan, indent=2, sort_keys=True) + "\n", encoding="utf-8"
         )
         request_path.write_text(
             json.dumps(artifacts.request.model_dump(), indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        output_decisions_path.write_text(
+            json.dumps(artifacts.decisions, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        decision_validation_path.write_text(
+            json.dumps(artifacts.decision_validation, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
         apple_health_evidence_path.write_text(
@@ -124,9 +158,15 @@ class TrueCoachWorkoutBackfillReviewService:
             plan_path=plan_path,
             request_path=request_path,
             apple_health_evidence_path=apple_health_evidence_path,
+            decisions_path=output_decisions_path,
+            decision_validation_path=decision_validation_path,
         )
 
-    def _build_artifacts(self, workout_id: int) -> WorkoutBackfillReviewArtifacts:
+    def _build_artifacts(
+        self,
+        workout_id: int,
+        decisions: dict[str, Any] | None = None,
+    ) -> WorkoutBackfillReviewArtifacts:
         with self._store.unit_of_work() as uow:
             workout = uow.true_coach.get_workout(id=workout_id)
             if workout is None:
@@ -146,18 +186,29 @@ class TrueCoachWorkoutBackfillReviewService:
             ]
             plan = _plan(workout, tracker_workout, items)
             apple_health_evidence = _apple_health_evidence(uow.session, workout.due)
+            resolved_decisions = decisions or _decision_template(workout_id)
+            decision_validation = _validate_decisions(workout_id, resolved_decisions)
             return WorkoutBackfillReviewArtifacts(
                 plan=plan,
-                request=_build_hevy_workout_request(plan),
+                request=_build_hevy_workout_request(plan, resolved_decisions),
+                decisions=resolved_decisions,
+                decision_validation=decision_validation,
                 apple_health_evidence=apple_health_evidence,
-                report=_report(workout, plan, apple_health_evidence),
+                report=_report(
+                    BackfillReportContext(
+                        workout=workout,
+                        plan=plan,
+                        apple_health_evidence=apple_health_evidence,
+                        decision_validation=decision_validation,
+                    )
+                ),
             )
 
 
 def _bundle_paths(
     output_root: Path,
     workout_id: int,
-) -> tuple[Path, Path, Path, Path, Path]:
+) -> tuple[Path, Path, Path, Path, Path, Path, Path]:
     bundle_dir = output_root / "sync-review" / "truecoach-workout-backfill" / str(workout_id)
     bundle_dir.mkdir(parents=True, exist_ok=True)
     return (
@@ -166,6 +217,8 @@ def _bundle_paths(
         bundle_dir / "hevy-workout-request.json",
         bundle_dir / "apple-health-evidence.json",
         bundle_dir / "report.md",
+        bundle_dir / "backfill-decisions.json",
+        bundle_dir / "decision-validation.json",
     )
 
 
@@ -333,15 +386,61 @@ def _set_to_dict(set_row: PostWorkoutsRequestSet) -> dict[str, int | float | str
     return set_row.model_dump(exclude_none=True)
 
 
-def _build_hevy_workout_request(plan: dict[str, Any]) -> PostWorkoutsRequestBody:
+def _load_decisions(decisions_path: Path) -> dict[str, Any]:
+    try:
+        data = json.loads(decisions_path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        msg = f"Could not read decisions file {decisions_path}: {exc}"
+        raise WorkoutBackfillReviewError(msg) from exc
+    except json.JSONDecodeError as exc:
+        msg = f"Could not parse decisions file {decisions_path}: {exc}"
+        raise WorkoutBackfillReviewError(msg) from exc
+    if not isinstance(data, dict):
+        msg = f"Decisions file {decisions_path} must contain a JSON object"
+        raise WorkoutBackfillReviewError(msg)
+    return data
+
+
+def _decision_template(workout_id: int) -> dict[str, Any]:
+    return {
+        "version": 1,
+        "workout": {
+            "id": workout_id,
+            "selected_start_time": None,
+            "selected_end_time": None,
+        },
+    }
+
+
+def _validate_decisions(workout_id: int, decisions: dict[str, Any]) -> dict[str, list[str]]:
+    blockers: list[str] = []
+    warnings: list[str] = []
+    workout = decisions.get("workout")
+    if not isinstance(workout, dict):
+        return {
+            "blockers": ["Missing required decision section: workout"],
+            "warnings": warnings,
+        }
+    if workout.get("id") != workout_id:
+        blockers.append(f"Decision workout id must match True Coach Workout {workout_id}")
+    if not workout.get("selected_start_time") or not workout.get("selected_end_time"):
+        blockers.append("Missing required decision: selected Workout timestamps")
+    return {"blockers": blockers, "warnings": warnings}
+
+
+def _build_hevy_workout_request(
+    plan: dict[str, Any],
+    decisions: dict[str, Any] | None = None,
+) -> PostWorkoutsRequestBody:
     workout = plan["workout"]
     due = workout.get("due")
     due_date = due[:10] if isinstance(due, str) and len(due) >= 10 else "undated"
+    workout_decisions = decisions.get("workout", {}) if decisions is not None else {}
     return PostWorkoutsRequestBody.build(
         title=f"{due_date} {workout.get('title') or 'Untitled'}",
         description=f"Backfill from True Coach Workout {workout['id']}",
-        start_time=None,
-        end_time=None,
+        start_time=workout_decisions.get("selected_start_time"),
+        end_time=workout_decisions.get("selected_end_time"),
         exercises=[
             _request_exercise(item)
             for item in plan["items"]
@@ -548,20 +647,35 @@ def _block_overlaps_workouts(
     )
 
 
-def _report(
-    workout: TrueCoachWorkout,
-    plan: dict[str, Any],
-    apple_health_evidence: dict[str, Any],
-) -> str:
+def _report(context: BackfillReportContext) -> str:
+    workout = context.workout
     lines = [
         f"# True Coach Workout Backfill Review: {workout.id}",
         "",
         f"Workout: {workout.title or 'Untitled'}",
         f"Due: {workout.due.isoformat() if workout.due else 'unknown'}",
         "Draft Hevy Workout request: hevy-workout-request.json",
+        "Editable decisions: backfill-decisions.json",
+        "Decision validation: decision-validation.json",
         "Apple Health evidence: apple-health-evidence.json",
         "",
     ]
+    lines.extend(_report_review_validation(context.plan))
+    lines.extend(_report_decision_validation(context.decision_validation))
+    if context.apple_health_evidence["candidate_windows"]:
+        lines.append("Candidate timing windows:")
+        lines.extend(
+            f"- {candidate['confidence']}: {candidate['start']} to {candidate['end']}"
+            for candidate in context.apple_health_evidence["candidate_windows"]
+        )
+    lines.append("")
+    for index, item in enumerate(context.plan["items"], start=1):
+        lines.extend(_report_item(index, item))
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _report_review_validation(plan: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
     if plan["blockers"]:
         lines.append("Blockers:")
         lines.extend(f"- {blocker}" for blocker in plan["blockers"])
@@ -570,16 +684,20 @@ def _report(
     if plan["warnings"]:
         lines.append("Warnings:")
         lines.extend(f"- {warning}" for warning in plan["warnings"])
-    if apple_health_evidence["candidate_windows"]:
-        lines.append("Candidate timing windows:")
-        lines.extend(
-            f"- {candidate['confidence']}: {candidate['start']} to {candidate['end']}"
-            for candidate in apple_health_evidence["candidate_windows"]
-        )
-    lines.append("")
-    for index, item in enumerate(plan["items"], start=1):
-        lines.extend(_report_item(index, item))
-    return "\n".join(lines).rstrip() + "\n"
+    return lines
+
+
+def _report_decision_validation(decision_validation: dict[str, list[str]]) -> list[str]:
+    lines: list[str] = []
+    if decision_validation["blockers"]:
+        lines.append("Decision blockers:")
+        lines.extend(f"- {blocker}" for blocker in decision_validation["blockers"])
+    else:
+        lines.append("Decision blockers: none")
+    if decision_validation["warnings"]:
+        lines.append("Decision warnings:")
+        lines.extend(f"- {warning}" for warning in decision_validation["warnings"])
+    return lines
 
 
 def _report_item(index: int, item: dict[str, Any]) -> list[str]:

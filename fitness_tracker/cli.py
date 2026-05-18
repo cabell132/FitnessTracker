@@ -226,6 +226,10 @@ def _add_sync_review_parser(
         default="reports",
         help="Report root. Defaults to reports.",
     )
+    backfill_review.add_argument(
+        "--decisions",
+        help="Editable Workout backfill decisions JSON to validate and apply to the draft request.",
+    )
 
 
 def _add_sync_apply_parser(
@@ -504,7 +508,10 @@ def _sync_review_truecoach_workout_backfill(args: argparse.Namespace) -> int:
         output_root=Path(args.output_dir),
     )
     try:
-        bundle = service.write_review(args.workout_id)
+        bundle = service.write_review(
+            args.workout_id,
+            decisions_path=Path(args.decisions) if args.decisions else None,
+        )
     except WorkoutBackfillReviewError as exc:
         _emit(f"Error: {exc}")
         return 2
