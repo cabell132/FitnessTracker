@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 from fitness_tracker.apis.hevy_app.client import HevyAppClient
-from fitness_tracker.apis.hevy_app.types import PostWorkoutsRequestBody, PostWorkoutsResponse
+from fitness_tracker.apis.hevy_app.types import (
+    PostWorkoutsRequestBody,
+    PostWorkoutsResponse,
+    Workout,
+)
 
 
 class HevyWorkoutWriterAdapter:
@@ -27,3 +31,23 @@ class HevyWorkoutWriterAdapter:
             PostWorkoutsResponse | None: Parsed response or ``None``.
         """
         return self._client.workouts.create(workout)
+
+    def find_workout_by_true_coach_id(self, workout_id: int) -> Workout | None:
+        """Find a remote Workout carrying the source True Coach idempotency marker.
+
+        Args:
+            workout_id (int): Source True Coach Workout id.
+
+        Returns:
+            Workout | None: First matching remote Workout, if present.
+        """
+        marker = f"True Coach Workout {workout_id}"
+        page = 1
+        while response := self._client.workouts.get(page=page, per_page=100):
+            for workout in response.workouts:
+                if marker in (workout.description or "") or marker in workout.title:
+                    return workout
+            if page >= response.page_count:
+                return None
+            page += 1
+        return None

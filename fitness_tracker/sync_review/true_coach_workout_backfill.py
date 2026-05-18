@@ -23,8 +23,12 @@ from fitness_tracker.database.models.apple_health import (
     AppleHealthWorkout,
     AppleHealthWorkoutType,
 )
-from fitness_tracker.database.models.hevy_app import HevyAppExercise
-from fitness_tracker.database.models.tracker import Sets, Workout as TrackerWorkout
+from fitness_tracker.database.models.hevy_app import HevyAppExercise, HevyAppWorkoutItem
+from fitness_tracker.database.models.tracker import (
+    Sets,
+    Workout as TrackerWorkout,
+    WorkoutItem as TrackerWorkoutItem,
+)
 from fitness_tracker.database.models.true_coach import TrueCoachWorkout
 from fitness_tracker.sync.ports import HevyWorkoutWriter
 
@@ -138,6 +142,16 @@ class ApplyRequestValidationContext:
     plan: dict[str, Any]
     decision_validation: dict[str, list[str]]
     request_body: PostWorkoutsRequestBody
+    decisions: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class BackfillLinkContext:
+    """Inputs needed to link a remote Hevy Workout to local tracker rows."""
+
+    workout_id: int
+    workout: Any
+    plan: dict[str, Any]
     decisions: dict[str, Any]
 
 
@@ -263,7 +277,35 @@ class TrueCoachWorkoutBackfillReviewService:
             WorkoutBackfillApplyResult: Request body and local artifacts.
         """
         result = self.write_apply_request(workout_id, decisions_path=decisions_path)
-        workout_writer.create_workout(result.request_body)
+        if self._tracker_workout_is_linked(workout_id):
+            return result
+        plan = _load_json_file(result.review_bundle.plan_path) if result.review_bundle else {}
+        decisions = (
+            _load_json_file(result.review_bundle.decisions_path) if result.review_bundle else {}
+        )
+        existing_remote = _find_remote_backfill(workout_writer, workout_id)
+        if existing_remote is not None:
+            unlinked = self._sync_and_link_created_workout(
+                BackfillLinkContext(
+                    workout_id=workout_id,
+                    workout=existing_remote,
+                    plan=plan,
+                    decisions=decisions,
+                )
+            )
+            _raise_for_unlinked_created_rows(result, existing_remote.id, unlinked)
+            return result
+        response = workout_writer.create_workout(result.request_body)
+        if response and response.workout:
+            unlinked = self._sync_and_link_created_workout(
+                BackfillLinkContext(
+                    workout_id=workout_id,
+                    workout=response.workout[0],
+                    plan=plan,
+                    decisions=decisions,
+                )
+            )
+            _raise_for_unlinked_created_rows(result, response.workout[0].id, unlinked)
         return result
 
     def apply_manual_request(
@@ -338,6 +380,54 @@ class TrueCoachWorkoutBackfillReviewService:
                     )
                 ),
             )
+
+    def _tracker_workout_is_linked(self, workout_id: int) -> bool:
+        with self._store.unit_of_work() as uow:
+            tracker_workout = uow.tracker.get_workout(true_coach_id=workout_id)
+            return bool(tracker_workout and tracker_workout.hevy_app_id)
+
+    def _sync_and_link_created_workout(self, context: BackfillLinkContext) -> list[int]:
+        unlinked_tracker_item_ids: list[int] = []
+        with self._store.unit_of_work() as uow:
+            uow.hevy.add_workout(context.workout)
+            tracker_workout = uow.tracker.get_workout(true_coach_id=context.workout_id)
+            if tracker_workout is None:
+                return [
+                    item["tracker_workout_item_id"]
+                    for item in _requestable_plan_items(context.plan, context.decisions)
+                ]
+            tracker_workout.hevy_app_id = context.workout.id
+            tracker_workout.start_date = datetime.fromisoformat(context.workout.start_time)
+            tracker_workout.end_date = datetime.fromisoformat(context.workout.end_time)
+            uow.session.flush()
+            for request_index, item in enumerate(
+                _requestable_plan_items(context.plan, context.decisions)
+            ):
+                tracker_item = uow.session.get(
+                    TrackerWorkoutItem,
+                    id=item["tracker_workout_item_id"],
+                )
+                hevy_item = uow.session.execute(
+                    select(HevyAppWorkoutItem).where(
+                        HevyAppWorkoutItem.workout_id == context.workout.id,
+                        HevyAppWorkoutItem.index == request_index,
+                    )
+                ).scalar_one_or_none()
+                if tracker_item is None or hevy_item is None:
+                    unlinked_tracker_item_ids.append(item["tracker_workout_item_id"])
+                    continue
+                tracker_item.hevy_app_id = hevy_item.id
+                local_sets = sorted(tracker_item.sets, key=lambda row: row.index)
+                hevy_sets = sorted(hevy_item.sets, key=lambda row: row.index)
+                if len(local_sets) != len(hevy_sets):
+                    unlinked_tracker_item_ids.append(item["tracker_workout_item_id"])
+                for local_set, hevy_set in zip(
+                    local_sets,
+                    hevy_sets,
+                    strict=False,
+                ):
+                    local_set.hevy_app_id = hevy_set.id
+        return unlinked_tracker_item_ids
 
 
 def _bundle_paths(
@@ -683,6 +773,61 @@ def _load_decisions(decisions_path: Path) -> dict[str, Any]:
         msg = f"Decisions file {decisions_path} must contain a JSON object"
         raise WorkoutBackfillReviewError(msg)
     return data
+
+
+def _load_json_file(path: Path) -> dict[str, Any]:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _find_remote_backfill(workout_writer: HevyWorkoutWriter, workout_id: int) -> Any | None:
+    finder = getattr(workout_writer, "find_workout_by_true_coach_id", None)
+    if finder is None:
+        return None
+    return finder(workout_id)
+
+
+def _raise_for_unlinked_created_rows(
+    result: WorkoutBackfillApplyResult,
+    remote_workout_id: str,
+    unlinked_tracker_workout_item_ids: list[int],
+) -> None:
+    if not unlinked_tracker_workout_item_ids:
+        return
+    if result.review_bundle is not None:
+        recovery_path = result.review_bundle.directory / "backfill-recovery.json"
+        recovery_path.write_text(
+            json.dumps(
+                {
+                    "true_coach_workout_id": _source_workout_id(result.request_body),
+                    "remote_hevy_workout_id": remote_workout_id,
+                    "request_path": str(result.request_path),
+                    "plan_path": str(result.review_bundle.plan_path),
+                    "unlinked_tracker_workout_item_ids": unlinked_tracker_workout_item_ids,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+    msg = "Could not link all created Hevy rows; recovery artifact written"
+    raise WorkoutBackfillApplyError(msg)
+
+
+def _source_workout_id(request_body: PostWorkoutsRequestBody) -> int | None:
+    marker = re.search(r"True Coach Workout (\d+)", request_body.workout.description or "")
+    return int(marker.group(1)) if marker else None
+
+
+def _requestable_plan_items(
+    plan: dict[str, Any],
+    decisions: dict[str, Any],
+) -> list[dict[str, Any]]:
+    return [
+        item
+        for item in plan.get("items", [])
+        if item.get("sets") and _request_exercise_template_id(item, decisions) is not None
+    ]
 
 
 def _decision_template(workout_id: int, plan: dict[str, Any] | None = None) -> dict[str, Any]:

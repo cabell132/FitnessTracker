@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from fitness_tracker.apis.hevy_app.types import PostWorkoutsRequestBody, PostWorkoutsResponse
+from fitness_tracker.apis.hevy_app.types import (
+    PostWorkoutsRequestBody,
+    PostWorkoutsResponse,
+    Workout,
+)
 
 
 @runtime_checkable
@@ -19,5 +23,16 @@ class HevyWorkoutWriter(Protocol):
 
         Returns:
             PostWorkoutsResponse | None: Parsed response, or ``None`` when the API returns empty.
+        """
+        ...
+
+    def find_workout_by_true_coach_id(self, workout_id: int) -> Workout | None:
+        """Find an existing remote backfilled Workout by source True Coach id marker.
+
+        Args:
+            workout_id (int): Source True Coach Workout id.
+
+        Returns:
+            Workout | None: Matching remote Workout when found.
         """
         ...

@@ -7,7 +7,13 @@ from pathlib import Path
 import pytest
 from sqlalchemy import create_engine
 
-from fitness_tracker.apis.hevy_app.types import PostWorkoutsRequestBody
+from fitness_tracker.apis.hevy_app.types import (
+    Exercise as HevyWorkoutExercise,
+    PostWorkoutsRequestBody,
+    PostWorkoutsResponse,
+    Set as HevySet,
+    Workout as HevyWorkout,
+)
 from fitness_tracker.cli import main
 from fitness_tracker.database import Store
 from fitness_tracker.database.models.apple_health import (
@@ -938,6 +944,148 @@ def test_workout_backfill_apply_sends_same_hevy_request_as_dry_run(tmp_path: Pat
     assert "True Coach Workout 455045484" in writer.requests[0].workout.description
 
 
+def test_workout_backfill_apply_skips_already_linked_tracker_workout(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    with store.unit_of_work() as uow:
+        workout = uow.tracker.get_workout(true_coach_id=455045484)
+        assert workout is not None
+        workout.hevy_app_id = "hevy-existing"
+    decisions_path = tmp_path / "decisions.json"
+    decisions_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "workout": {
+                    "id": 455045484,
+                    "selected_start_time": "2024-04-10T17:05:00Z",
+                    "selected_end_time": "2024-04-10T18:02:00Z",
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    service = TrueCoachWorkoutBackfillReviewService(store=store, output_root=tmp_path / "reports")
+    writer = _RecordingWorkoutWriter()
+
+    service.apply(
+        455045484,
+        workout_writer=writer,
+        decisions_path=decisions_path,
+    )
+
+    assert writer.requests == []
+
+
+def test_workout_backfill_apply_links_created_hevy_workout_to_tracker_rows(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    decisions_path = _write_timestamp_decisions(tmp_path)
+    service = TrueCoachWorkoutBackfillReviewService(store=store, output_root=tmp_path / "reports")
+    writer = _RecordingWorkoutWriter(
+        response=_hevy_workout_response(workout_id="hevy-created-455045484")
+    )
+
+    service.apply(
+        455045484,
+        workout_writer=writer,
+        decisions_path=decisions_path,
+    )
+
+    with store.unit_of_work() as uow:
+        tracker_workout = uow.tracker.get_workout(true_coach_id=455045484)
+        assert tracker_workout is not None
+        assert tracker_workout.hevy_app_id == "hevy-created-455045484"
+        tracker_items = sorted(tracker_workout.workout_items, key=lambda item: item.position)
+        assert [item.hevy_app_id for item in tracker_items] == [1, 2]
+        assert [
+            set_row.hevy_app_id
+            for item in tracker_items
+            for set_row in sorted(item.sets, key=lambda row: row.index)
+        ] == [1, 2, 3, 4, 5]
+
+
+def test_workout_backfill_apply_repairs_local_links_from_existing_remote_marker(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    decisions_path = _write_timestamp_decisions(tmp_path)
+    service = TrueCoachWorkoutBackfillReviewService(store=store, output_root=tmp_path / "reports")
+    writer = _RecordingWorkoutWriter(
+        existing_workout=_hevy_workout_response(workout_id="hevy-existing-455045484").workout[0],
+    )
+
+    service.apply(
+        455045484,
+        workout_writer=writer,
+        decisions_path=decisions_path,
+    )
+
+    assert writer.requests == []
+    assert writer.marker_searches == [455045484]
+    with store.unit_of_work() as uow:
+        tracker_workout = uow.tracker.get_workout(true_coach_id=455045484)
+        assert tracker_workout is not None
+        assert tracker_workout.hevy_app_id == "hevy-existing-455045484"
+        assert [
+            item.hevy_app_id
+            for item in sorted(tracker_workout.workout_items, key=lambda i: i.position)
+        ] == [
+            1,
+            2,
+        ]
+
+
+def test_workout_backfill_apply_writes_recovery_artifact_when_local_linking_fails(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    decisions_path = _write_timestamp_decisions(tmp_path)
+    service = TrueCoachWorkoutBackfillReviewService(store=store, output_root=tmp_path / "reports")
+    response = _hevy_workout_response(workout_id="hevy-partial-455045484")
+    response.workout[0].exercises = response.workout[0].exercises[:1]
+    writer = _RecordingWorkoutWriter(response=response)
+
+    with pytest.raises(
+        WorkoutBackfillApplyError,
+        match="Could not link all created Hevy rows",
+    ):
+        service.apply(
+            455045484,
+            workout_writer=writer,
+            decisions_path=decisions_path,
+        )
+
+    recovery_path = (
+        tmp_path
+        / "reports"
+        / "sync-review"
+        / "truecoach-workout-backfill"
+        / "455045484"
+        / "backfill-recovery.json"
+    )
+    recovery = json.loads(recovery_path.read_text(encoding="utf-8"))
+    assert recovery["true_coach_workout_id"] == 455045484
+    assert recovery["remote_hevy_workout_id"] == "hevy-partial-455045484"
+    assert recovery["unlinked_tracker_workout_item_ids"] == [2]
+    assert recovery["request_path"].endswith("hevy-workout-request.json")
+
+
 def test_workout_backfill_manual_request_apply_accepts_edited_artifact(
     tmp_path: Path,
 ) -> None:
@@ -1168,11 +1316,83 @@ def _seed_backfill_review_workout(store: Store) -> None:  # noqa: PLR0915
 
 
 class _RecordingWorkoutWriter:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        response: PostWorkoutsResponse | None = None,
+        existing_workout: HevyWorkout | None = None,
+    ) -> None:
         self.requests: list[PostWorkoutsRequestBody] = []
+        self.response = response
+        self.existing_workout = existing_workout
+        self.marker_searches: list[int] = []
 
-    def create_workout(self, workout: PostWorkoutsRequestBody) -> None:
+    def create_workout(self, workout: PostWorkoutsRequestBody) -> PostWorkoutsResponse | None:
         self.requests.append(workout)
+        return self.response
+
+    def find_workout_by_true_coach_id(self, workout_id: int) -> HevyWorkout | None:
+        self.marker_searches.append(workout_id)
+        return self.existing_workout
+
+
+def _write_timestamp_decisions(tmp_path: Path) -> Path:
+    decisions_path = tmp_path / "decisions.json"
+    decisions_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "workout": {
+                    "id": 455045484,
+                    "selected_start_time": "2024-04-10T17:05:00Z",
+                    "selected_end_time": "2024-04-10T18:02:00Z",
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return decisions_path
+
+
+def _hevy_workout_response(workout_id: str) -> PostWorkoutsResponse:
+    return PostWorkoutsResponse(
+        workout=[
+            HevyWorkout(
+                id=workout_id,
+                title="2024-04-10 Upper",
+                description="Backfill from True Coach Workout 455045484",
+                start_time="2024-04-10T17:05:00Z",
+                end_time="2024-04-10T18:02:00Z",
+                created_at="2024-04-10T18:03:00Z",
+                updated_at="2024-04-10T18:03:00Z",
+                exercises=[
+                    HevyWorkoutExercise(
+                        index=0,
+                        title="Bench Press",
+                        notes="",
+                        exercise_template_id="hevy-bench",
+                        superset_id=None,
+                        sets=[
+                            HevySet(index=0, type="normal", weight_kg=80.0, reps=8),
+                            HevySet(index=1, type="normal", weight_kg=80.0, reps=8),
+                            HevySet(index=2, type="normal", weight_kg=80.0, reps=8),
+                        ],
+                    ),
+                    HevyWorkoutExercise(
+                        index=1,
+                        title="Chest Supported Row",
+                        notes="Athlete comment: smooth reps",
+                        exercise_template_id="hevy-row",
+                        superset_id=None,
+                        sets=[
+                            HevySet(index=0, type="normal", weight_kg=55.0, reps=10),
+                            HevySet(index=1, type="normal", weight_kg=55.0, reps=10),
+                        ],
+                    ),
+                ],
+            )
+        ]
+    )
 
 
 def _write_backfill_review(db_path: Path, tmp_path: Path) -> Path:
