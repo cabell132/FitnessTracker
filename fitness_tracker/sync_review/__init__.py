@@ -12,6 +12,8 @@ from fitness_tracker.sync_review.true_coach_workout_backfill_discovery import (
 )
 from fitness_tracker.sync_review.true_coach_workout_backfill import (
     TrueCoachWorkoutBackfillReviewService,
+    WorkoutBackfillApplyError,
+    WorkoutBackfillApplyResult,
     WorkoutBackfillReviewBundle,
     WorkoutBackfillReviewError,
 )
@@ -24,6 +26,8 @@ __all__ = [
     "TrueCoachToHevyReviewService",
     "TrueCoachWorkoutBackfillDiscoveryService",
     "TrueCoachWorkoutBackfillReviewService",
+    "WorkoutBackfillApplyError",
+    "WorkoutBackfillApplyResult",
     "WorkoutBackfillReviewBundle",
     "WorkoutBackfillReviewError",
 ]
