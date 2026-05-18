@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 BlockKind = Literal["circuit", "amrap"]
+ROUND_SPECIFIC_REP_LADDER_REASON = "round_specific_rep_ladder"
 
 ROUND_COUNT_PATTERN = re.compile(r"\b(?P<count>\d+)\s*rounds?\b", re.IGNORECASE)
 AMRAP_PATTERN = re.compile(
@@ -31,6 +32,7 @@ TARGET_SUFFIX_PATTERN = re.compile(
     r"(?:\s+(?:easy|hard|each side|es))?)$",
     re.IGNORECASE,
 )
+EACH_SIDE_SUFFIX_PATTERN = re.compile(r"\s+(?P<marker>ES|each side)$", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -98,7 +100,7 @@ def parse_circuit_block(name: str, text: str) -> ParsedCircuitBlock | None:
         if _is_round_ladder_line(line):
             metadata_lines.append(ParsedCircuitMetadataLine(source_text=line))
             requires_agent_decision = True
-            agent_decision_reason = "round_specific_rep_ladder"
+            agent_decision_reason = ROUND_SPECIFIC_REP_LADDER_REASON
             continue
         if _is_rest_line(line):
             rests.append(
@@ -165,7 +167,7 @@ def _parse_movement_line(line: str) -> ParsedCircuitMovement:
     if prefix_match is not None:
         name = prefix_match.group("name").strip()
         target = prefix_match.group("target").strip()
-        each_side_match = re.search(r"\s+(?P<marker>ES|each side)$", name, re.IGNORECASE)
+        each_side_match = EACH_SIDE_SUFFIX_PATTERN.search(name)
         if each_side_match is not None:
             name = name[: each_side_match.start()].strip()
             target = f"{target} {each_side_match.group('marker')}"

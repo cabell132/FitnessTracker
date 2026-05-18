@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import re
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from functools import cache
 from pathlib import Path
@@ -37,6 +37,7 @@ BLOCKING_REQUIRED_TEMPLATE_STATUSES = frozenset({"missing", "ambiguous"})
 NO_LINKED_TEMPLATE_WARNING = "No linked Hevy exercise template found."
 NO_DETERMINISTIC_SET_PARSER_WARNING = "No deterministic set parser result found."
 NO_MATCHING_HISTORY_LOAD_WARNING = "No matching Athlete history load found."
+CIRCUIT_BLOCK_CONTEXT_PATTERN = re.compile(r"\b(?:amrap|circuit|\d+\s*rounds?)\b", re.IGNORECASE)
 RequiredTemplateStatus = Literal["existing", "missing", "ambiguous"]
 PhaseKind = Literal["isometric_hold", "dynamic_reps"]
 WeightProvenance = Literal["athlete_history", "calculated_dropset"]
@@ -551,10 +552,7 @@ def _is_unsplit_required_mixed_mode_item(item: dict[str, Any]) -> bool:
 def _parse_circuit_block_context(item: TrueCoachWorkoutItem) -> ParsedCircuitBlock | None:
     name = item.name or ""
     info = item.info or ""
-    if not (
-        bool(item.is_circuit)
-        or re.search(r"\b(?:amrap|circuit|\d+\s*rounds?)\b", f"{name}\n{info}", re.IGNORECASE)
-    ):
+    if not (bool(item.is_circuit) or CIRCUIT_BLOCK_CONTEXT_PATTERN.search(f"{name}\n{info}")):
         return None
     return parse_circuit_block(name=name, text=info)
 
@@ -1049,31 +1047,7 @@ def _planned_block_to_dict(block: PlannedBlock) -> dict[str, Any]:
 def _parsed_circuit_block_to_dict(block: ParsedCircuitBlock | None) -> dict[str, Any] | None:
     if block is None:
         return None
-    return {
-        "kind": block.kind,
-        "round_count": block.round_count,
-        "amrap_time_cap_seconds": block.amrap_time_cap_seconds,
-        "movements": [
-            {
-                "name": movement.name,
-                "target": movement.target,
-                "source_text": movement.source_text,
-            }
-            for movement in block.movements
-        ],
-        "rests": [
-            {
-                "source_text": rest.source_text,
-                "durations_seconds": rest.durations_seconds,
-            }
-            for rest in block.rests
-        ],
-        "metadata_lines": [
-            {"source_text": metadata_line.source_text} for metadata_line in block.metadata_lines
-        ],
-        "requires_agent_decision": block.requires_agent_decision,
-        "agent_decision_reason": block.agent_decision_reason,
-    }
+    return asdict(block)
 
 
 def _format_template(template: HevyAppExercise | None) -> str:
