@@ -8,6 +8,12 @@ from sqlalchemy import create_engine
 
 from fitness_tracker.cli import main
 from fitness_tracker.database import Store
+from fitness_tracker.database.models.apple_health import (
+    AppleHealthDataRecord,
+    AppleHealthDataType,
+    AppleHealthWorkout,
+    AppleHealthWorkoutType,
+)
 from fitness_tracker.database.models.hevy_app import HevyAppExercise
 from fitness_tracker.database.models.tracker import (
     Exercise,
@@ -322,6 +328,216 @@ def test_workout_backfill_review_defaults_down_regulate_to_duration_set(
     assert "duration_seconds: 240" in report
 
 
+def test_workout_backfill_review_writes_apple_health_evidence_for_complete_cluster(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    _seed_apple_health_evidence(
+        store,
+        workouts=[
+            (
+                "Traditional Strength Training",
+                "2024-04-10T17:05:00+00:00",
+                "2024-04-10T18:02:00+00:00",
+            ),
+            ("Outdoor Walk", "2024-04-09T12:00:00+00:00", "2024-04-09T12:35:00+00:00"),
+        ],
+        heart_rates=[
+            ("2024-04-10T16:50:00+00:00", 82),
+            ("2024-04-10T17:05:00+00:00", 116),
+            ("2024-04-10T17:20:00+00:00", 142),
+            ("2024-04-10T17:40:00+00:00", 151),
+            ("2024-04-10T18:00:00+00:00", 126),
+            ("2024-04-10T18:20:00+00:00", 88),
+        ],
+    )
+
+    exit_code = main(
+        [
+            "sync-review",
+            "truecoach-workout-backfill",
+            "--workout-id",
+            "455045484",
+            "--database-url",
+            f"sqlite:///{db_path}",
+            "--output-dir",
+            str(tmp_path / "reports"),
+        ]
+    )
+
+    assert exit_code == 0
+    bundle_dir = tmp_path / "reports" / "sync-review" / "truecoach-workout-backfill" / "455045484"
+    evidence = json.loads((bundle_dir / "apple-health-evidence.json").read_text(encoding="utf-8"))
+    request = json.loads((bundle_dir / "hevy-workout-request.json").read_text(encoding="utf-8"))
+    report = (bundle_dir / "report.md").read_text(encoding="utf-8")
+
+    assert request["workout"]["start_time"] is None
+    assert request["workout"]["end_time"] is None
+    assert evidence == {
+        "true_coach_due_date": "2024-04-10",
+        "search_window": {
+            "start": "2024-04-09T00:00:00",
+            "end": "2024-04-11T23:59:59",
+        },
+        "workout_intervals": [
+            {
+                "type": "Outdoor Walk",
+                "start": "2024-04-09T12:00:00",
+                "end": "2024-04-09T12:35:00",
+                "duration_minutes": 35.0,
+            },
+            {
+                "type": "Traditional Strength Training",
+                "start": "2024-04-10T17:05:00",
+                "end": "2024-04-10T18:02:00",
+                "duration_minutes": 57.0,
+            },
+        ],
+        "heart_rate_summaries": [
+            {
+                "window_start": "2024-04-10T16:35:00",
+                "window_end": "2024-04-10T18:32:00",
+                "sample_count": 6,
+                "average_bpm": 117.5,
+                "max_bpm": 151.0,
+            }
+        ],
+        "candidate_windows": [
+            {
+                "source": "apple_workout_interval",
+                "confidence": "high",
+                "start": "2024-04-10T17:05:00",
+                "end": "2024-04-10T18:02:00",
+                "reason": "Apple Health workout interval with elevated heart-rate samples.",
+            }
+        ],
+    }
+    assert "Apple Health evidence: apple-health-evidence.json" in report
+    assert "Candidate timing windows:" in report
+
+
+def test_workout_backfill_review_includes_incomplete_apple_health_cluster(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    _seed_apple_health_evidence(
+        store,
+        workouts=[
+            (
+                "Functional Strength Training",
+                "2024-04-10T06:15:00+00:00",
+                "2024-04-10T06:48:00+00:00",
+            )
+        ],
+        heart_rates=[],
+    )
+
+    bundle_dir = _write_backfill_review(db_path, tmp_path)
+    evidence = json.loads((bundle_dir / "apple-health-evidence.json").read_text(encoding="utf-8"))
+    request = json.loads((bundle_dir / "hevy-workout-request.json").read_text(encoding="utf-8"))
+
+    assert request["workout"]["start_time"] is None
+    assert request["workout"]["end_time"] is None
+    assert evidence["workout_intervals"] == [
+        {
+            "type": "Functional Strength Training",
+            "start": "2024-04-10T06:15:00",
+            "end": "2024-04-10T06:48:00",
+            "duration_minutes": 33.0,
+        }
+    ]
+    assert evidence["heart_rate_summaries"] == []
+    assert evidence["candidate_windows"] == [
+        {
+            "source": "apple_workout_interval",
+            "confidence": "medium",
+            "start": "2024-04-10T06:15:00",
+            "end": "2024-04-10T06:48:00",
+            "reason": "Apple Health workout interval on the True Coach due date.",
+        }
+    ]
+
+
+def test_workout_backfill_review_finds_heart_rate_only_candidate(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    _seed_apple_health_evidence(
+        store,
+        workouts=[],
+        heart_rates=[
+            ("2024-04-10T14:50:00+00:00", 78),
+            ("2024-04-10T15:05:00+00:00", 124),
+            ("2024-04-10T15:20:00+00:00", 138),
+            ("2024-04-10T15:35:00+00:00", 146),
+            ("2024-04-10T15:50:00+00:00", 132),
+            ("2024-04-10T16:10:00+00:00", 84),
+        ],
+    )
+
+    bundle_dir = _write_backfill_review(db_path, tmp_path)
+    evidence = json.loads((bundle_dir / "apple-health-evidence.json").read_text(encoding="utf-8"))
+    request = json.loads((bundle_dir / "hevy-workout-request.json").read_text(encoding="utf-8"))
+
+    assert request["workout"]["start_time"] is None
+    assert request["workout"]["end_time"] is None
+    assert evidence["workout_intervals"] == []
+    assert evidence["heart_rate_summaries"] == [
+        {
+            "window_start": "2024-04-10T15:05:00",
+            "window_end": "2024-04-10T15:50:00",
+            "sample_count": 4,
+            "average_bpm": 135.0,
+            "max_bpm": 146.0,
+        }
+    ]
+    assert evidence["candidate_windows"] == [
+        {
+            "source": "heart_rate_block",
+            "confidence": "medium",
+            "start": "2024-04-10T15:05:00",
+            "end": "2024-04-10T15:50:00",
+            "reason": "Elevated heart-rate block without a matching Apple Health workout interval.",
+        }
+    ]
+
+
+def test_workout_backfill_review_leaves_no_confidence_timing_unset(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    _seed_apple_health_evidence(
+        store,
+        workouts=[],
+        heart_rates=[
+            ("2024-04-10T09:00:00+00:00", 72),
+            ("2024-04-10T12:00:00+00:00", 76),
+            ("2024-04-10T18:00:00+00:00", 80),
+        ],
+    )
+
+    bundle_dir = _write_backfill_review(db_path, tmp_path)
+    evidence = json.loads((bundle_dir / "apple-health-evidence.json").read_text(encoding="utf-8"))
+    request = json.loads((bundle_dir / "hevy-workout-request.json").read_text(encoding="utf-8"))
+
+    assert request["workout"]["start_time"] is None
+    assert request["workout"]["end_time"] is None
+    assert evidence["heart_rate_summaries"] == []
+    assert evidence["candidate_windows"] == []
+
+
 def _add_empty_backfill_item(
     store: Store,
     item: dict[str, str | None],
@@ -463,3 +679,57 @@ def _seed_backfill_review_workout(store: Store) -> None:  # noqa: PLR0915
                     reps=10,
                 )
             )
+
+
+def _write_backfill_review(db_path: Path, tmp_path: Path) -> Path:
+    exit_code = main(
+        [
+            "sync-review",
+            "truecoach-workout-backfill",
+            "--workout-id",
+            "455045484",
+            "--database-url",
+            f"sqlite:///{db_path}",
+            "--output-dir",
+            str(tmp_path / "reports"),
+        ]
+    )
+    assert exit_code == 0
+    return tmp_path / "reports" / "sync-review" / "truecoach-workout-backfill" / "455045484"
+
+
+def _seed_apple_health_evidence(
+    store: Store,
+    *,
+    workouts: list[tuple[str, str, str]],
+    heart_rates: list[tuple[str, float]],
+) -> None:
+    with store.unit_of_work() as uow:
+        workout_type_ids: dict[str, int] = {}
+        for name, start, end in workouts:
+            workout_type = workout_type_ids.get(name)
+            if workout_type is None:
+                row = AppleHealthWorkoutType(name=name)
+                uow.session.add(row)
+                uow.session.flush()
+                workout_type = row.id
+                workout_type_ids[name] = workout_type
+            uow.session.add(
+                AppleHealthWorkout(
+                    workout_type_id=workout_type,
+                    start_date=datetime.fromisoformat(start),
+                    end_date=datetime.fromisoformat(end),
+                )
+            )
+        if heart_rates:
+            heart_rate_type = AppleHealthDataType(name="Heart Rate", unit="count/min")
+            uow.session.add(heart_rate_type)
+            uow.session.flush()
+            for timestamp, value in heart_rates:
+                uow.session.add(
+                    AppleHealthDataRecord(
+                        data_type_id=heart_rate_type.id,
+                        timestamp=datetime.fromisoformat(timestamp),
+                        value=value,
+                    )
+                )
