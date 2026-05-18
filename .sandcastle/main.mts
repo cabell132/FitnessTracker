@@ -23,6 +23,10 @@
 
 import * as sandcastle from "@ai-hero/sandcastle";
 import { docker } from "@ai-hero/sandcastle/sandboxes/docker";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -52,6 +56,47 @@ const sandboxProvider = docker({
   mounts: [{ hostPath: "~/.codex", sandboxPath: "/home/agent/.codex" }],
 });
 
+const AGENT_IDLE_TIMEOUT_SECONDS = 7.5 * 60;
+const COMPLETION_SIGNAL = "<promise>COMPLETE</promise>";
+
+async function branchAheadCount(
+  targetBranch: string,
+  branch: string,
+): Promise<number | null> {
+  try {
+    const { stdout } = await execFileAsync("git", [
+      "rev-list",
+      "--count",
+      `${targetBranch}..${branch}`,
+    ]);
+    return Number(stdout.trim());
+  } catch {
+    return null;
+  }
+}
+
+async function targetContainsIssue(
+  targetBranch: string,
+  issueId: string,
+): Promise<boolean> {
+  const { stdout } = await execFileAsync("git", [
+    "log",
+    "--max-count=1",
+    "--format=%H",
+    `--grep=GH-${issueId}`,
+    `--grep=#${issueId}`,
+    `--grep=issue ${issueId}`,
+    targetBranch,
+  ]);
+  return stdout.trim().length > 0;
+}
+
+const { stdout: targetBranchOut } = await execFileAsync("git", [
+  "branch",
+  "--show-current",
+]);
+const targetBranch = targetBranchOut.trim();
+
 // ---------------------------------------------------------------------------
 // Main loop
 // ---------------------------------------------------------------------------
@@ -78,6 +123,8 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
     // Opus for planning: dependency analysis benefits from deeper reasoning.
     agent: sandcastle.codex("gpt-5.5"),
     promptFile: "./.sandcastle/plan-prompt.md",
+    completionSignal: "</plan>",
+    idleTimeoutSeconds: AGENT_IDLE_TIMEOUT_SECONDS,
   });
 
   // Extract the <plan>…</plan> block from the agent's stdout.
@@ -116,8 +163,41 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
   // Promise.allSettled means one failing pipeline doesn't cancel the others.
   // -------------------------------------------------------------------------
 
+  const mergeReadyIssues: typeof issues = [];
+  const implementationIssues: typeof issues = [];
+
+  for (const issue of issues) {
+    const aheadCount = await branchAheadCount(targetBranch, issue.branch);
+    if (aheadCount === null) {
+      implementationIssues.push(issue);
+    } else if (aheadCount === 0) {
+      if (await targetContainsIssue(targetBranch, issue.id)) {
+        console.log(
+          `  ${issue.id}: branch ${issue.branch} already merged — skipping`,
+        );
+      } else {
+        console.log(
+          `  ${issue.id}: branch ${issue.branch} has no unmerged commits — rerunning implementer`,
+        );
+        implementationIssues.push(issue);
+      }
+    } else {
+      console.log(
+        `  ${issue.id}: branch ${issue.branch} already has ${aheadCount} unmerged commit(s) — queueing for merge`,
+      );
+      mergeReadyIssues.push(issue);
+    }
+  }
+
+  if (implementationIssues.length === 0 && mergeReadyIssues.length === 0) {
+    console.log(
+      "All planned issues were already merged. Continuing to next iteration.",
+    );
+    continue;
+  }
+
   const settled = await Promise.allSettled(
-    issues.map(async (issue) => {
+    implementationIssues.map(async (issue) => {
       const sandbox = await sandcastle.createSandbox({
         branch: issue.branch,
         sandbox: sandboxProvider,
@@ -130,8 +210,10 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
         const implement = await sandbox.run({
           name: "implementer",
           maxIterations: 100,
+          idleTimeoutSeconds: AGENT_IDLE_TIMEOUT_SECONDS,
           agent: sandcastle.codex("gpt-5.5"),
           promptFile: "./.sandcastle/implement-prompt.md",
+          completionSignal: COMPLETION_SIGNAL,
           promptArgs: {
             TASK_ID: issue.id,
             ISSUE_TITLE: issue.title,
@@ -144,10 +226,15 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
           const review = await sandbox.run({
             name: "reviewer",
             maxIterations: 1,
+            idleTimeoutSeconds: AGENT_IDLE_TIMEOUT_SECONDS,
             agent: sandcastle.codex("gpt-5.5"),
             promptFile: "./.sandcastle/review-prompt.md",
+            completionSignal: COMPLETION_SIGNAL,
             promptArgs: {
+              TASK_ID: issue.id,
+              ISSUE_TITLE: issue.title,
               BRANCH: issue.branch,
+              TARGET_BRANCH: targetBranch,
             },
           });
 
@@ -170,21 +257,24 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
   for (const [i, outcome] of settled.entries()) {
     if (outcome.status === "rejected") {
       console.error(
-        `  ✗ ${issues[i]!.id} (${issues[i]!.branch}) failed: ${outcome.reason}`,
+        `  ✗ ${implementationIssues[i]!.id} (${implementationIssues[i]!.branch}) failed: ${outcome.reason}`,
       );
     }
   }
 
   // Only pass branches that actually produced commits to the merge phase.
   // An agent that ran successfully but made no commits has nothing to merge.
-  const completedIssues = settled
-    .map((outcome, i) => ({ outcome, issue: issues[i]! }))
-    .filter(
-      (entry) =>
-        entry.outcome.status === "fulfilled" &&
-        entry.outcome.value.commits.length > 0,
-    )
-    .map((entry) => entry.issue);
+  const completedIssues = [
+    ...mergeReadyIssues,
+    ...settled
+      .map((outcome, i) => ({ outcome, issue: implementationIssues[i]! }))
+      .filter(
+        (entry) =>
+          entry.outcome.status === "fulfilled" &&
+          entry.outcome.value.commits.length > 0,
+      )
+      .map((entry) => entry.issue),
+  ];
 
   const completedBranches = completedIssues.map((i) => i.branch);
 
@@ -215,8 +305,10 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
     sandbox: sandboxProvider,
     name: "merger",
     maxIterations: 1,
+    idleTimeoutSeconds: AGENT_IDLE_TIMEOUT_SECONDS,
     agent: sandcastle.codex("gpt-5.5"),
     promptFile: "./.sandcastle/merge-prompt.md",
+    completionSignal: COMPLETION_SIGNAL,
     promptArgs: {
       // A markdown list of branch names, one per line.
       BRANCHES: completedBranches.map((b) => `- ${b}`).join("\n"),
