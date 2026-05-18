@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any, cast
+from typing import Any, Protocol, cast
 
 from dateutil.parser import parse
 
@@ -24,6 +24,21 @@ from fitness_tracker.database.models.hevy_app import (
 )
 from fitness_tracker.database.uow.base import CrudMixin
 from fitness_tracker.database.uow.errors import HevyAppPersistenceError
+
+
+class HevyExerciseTemplateSource(Protocol):
+    """Source capable of loading a Hevy exercise template by id."""
+
+    def get_template(self, template_id: str) -> ExerciseTemplate | None:
+        """Return an exercise template for ``template_id`` when available.
+
+        Args:
+            template_id (str): Hevy exercise template id.
+
+        Returns:
+            ExerciseTemplate | None: Template when available.
+        """
+        ...
 
 
 class HevyMixin(CrudMixin):
@@ -142,17 +157,24 @@ class HevyMixin(CrudMixin):
         self,
         workout_id: str,
         exercise: HevyExercisePayload,
+        *,
+        exercise_template_source: HevyExerciseTemplateSource | None = None,
     ) -> None:
         """Insert or merge a workout item and its sets.
 
         Args:
             workout_id (str): Hevy workout id.
             exercise (HevyExercisePayload): Exercise block from the API.
+            exercise_template_source (HevyExerciseTemplateSource | None): Optional
+                source for loading missing exercise templates.
 
         Raises:
             HevyAppPersistenceError: If the item row is missing after merge.
         """
-        self._hevy_ensure_exercise_template(exercise)
+        self._hevy_ensure_exercise_template(
+            exercise,
+            exercise_template_source=exercise_template_source,
+        )
 
         entry = HevyAppWorkoutItem(
             workout_id=workout_id,
@@ -187,11 +209,18 @@ class HevyMixin(CrudMixin):
         for ws in exercise.sets:
             self.hevy_add_set(workout_item_id=wid, workout_set=ws)
 
-    def hevy_add_workout(self, workout: HevyWorkout) -> None:
+    def hevy_add_workout(
+        self,
+        workout: HevyWorkout,
+        *,
+        exercise_template_source: HevyExerciseTemplateSource | None = None,
+    ) -> None:
         """Insert or merge a workout and nested items.
 
         Args:
             workout (HevyWorkout): Workout payload from the API.
+            exercise_template_source (HevyExerciseTemplateSource | None): Optional
+                source for loading missing exercise templates.
         """
         instance = HevyAppWorkout(
             id=workout.id,
@@ -205,16 +234,30 @@ class HevyMixin(CrudMixin):
         self.merge(instance)
 
         for exercise in workout.exercises:
-            self.hevy_add_workout_item(workout_id=workout.id, exercise=exercise)
+            self.hevy_add_workout_item(
+                workout_id=workout.id,
+                exercise=exercise,
+                exercise_template_source=exercise_template_source,
+            )
 
-    def hevy_add_workouts(self, workouts: HevyWorkoutResponse) -> None:
+    def hevy_add_workouts(
+        self,
+        workouts: HevyWorkoutResponse,
+        *,
+        exercise_template_source: HevyExerciseTemplateSource | None = None,
+    ) -> None:
         """Persist all workouts from a list response.
 
         Args:
             workouts (HevyWorkoutResponse): API payload containing workouts.
+            exercise_template_source (HevyExerciseTemplateSource | None): Optional
+                source for loading missing exercise templates.
         """
         for workout in workouts.workouts:
-            self.hevy_add_workout(workout=workout)
+            self.hevy_add_workout(
+                workout=workout,
+                exercise_template_source=exercise_template_source,
+            )
 
     def hevy_get_workout(self, **kwargs: Any) -> HevyAppWorkout | None:
         """Load one Hevy workout row by filter.
@@ -246,26 +289,28 @@ class HevyMixin(CrudMixin):
     def _hevy_ensure_exercise_template(
         self,
         exercise: HevyExercisePayload,
+        *,
+        exercise_template_source: HevyExerciseTemplateSource | None = None,
     ) -> None:
         """Load an exercise template from the API when missing locally.
 
         Args:
             exercise (HevyExercisePayload): Workout block referring to a template.
+            exercise_template_source (HevyExerciseTemplateSource | None): Optional
+                source for loading missing exercise templates.
 
         Raises:
             HevyAppPersistenceError: If the template cannot be fetched.
         """
-        from fitness_tracker.apis.hevy_app import HevyAppClient  # noqa: PLC0415
-        from fitness_tracker.config import Config  # noqa: PLC0415
-
         if self.get(HevyAppExercise, id=exercise.exercise_template_id):
             return
-        cfg = Config.from_env()
-        api = HevyAppClient(
-            api_key=cfg.hevy_api_key.get_secret_value(),
-            web_api_key=cfg.hevy_web_api_key.get_secret_value(),
-        )
-        template = api.exercises.get_template(exercise.exercise_template_id)
+        if exercise_template_source is None:
+            msg = (
+                f"Exercise with id {exercise.exercise_template_id} is missing locally "
+                "and no Hevy template source was provided"
+            )
+            raise HevyAppPersistenceError(msg)
+        template = exercise_template_source.get_template(exercise.exercise_template_id)
         if template:
             self.hevy_add_exercise(exercise=template)
             return

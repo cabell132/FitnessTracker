@@ -2,7 +2,10 @@
 
 from datetime import datetime
 
-from fitness_tracker.apis.hevy_app.types import Exercise as HevyExercisePayload
+import pytest
+
+from fitness_tracker.apis.hevy_app.types import Exercise, ExerciseTemplate, Workout as HevyWorkoutPayload
+from fitness_tracker.config import Config
 from fitness_tracker.database.models.hevy_app import HevyAppExercise, HevyAppWorkout, HevyAppWorkoutItem
 from fitness_tracker.database.store import Store
 
@@ -81,7 +84,7 @@ def test_hevy_add_workout_item_normalizes_false_superset_id(store: Store) -> Non
         )
         uow.hevy_add_workout_item(
             workout_id="workout-1",
-            exercise=HevyExercisePayload(
+            exercise=Exercise(
                 index=8,
                 title="Incline Treadmill Walk",
                 notes="",
@@ -98,8 +101,6 @@ def test_hevy_add_workout_item_normalizes_false_superset_id(store: Store) -> Non
 
 def test_hevy_add_workout_normalizes_optional_text_fields(store: Store) -> None:
     """Verify nullable API text fields fit non-null local columns."""
-    from fitness_tracker.apis.hevy_app.types import Workout as HevyWorkoutPayload
-
     with store.unit_of_work() as uow:
         uow.add(
             HevyAppExercise(
@@ -120,7 +121,7 @@ def test_hevy_add_workout_normalizes_optional_text_fields(store: Store) -> None:
                 created_at="2026-05-18T06:00:00Z",
                 updated_at="2026-05-18T07:00:00Z",
                 exercises=[
-                    HevyExercisePayload(
+                    Exercise(
                         index=0,
                         title="Bench Press",
                         notes=None,
@@ -137,3 +138,61 @@ def test_hevy_add_workout_normalizes_optional_text_fields(store: Store) -> None:
     assert workout.description == ""
     assert item is not None
     assert item.notes == ""
+
+
+def test_hevy_add_workout_item_fetches_missing_template_from_injected_source(
+    store: Store,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Missing Hevy templates are fetched from the caller-provided API source."""
+    monkeypatch.setattr(
+        Config,
+        "from_env",
+        pytest.fail,
+    )
+
+    exercise = Exercise(
+        index=0,
+        title="Goblet Squat",
+        notes="",
+        exercise_template_id="template-1",
+        sets=[],
+    )
+    template = ExerciseTemplate(
+        id="template-1",
+        title="Goblet Squat",
+        type="weight_reps",
+        primary_muscle_group="quadriceps",
+        secondary_muscle_groups=["glutes"],
+        equipment="dumbbell",
+        is_custom=False,
+    )
+    requested: list[str] = []
+
+    class FakeExercises:
+        def get_template(self, template_id: str) -> ExerciseTemplate | None:
+            requested.append(template_id)
+            return template
+
+    with store.unit_of_work() as uow:
+        uow.merge(
+            HevyAppWorkout(
+                id="w1",
+                title="Leg Day",
+                description="",
+                start_time=datetime(2025, 1, 1, 10, 0, 0),  # noqa: DTZ001
+                end_time=datetime(2025, 1, 1, 11, 0, 0),  # noqa: DTZ001
+                created_at=datetime(2025, 1, 1, 10, 0, 0),  # noqa: DTZ001
+                updated_at=datetime(2025, 1, 1, 10, 0, 0),  # noqa: DTZ001
+            )
+        )
+        uow.hevy_add_workout_item(
+            workout_id="w1",
+            exercise=exercise,
+            exercise_template_source=FakeExercises(),
+        )
+
+    assert requested == ["template-1"]
+    persisted = store.query_one(HevyAppExercise, id="template-1")
+    assert persisted is not None
+    assert persisted.name == "Goblet Squat"

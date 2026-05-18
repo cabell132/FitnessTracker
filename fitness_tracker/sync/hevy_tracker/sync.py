@@ -58,7 +58,10 @@ class HevyToFitnessTrackerSyncronizer:
             sync_target="tracker",
             workout_id=workout.workout.id,
         ) as event:
-            uow.hevy_add_workout(workout.workout)
+            uow.hevy_add_workout(
+                workout.workout,
+                exercise_template_source=self._source.exercises,
+            )
             true_coach_id = self.link_workout(uow, workout.workout.id, workout.workout)
             event.set(true_coach_id=true_coach_id)
             uow.flush()
