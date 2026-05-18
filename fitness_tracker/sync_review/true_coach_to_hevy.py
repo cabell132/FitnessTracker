@@ -178,6 +178,15 @@ class HistoricalLoad:
     weight_kg: float
 
 
+@dataclass(frozen=True)
+class RequestExerciseOverrides:
+    """Optional request-only values for a generated Hevy exercise block."""
+
+    superset_id: int | None = None
+    sets: list[dict[str, Any]] | None = None
+    rest_seconds: int | None = None
+
+
 DEFAULT_TEMPLATE_OVERRIDE_RULES_PATH = Path(__file__).with_name("template_override_rules.json")
 MIXED_PHASE_SPLIT_PATTERN = re.compile(r"\s+(?:then|followed by)\s+|[;,]\s*", re.IGNORECASE)
 SET_PRESCRIPTION_MARKER_PATTERN = re.compile(r"\b\d+\s*[xX]\s*")
@@ -588,9 +597,7 @@ def _build_hevy_routine_request(plan: dict[str, Any]) -> PostRoutinesRequestBody
     return PostRoutinesRequestBody.build(
         title=_routine_title(workout),
         notes="",
-        exercises=[
-            exercise for item in plan["items"] for exercise in _request_exercises_for_item(item)
-        ],
+        exercises=_request_exercises_for_plan(plan),
     )
 
 
@@ -650,16 +657,47 @@ def _routine_title(workout: dict[str, Any]) -> str:
     return f"{due_text}\n{workout.get('title') or ''}\n{workout['id']}"
 
 
-def _request_exercises_for_item(item: dict[str, Any]) -> list[PostRoutinesRequestExercise]:
+def _request_exercises_for_plan(plan: dict[str, Any]) -> list[PostRoutinesRequestExercise]:
+    superset_allocator = _SupersetAllocator(plan["items"])
+    return [
+        exercise
+        for item in plan["items"]
+        for exercise in _request_exercises_for_item(item, superset_allocator)
+    ]
+
+
+class _SupersetAllocator:
+    def __init__(self, items: list[dict[str, Any]]) -> None:
+        superset_ids = [
+            superset_id
+            for item in items
+            for superset_id in [item.get("superset_id")]
+            if superset_id is not None
+        ]
+        self._next_id = max(superset_ids, default=-1) + 1
+
+    def superset_id_for_item(self, item: dict[str, Any]) -> int:
+        if item.get("superset_id") is not None:
+            return int(item["superset_id"])
+        superset_id = self._next_id
+        self._next_id += 1
+        return superset_id
+
+
+def _request_exercises_for_item(
+    item: dict[str, Any],
+    superset_allocator: _SupersetAllocator,
+) -> list[PostRoutinesRequestExercise]:
     blocks = item.get("planned_blocks", [])
     if blocks:
-        return [_request_exercise_from_block(block) for block in blocks]
+        return _request_exercises_from_blocks(item, blocks, superset_allocator)
     return [
         _request_exercise(
             template_id=item["selected_hevy_template"]["id"],
             superset_id=item.get("superset_id"),
             notes=_item_notes(item),
             sets=item["proposed_sets"],
+            template=item["selected_hevy_template"],
         )
     ]
 
@@ -670,12 +708,132 @@ def _item_notes(item: dict[str, Any]) -> str:
     )
 
 
-def _request_exercise_from_block(block: dict[str, Any]) -> PostRoutinesRequestExercise:
+def _request_exercises_from_blocks(
+    item: dict[str, Any],
+    blocks: list[dict[str, Any]],
+    superset_allocator: _SupersetAllocator,
+) -> list[PostRoutinesRequestExercise]:
+    if _is_circuit_request_item(item, blocks):
+        superset_id = superset_allocator.superset_id_for_item(item)
+        final_block_index = len(blocks) - 1
+        return [
+            _request_exercise_from_block(
+                block,
+                overrides=RequestExerciseOverrides(
+                    superset_id=superset_id,
+                    sets=_circuit_request_sets(item, block),
+                    rest_seconds=_circuit_rest_seconds(
+                        item,
+                        block,
+                        is_final_block=index == final_block_index,
+                    ),
+                ),
+            )
+            for index, block in enumerate(blocks)
+        ]
+    return [_request_exercise_from_block(block) for block in blocks]
+
+
+def _is_circuit_request_item(item: dict[str, Any], blocks: list[dict[str, Any]]) -> bool:
+    if item.get("parsed_circuit_block") is None:
+        return False
+    return all(
+        block.get("block_kind") in {"circuit_movement", "amrap_movement"} for block in blocks
+    )
+
+
+def _circuit_request_sets(
+    item: dict[str, Any],
+    block: dict[str, Any],
+) -> list[dict[str, Any]]:
+    set_count = _circuit_request_set_count(item)
+    return [set_row for _ in range(set_count) for set_row in block["proposed_sets"]]
+
+
+def _circuit_request_set_count(item: dict[str, Any]) -> int:
+    parsed_block = item["parsed_circuit_block"]
+    if parsed_block.get("round_count") is not None:
+        return int(parsed_block["round_count"])
+    time_cap_seconds = parsed_block.get("amrap_time_cap_seconds")
+    if time_cap_seconds is not None:
+        return max(1, int(time_cap_seconds) // 120)
+    return 1
+
+
+def _circuit_rest_seconds(
+    item: dict[str, Any],
+    block: dict[str, Any],
+    *,
+    is_final_block: bool,
+) -> int:
+    round_rest_seconds = _round_rest_seconds(item)
+    if is_final_block and round_rest_seconds > 0:
+        return round_rest_seconds
+    movement_rest_seconds = _movement_rest_seconds(item)
+    if not is_final_block and movement_rest_seconds > 0:
+        return movement_rest_seconds
+    return _rest_seconds_from_sets(
+        _circuit_request_sets(item, block),
+        template=block["selected_hevy_template"],
+    )
+
+
+def _round_rest_seconds(item: dict[str, Any]) -> int:
+    rests = item["parsed_circuit_block"].get("rests", [])
+    if not rests:
+        return 0
+    rest = rests[-1]
+    durations = rest.get("durations_seconds", [])
+    if not durations:
+        return 0
+    if _is_round_rest_text(rest.get("source_text", "")):
+        return int(durations[-1])
+    if len(durations) > 1:
+        return int(durations[-1])
+    return int(durations[0])
+
+
+def _movement_rest_seconds(item: dict[str, Any]) -> int:
+    rests = item["parsed_circuit_block"].get("rests", [])
+    if not rests:
+        return 0
+    rest = rests[-1]
+    durations = rest.get("durations_seconds", [])
+    if not durations or not _is_movement_rest_text(rest.get("source_text", "")):
+        return 0
+    return int(durations[0])
+
+
+def _is_round_rest_text(text: str) -> bool:
+    return re.search(r"\b(?:round|rounds)\b", text, re.IGNORECASE) is not None
+
+
+def _is_movement_rest_text(text: str) -> bool:
+    return (
+        re.search(
+            r"\b(?:exercise|exercises|movement|movements)\b",
+            text,
+            re.IGNORECASE,
+        )
+        is not None
+    )
+
+
+def _request_exercise_from_block(
+    block: dict[str, Any],
+    *,
+    overrides: RequestExerciseOverrides | None = None,
+) -> PostRoutinesRequestExercise:
+    overrides = overrides or RequestExerciseOverrides()
     return _request_exercise(
         template_id=block["selected_hevy_template"]["id"],
-        superset_id=block.get("superset_id"),
+        superset_id=(
+            block.get("superset_id") if overrides.superset_id is None else overrides.superset_id
+        ),
         notes=block["notes"],
-        sets=block["proposed_sets"],
+        sets=block["proposed_sets"] if overrides.sets is None else overrides.sets,
+        rest_seconds=overrides.rest_seconds,
+        template=block["selected_hevy_template"],
     )
 
 
@@ -685,12 +843,18 @@ def _request_exercise(  # noqa: PLR0913
     superset_id: int | None,
     notes: str,
     sets: list[dict[str, Any]],
+    rest_seconds: int | None = None,
+    template: dict[str, Any] | None = None,
 ) -> PostRoutinesRequestExercise:
     return PostRoutinesRequestExercise(
         exercise_template_id=template_id,
         superset_id=superset_id,
         notes=notes,
-        rest_seconds=_rest_seconds_from_sets(sets),
+        rest_seconds=(
+            _rest_seconds_from_sets(sets, template=template)
+            if rest_seconds is None
+            else rest_seconds
+        ),
         sets=[
             PostRoutinesRequestSet(
                 **{key: value for key, value in set_row.items() if not key.startswith("_")}
@@ -700,12 +864,27 @@ def _request_exercise(  # noqa: PLR0913
     )
 
 
-def _rest_seconds_from_sets(sets: list[dict[str, Any]]) -> int:
+def _rest_seconds_from_sets(
+    sets: list[dict[str, Any]],
+    *,
+    template: dict[str, Any] | None = None,
+) -> int:
+    if _is_cardio_machine_template(template):
+        return 0
     for set_row in sets:
         duration_seconds = set_row.get("duration_seconds")
         if duration_seconds is not None:
             return int(duration_seconds)
     return 0
+
+
+def _is_cardio_machine_template(template: dict[str, Any] | None) -> bool:
+    if template is None:
+        return False
+    return template.get("equipment") == "machine" and template.get("type") in {
+        "duration",
+        "distance_duration",
+    }
 
 
 def _superset_ids_by_position(workout: TrueCoachWorkout) -> dict[int, int]:

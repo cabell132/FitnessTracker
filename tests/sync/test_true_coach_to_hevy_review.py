@@ -497,6 +497,161 @@ def test_sync_apply_keeps_single_movement_circuit_as_one_routine_exercise(
     ]
 
 
+def test_sync_apply_builds_hevy_request_for_resolved_round_circuit(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_round_circuit_request_workout(store)
+    service = TrueCoachToHevyReviewService(store=store, output_root=tmp_path / "reports")
+
+    result = service.write_apply_request(57)
+
+    exercises = result.request_body.model_dump()["routine"]["exercises"]
+    assert [exercise["exercise_template_id"] for exercise in exercises] == [
+        "hevy-burpees",
+        "hevy-plank",
+    ]
+    assert [exercise["superset_id"] for exercise in exercises] == [0, 0]
+    assert [exercise["rest_seconds"] for exercise in exercises] == [15, 60]
+    assert exercises[0]["sets"] == [
+        {
+            "weight_kg": None,
+            "reps": 10,
+            "distance_meters": None,
+            "duration_seconds": None,
+            "type": "normal",
+        },
+        {
+            "weight_kg": None,
+            "reps": 10,
+            "distance_meters": None,
+            "duration_seconds": None,
+            "type": "normal",
+        },
+        {
+            "weight_kg": None,
+            "reps": 10,
+            "distance_meters": None,
+            "duration_seconds": None,
+            "type": "normal",
+        },
+    ]
+    assert exercises[1]["sets"] == [
+        {
+            "weight_kg": None,
+            "reps": None,
+            "distance_meters": None,
+            "duration_seconds": 30,
+            "type": "normal",
+        },
+        {
+            "weight_kg": None,
+            "reps": None,
+            "distance_meters": None,
+            "duration_seconds": 30,
+            "type": "normal",
+        },
+        {
+            "weight_kg": None,
+            "reps": None,
+            "distance_meters": None,
+            "duration_seconds": 30,
+            "type": "normal",
+        },
+    ]
+
+
+def test_sync_apply_builds_hevy_request_for_resolved_amrap(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_circuit_block_workout(store)
+    _seed_circuit_movement_templates(store)
+    service = TrueCoachToHevyReviewService(store=store, output_root=tmp_path / "reports")
+
+    result = service.write_apply_request(51)
+
+    exercises = result.request_body.model_dump()["routine"]["exercises"]
+    assert [exercise["exercise_template_id"] for exercise in exercises] == [
+        "hevy-bike",
+        "hevy-burpees",
+    ]
+    assert [exercise["superset_id"] for exercise in exercises] == [0, 0]
+    assert [len(exercise["sets"]) for exercise in exercises] == [5, 5]
+    assert exercises[0]["sets"] == [
+        {
+            "weight_kg": None,
+            "reps": None,
+            "distance_meters": 500,
+            "duration_seconds": None,
+            "type": "normal",
+        },
+        {
+            "weight_kg": None,
+            "reps": None,
+            "distance_meters": 500,
+            "duration_seconds": None,
+            "type": "normal",
+        },
+        {
+            "weight_kg": None,
+            "reps": None,
+            "distance_meters": 500,
+            "duration_seconds": None,
+            "type": "normal",
+        },
+        {
+            "weight_kg": None,
+            "reps": None,
+            "distance_meters": 500,
+            "duration_seconds": None,
+            "type": "normal",
+        },
+        {
+            "weight_kg": None,
+            "reps": None,
+            "distance_meters": 500,
+            "duration_seconds": None,
+            "type": "normal",
+        },
+    ]
+    assert exercises[1]["sets"][0] == {
+        "weight_kg": None,
+        "reps": 10,
+        "distance_meters": None,
+        "duration_seconds": None,
+        "type": "normal",
+    }
+    assert [exercise["rest_seconds"] for exercise in exercises] == [0, 60]
+
+
+def test_sync_apply_assigns_circuit_superset_ids_around_existing_groups(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_superset_and_standalone_circuit_workout(store)
+    service = TrueCoachToHevyReviewService(store=store, output_root=tmp_path / "reports")
+
+    result = service.write_apply_request(58)
+
+    exercises = result.request_body.model_dump()["routine"]["exercises"]
+    assert [exercise["exercise_template_id"] for exercise in exercises] == [
+        "hevy-push-up",
+        "hevy-burpees",
+        "hevy-plank",
+        "hevy-bike",
+        "hevy-burpees",
+    ]
+    assert [exercise["superset_id"] for exercise in exercises] == [0, 0, 0, 1, 1]
+    assert [exercise["rest_seconds"] for exercise in exercises] == [0, 0, 30, 0, 0]
+
+
 def test_sync_review_blocks_circuit_ladder_planned_blocks_for_agent_decision(
     tmp_path: Path,
 ) -> None:
@@ -723,6 +878,30 @@ def test_sync_apply_uses_first_duration_set_as_rest_timer(tmp_path: Path) -> Non
             "duration_seconds": 45,
             "type": "normal",
         },
+    ]
+
+
+def test_sync_apply_does_not_use_cardio_machine_duration_as_rest_timer(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_cardio_duration_plan_workout(store)
+    service = TrueCoachToHevyReviewService(store=store, output_root=tmp_path / "reports")
+
+    result = service.write_apply_request(59)
+
+    exercise = result.request_body.model_dump()["routine"]["exercises"][0]
+    assert exercise["rest_seconds"] == 0
+    assert exercise["sets"] == [
+        {
+            "weight_kg": None,
+            "reps": None,
+            "distance_meters": None,
+            "duration_seconds": 30,
+            "type": "normal",
+        }
     ]
 
 
@@ -1332,6 +1511,143 @@ def _seed_single_movement_circuit_workout(store: Store) -> None:
         )
 
 
+def _seed_round_circuit_request_workout(store: Store) -> None:
+    now = datetime(2026, 5, 17, tzinfo=UTC)
+    with store.unit_of_work() as uow:
+        uow.session.add(
+            TrueCoachWorkout(
+                id=57,
+                title="Round Circuit Request",
+                due=now,
+                short_description='<p class="name-and-info">A) 3 Round Circuit</p>',
+                state="pending",
+                rest_day=False,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        uow.session.add(TrueCoachExercise(id=524, name="3 Round Circuit", default=False))
+        uow.session.add(TrueCoachExercise(id=525, name="Burpees", default=False))
+        uow.session.add(TrueCoachExercise(id=526, name="Plank", default=False))
+        uow.session.add(
+            HevyAppExercise(
+                id="hevy-circuit",
+                name="Circuit",
+                type="reps_only",
+                equipment="bodyweight",
+                default=True,
+            )
+        )
+        uow.session.add(
+            HevyAppExercise(
+                id="hevy-burpees",
+                name="Burpees",
+                type="reps_only",
+                equipment="bodyweight",
+                default=True,
+            )
+        )
+        uow.session.add(
+            HevyAppExercise(
+                id="hevy-plank",
+                name="Plank",
+                type="duration",
+                equipment="bodyweight",
+                default=True,
+            )
+        )
+        uow.session.add(
+            TrackerExercise(
+                name="3 Round Circuit",
+                hevy_app_id="hevy-circuit",
+                true_coach_id=524,
+            )
+        )
+        uow.session.add(
+            TrackerExercise(name="Burpees", hevy_app_id="hevy-burpees", true_coach_id=525)
+        )
+        uow.session.add(TrackerExercise(name="Plank", hevy_app_id="hevy-plank", true_coach_id=526))
+        uow.session.add(
+            TrueCoachWorkoutItem(
+                id=1016,
+                workout_id=57,
+                name="3 Round Circuit",
+                info="10 Burpees\nPlank 30s\nRest 15s between each exercise and 60s between each round",
+                comment="",
+                is_circuit=True,
+                state="pending",
+                position=1,
+                exercise_id=524,
+                assessment_id=None,
+            )
+        )
+
+
+def _seed_superset_and_standalone_circuit_workout(store: Store) -> None:
+    now = datetime(2026, 5, 17, tzinfo=UTC)
+    with store.unit_of_work() as uow:
+        uow.session.add(
+            TrueCoachWorkout(
+                id=58,
+                title="Superset Circuit Request",
+                due=now,
+                short_description=(
+                    '<p class="name-and-info">'
+                    "A1) Push Up<br/>"
+                    "A2) 2 Round Circuit<br/>"
+                    "B) 2 Round Finisher"
+                    "</p>"
+                ),
+                state="pending",
+                rest_day=False,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        exercise_rows = [
+            (527, "Push Up", "hevy-push-up", "reps_only", "bodyweight"),
+            (528, "2 Round Circuit", "hevy-circuit", "reps_only", "bodyweight"),
+            (529, "Burpees", "hevy-burpees", "reps_only", "bodyweight"),
+            (530, "Plank", "hevy-plank", "duration", "bodyweight"),
+            (531, "2 Round Finisher", "hevy-finisher", "reps_only", "bodyweight"),
+            (532, "Bike", "hevy-bike", "short_distance", "machine"),
+        ]
+        for exercise_id, name, hevy_id, exercise_type, equipment in exercise_rows:
+            uow.session.add(TrueCoachExercise(id=exercise_id, name=name, default=False))
+            uow.session.add(
+                HevyAppExercise(
+                    id=hevy_id,
+                    name=name,
+                    type=exercise_type,
+                    equipment=equipment,
+                    default=True,
+                )
+            )
+            uow.session.add(
+                TrackerExercise(name=name, hevy_app_id=hevy_id, true_coach_id=exercise_id)
+            )
+        items = [
+            (1017, "Push Up", "1 x 5", False, 1, 527),
+            (1018, "2 Round Circuit", "10 Burpees\nPlank 30s", True, 2, 528),
+            (1019, "2 Round Finisher", "Bike 500m\n10 Burpees", True, 3, 531),
+        ]
+        for item_id, name, info, is_circuit, position, exercise_id in items:
+            uow.session.add(
+                TrueCoachWorkoutItem(
+                    id=item_id,
+                    workout_id=58,
+                    name=name,
+                    info=info,
+                    comment="",
+                    is_circuit=is_circuit,
+                    state="pending",
+                    position=position,
+                    exercise_id=exercise_id,
+                    assessment_id=None,
+                )
+            )
+
+
 def _seed_bench_history(store: Store) -> None:
     _seed_bench_normal_history(store, reps=12, weight_kg=80.0)
 
@@ -1894,6 +2210,48 @@ def _seed_clean_duration_plan_workout(store: Store) -> None:
                 state="pending",
                 position=1,
                 exercise_id=510,
+                assessment_id=None,
+            )
+        )
+
+
+def _seed_cardio_duration_plan_workout(store: Store) -> None:
+    now = datetime(2026, 5, 17, tzinfo=UTC)
+    with store.unit_of_work() as uow:
+        uow.session.add(
+            TrueCoachWorkout(
+                id=59,
+                title="Cardio Duration Plan",
+                due=now,
+                short_description="",
+                state="pending",
+                rest_day=False,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        uow.session.add(TrueCoachExercise(id=533, name="Bike", default=False))
+        uow.session.add(
+            HevyAppExercise(
+                id="hevy-bike",
+                name="Bike",
+                type="duration",
+                equipment="machine",
+                default=True,
+            )
+        )
+        uow.session.add(TrackerExercise(name="Bike", hevy_app_id="hevy-bike", true_coach_id=533))
+        uow.session.add(
+            TrueCoachWorkoutItem(
+                id=1020,
+                workout_id=59,
+                name="Bike",
+                info="1 x 30s",
+                comment="",
+                is_circuit=False,
+                state="pending",
+                position=1,
+                exercise_id=533,
                 assessment_id=None,
             )
         )
