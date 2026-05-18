@@ -216,6 +216,146 @@ def test_workout_backfill_review_reports_missing_hevy_template_mapping(
     )
 
 
+def test_workout_backfill_review_omits_placeholder_rest_without_blocking(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    _add_empty_backfill_item(store, {"name": "Rest", "info": "Rest"})
+
+    exit_code = main(
+        [
+            "sync-review",
+            "truecoach-workout-backfill",
+            "--workout-id",
+            "455045484",
+            "--database-url",
+            f"sqlite:///{db_path}",
+            "--output-dir",
+            str(tmp_path / "reports"),
+        ]
+    )
+
+    assert exit_code == 0
+    bundle_dir = tmp_path / "reports" / "sync-review" / "truecoach-workout-backfill" / "455045484"
+    plan = json.loads((bundle_dir / "plan.json").read_text(encoding="utf-8"))
+    request = json.loads((bundle_dir / "hevy-workout-request.json").read_text(encoding="utf-8"))
+    report = (bundle_dir / "report.md").read_text(encoding="utf-8")
+
+    assert plan["blockers"] == []
+    assert plan["items"][2]["name"] == "Rest"
+    assert plan["items"][2]["warnings"] == [
+        "Placeholder rest item has no structured Sets rows; omitted from draft request."
+    ]
+    assert [exercise["exercise_template_id"] for exercise in request["workout"]["exercises"]] == [
+        "hevy-bench",
+        "hevy-row",
+    ]
+    assert "## 3. Rest" in report
+    assert (
+        "WARNING: Placeholder rest item has no structured Sets rows; omitted from draft request."
+        in report
+    )
+
+
+def test_workout_backfill_review_defaults_down_regulate_to_duration_set(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    with store.unit_of_work() as uow:
+        down_template = HevyAppExercise(
+            id="hevy-down-regulate",
+            name="Breathing",
+            type="duration",
+            equipment="none",
+            default=False,
+        )
+        uow.session.add(down_template)
+    _add_empty_backfill_item(
+        store,
+        {"name": "Down Regulate", "info": "Down regulate", "hevy_app_id": "hevy-down-regulate"},
+    )
+
+    exit_code = main(
+        [
+            "sync-review",
+            "truecoach-workout-backfill",
+            "--workout-id",
+            "455045484",
+            "--database-url",
+            f"sqlite:///{db_path}",
+            "--output-dir",
+            str(tmp_path / "reports"),
+        ]
+    )
+
+    assert exit_code == 0
+    bundle_dir = tmp_path / "reports" / "sync-review" / "truecoach-workout-backfill" / "455045484"
+    plan = json.loads((bundle_dir / "plan.json").read_text(encoding="utf-8"))
+    request = json.loads((bundle_dir / "hevy-workout-request.json").read_text(encoding="utf-8"))
+    report = (bundle_dir / "report.md").read_text(encoding="utf-8")
+
+    assert plan["blockers"] == []
+    assert plan["warnings"] == []
+    assert plan["items"][2]["sets"] == [{"type": "normal", "duration_seconds": 240}]
+    assert request["workout"]["exercises"][2] == {
+        "exercise_template_id": "hevy-down-regulate",
+        "superset_id": None,
+        "notes": None,
+        "sets": [
+            {
+                "type": "normal",
+                "weight_kg": None,
+                "reps": None,
+                "distance_meters": None,
+                "duration_seconds": 240,
+                "rpe": None,
+            }
+        ],
+    }
+    assert "## 3. Down Regulate" in report
+    assert "duration_seconds: 240" in report
+
+
+def _add_empty_backfill_item(
+    store: Store,
+    item: dict[str, str | None],
+) -> None:
+    with store.unit_of_work() as uow:
+        workout = uow.true_coach.get_workout(id=455045484).tracker
+        assert workout is not None
+        exercise = Exercise(name=item["name"], hevy_app_id=item.get("hevy_app_id"))
+        uow.session.add(exercise)
+        uow.session.add(
+            TrueCoachWorkoutItem(
+                id=8103,
+                workout_id=455045484,
+                name=item["name"],
+                info=item["info"],
+                comment="",
+                is_circuit=False,
+                state="completed",
+                position=3,
+                exercise_id=None,
+                assessment_id=None,
+            )
+        )
+        uow.session.flush()
+        uow.session.add(
+            TrackerWorkoutItem(
+                workout_id=workout.id,
+                position=3,
+                exercise_id=exercise.id,
+                true_coach_id=8103,
+            )
+        )
+
+
 def _seed_backfill_review_workout(store: Store) -> None:  # noqa: PLR0915
     with store.unit_of_work() as uow:
         bench_template = HevyAppExercise(

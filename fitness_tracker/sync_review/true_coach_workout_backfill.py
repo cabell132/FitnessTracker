@@ -148,17 +148,30 @@ def _review_item(item: Any) -> BackfillReviewItem:
     ]
     info = true_coach_item.info or "" if true_coach_item is not None else ""
     comment = true_coach_item.comment or "" if true_coach_item is not None else ""
+    name = true_coach_item.name if true_coach_item is not None else item.exercise.name
+    if not sets and _is_down_regulate_item(name):
+        sets = [PostWorkoutsRequestSet(type="normal", duration_seconds=240)]
     blockers: list[str] = []
     warnings: list[str] = []
-    if template is None:
+    is_placeholder_rest = not sets and _is_placeholder_rest_item(
+        name=name,
+        info=info,
+        comment=comment,
+    )
+    if template is None and not is_placeholder_rest:
         blockers.append(f"Missing Hevy template mapping for performed item: {item.exercise.name}")
     if not sets:
-        warnings.append("No structured tracker Sets rows found; omitted from draft request.")
+        if is_placeholder_rest:
+            warnings.append(
+                "Placeholder rest item has no structured Sets rows; omitted from draft request."
+            )
+        else:
+            warnings.append("No structured tracker Sets rows found; omitted from draft request.")
     return BackfillReviewItem(
         source_id=true_coach_item.id if true_coach_item is not None else None,
         tracker_workout_item_id=item.id,
         position=item.position,
-        name=true_coach_item.name if true_coach_item is not None else item.exercise.name,
+        name=name,
         info=info,
         comment=comment,
         selected_hevy_template=template if isinstance(template, HevyAppExercise) else None,
@@ -171,6 +184,18 @@ def _review_item(item: Any) -> BackfillReviewItem:
         warnings=warnings,
         blockers=blockers,
     )
+
+
+def _is_down_regulate_item(name: str) -> bool:
+    return name.casefold().strip() == "down regulate"
+
+
+def _is_placeholder_rest_item(*, name: str, info: str, comment: str) -> bool:
+    if comment.strip():
+        return False
+    normalized_name = name.casefold().strip()
+    normalized_info = info.casefold().strip()
+    return normalized_name == "rest" or normalized_info in {"rest", "placeholder"}
 
 
 def _set_to_request_set(set_row: Sets) -> PostWorkoutsRequestSet:
