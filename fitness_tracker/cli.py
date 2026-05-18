@@ -41,10 +41,12 @@ from fitness_tracker.sync_review import (
     SyncReviewError,
     TrueCoachToHevyReviewService,
     TrueCoachWorkoutBackfillDiscoveryService,
+    TrueCoachWorkoutBackfillReviewService,
+    WorkoutBackfillReviewError,
 )
 
 
-def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911
+def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0911
     """Run the CLI.
 
     Args:
@@ -74,6 +76,8 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911
         and args.sync_review_command == "truecoach-workout-backfill-candidates"
     ):
         return _sync_review_truecoach_workout_backfill_candidates(args)
+    if args.command == "sync-review" and args.sync_review_command == "truecoach-workout-backfill":
+        return _sync_review_truecoach_workout_backfill(args)
     if args.command == "sync-apply" and args.sync_apply_command == "truecoach-to-hevy":
         return _sync_apply_truecoach_to_hevy(args)
     parser.print_help()
@@ -206,6 +210,18 @@ def _add_sync_review_parser(
         "--database-url", help="SQLAlchemy database URL. Defaults to DATABASE_URL."
     )
     backfill_candidates.add_argument(
+        "--output-dir",
+        default="reports",
+        help="Report root. Defaults to reports.",
+    )
+
+    backfill_review = sync_review_subparsers.add_parser("truecoach-workout-backfill")
+    backfill_review.add_argument("--workout-id", type=int, required=True)
+    backfill_review.add_argument("--db", help="SQLite database path. Prefer --database-url.")
+    backfill_review.add_argument(
+        "--database-url", help="SQLAlchemy database URL. Defaults to DATABASE_URL."
+    )
+    backfill_review.add_argument(
         "--output-dir",
         default="reports",
         help="Report root. Defaults to reports.",
@@ -478,6 +494,21 @@ def _sync_review_truecoach_workout_backfill_candidates(args: argparse.Namespace)
     )
     bundle = service.write_report()
     _emit(f"Wrote backfill candidate report: {bundle.report_path}")
+    return 0
+
+
+def _sync_review_truecoach_workout_backfill(args: argparse.Namespace) -> int:
+    store = Store(_engine_from_args(args))
+    service = TrueCoachWorkoutBackfillReviewService(
+        store=store,
+        output_root=Path(args.output_dir),
+    )
+    try:
+        bundle = service.write_review(args.workout_id)
+    except WorkoutBackfillReviewError as exc:
+        _emit(f"Error: {exc}")
+        return 2
+    _emit(f"Wrote Workout backfill review: {bundle.directory}")
     return 0
 
 
