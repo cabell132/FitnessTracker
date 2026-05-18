@@ -32,6 +32,17 @@ class HevyWorkoutWriterAdapter:
         """
         return self._client.workouts.create(workout)
 
+    def get_workout(self, workout_id: str) -> Workout | None:
+        """Fetch a workout by id via the Hevy API.
+
+        Args:
+            workout_id (str): Hevy Workout id.
+
+        Returns:
+            Workout | None: Parsed workout, or ``None``.
+        """
+        return self._client.workouts.get_workout(workout_id)
+
     def find_workout_by_true_coach_id(self, workout_id: int) -> Workout | None:
         """Find a remote Workout carrying the source True Coach idempotency marker.
 
@@ -43,7 +54,7 @@ class HevyWorkoutWriterAdapter:
         """
         marker = f"True Coach Workout {workout_id}"
         page = 1
-        while response := self._client.workouts.get(page=page, per_page=100):
+        while response := self._client.workouts.get(page=page, per_page=10):
             for workout in response.workouts:
                 if marker in (workout.description or "") or marker in workout.title:
                     return workout

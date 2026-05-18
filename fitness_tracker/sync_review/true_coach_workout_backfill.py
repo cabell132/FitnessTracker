@@ -30,6 +30,7 @@ from fitness_tracker.database.models.tracker import (
     WorkoutItem as TrackerWorkoutItem,
 )
 from fitness_tracker.database.models.true_coach import TrueCoachWorkout
+from fitness_tracker.sync._true_coach_html import build_superset_index, parse_workout_order
 from fitness_tracker.sync.ports import HevyWorkoutWriter
 
 
@@ -66,6 +67,7 @@ class WorkoutBackfillApplyResult:
     review_bundle: WorkoutBackfillReviewBundle | None
     request_path: Path
     request_body: PostWorkoutsRequestBody
+    action: str
 
 
 @dataclass(frozen=True)
@@ -87,6 +89,7 @@ class BackfillReviewItem:
     source_id: int | None
     tracker_workout_item_id: int
     position: int
+    superset_id: int | None
     name: str
     info: str
     comment: str
@@ -115,6 +118,7 @@ class ChoiceReviewContext:
     item: Any
     source_id: int | None
     position: int
+    superset_id: int | None
     info: str
     comment: str
     templates: list[HevyAppExercise]
@@ -262,6 +266,7 @@ class TrueCoachWorkoutBackfillReviewService:
             review_bundle=bundle,
             request_path=bundle.request_path,
             request_body=request_body,
+            action="dry_run",
         )
 
     def apply(
@@ -283,7 +288,7 @@ class TrueCoachWorkoutBackfillReviewService:
         """
         result = self.write_apply_request(workout_id, decisions_path=decisions_path)
         if self._tracker_workout_is_linked(workout_id):
-            return result
+            return _apply_result_with_action(result, "already_linked")
         plan = _load_json_file(result.review_bundle.plan_path) if result.review_bundle else {}
         decisions = (
             _load_json_file(result.review_bundle.decisions_path) if result.review_bundle else {}
@@ -299,7 +304,7 @@ class TrueCoachWorkoutBackfillReviewService:
                 )
             )
             _raise_for_unlinked_created_rows(result, existing_remote.id, unlinked)
-            return result
+            return _apply_result_with_action(result, "repaired_existing_remote")
         response = workout_writer.create_workout(result.request_body)
         if response and response.workout:
             unlinked = self._sync_and_link_created_workout(
@@ -311,7 +316,7 @@ class TrueCoachWorkoutBackfillReviewService:
                 )
             )
             _raise_for_unlinked_created_rows(result, response.workout[0].id, unlinked)
-        return result
+        return _apply_result_with_action(result, "created")
 
     def apply_manual_request(
         self,
@@ -337,7 +342,47 @@ class TrueCoachWorkoutBackfillReviewService:
             review_bundle=None,
             request_path=request_path,
             request_body=request_body,
+            action="created",
         )
+
+    def repair_local_links(
+        self,
+        workout_id: int,
+        *,
+        workout_writer: HevyWorkoutWriter,
+        decisions_path: Path | None = None,
+    ) -> WorkoutBackfillApplyResult:
+        """Repair local tracker links without creating a remote Hevy Workout.
+
+        Args:
+            workout_id (int): True Coach Workout id.
+            workout_writer (HevyWorkoutWriter): Workout reader/writer port.
+            decisions_path (Path | None): Optional editable decisions JSON to apply.
+
+        Returns:
+            WorkoutBackfillApplyResult: Validated request and repair action.
+        """
+        result = self.write_apply_request(workout_id, decisions_path=decisions_path)
+        plan = _load_json_file(result.review_bundle.plan_path) if result.review_bundle else {}
+        decisions = (
+            _load_json_file(result.review_bundle.decisions_path) if result.review_bundle else {}
+        )
+        remote = self._linked_remote_workout(workout_id, workout_writer)
+        if remote is None:
+            remote = _find_remote_backfill(workout_writer, workout_id)
+        if remote is None:
+            msg = f"No linked or marked remote Hevy Workout found for True Coach Workout {workout_id}"
+            raise WorkoutBackfillApplyError(msg)
+        unlinked = self._sync_and_link_created_workout(
+            BackfillLinkContext(
+                workout_id=workout_id,
+                workout=remote,
+                plan=plan,
+                decisions=decisions,
+            )
+        )
+        _raise_for_unlinked_created_rows(result, remote.id, unlinked)
+        return _apply_result_with_action(result, "repaired_existing_remote")
 
     def _build_artifacts(
         self,
@@ -365,6 +410,7 @@ class TrueCoachWorkoutBackfillReviewService:
                     key=lambda item: (item.position, item.id),
                 ),
                 templates,
+                _superset_ids_by_position(workout),
             )
             plan = _plan(workout, tracker_workout, items)
             apple_health_evidence = _apple_health_evidence(uow.session, workout.due)
@@ -391,7 +437,20 @@ class TrueCoachWorkoutBackfillReviewService:
             tracker_workout = uow.tracker.get_workout(true_coach_id=workout_id)
             return bool(tracker_workout and tracker_workout.hevy_app_id)
 
-    def _sync_and_link_created_workout(self, context: BackfillLinkContext) -> list[int]:
+    def _linked_remote_workout(
+        self,
+        workout_id: int,
+        workout_writer: HevyWorkoutWriter,
+    ) -> Any | None:
+        getter = getattr(workout_writer, "get_workout", None)
+        if getter is None:
+            return None
+        with self._store.unit_of_work() as uow:
+            tracker_workout = uow.tracker.get_workout(true_coach_id=workout_id)
+            hevy_app_id = tracker_workout.hevy_app_id if tracker_workout is not None else None
+        return getter(hevy_app_id) if hevy_app_id else None
+
+    def _sync_and_link_created_workout(self, context: BackfillLinkContext) -> list[int]:  # noqa: PLR0915
         unlinked_tracker_item_ids: list[int] = []
         with self._store.unit_of_work() as uow:
             uow.hevy.add_workout(context.workout)
@@ -424,6 +483,9 @@ class TrueCoachWorkoutBackfillReviewService:
                 tracker_item.hevy_app_id = hevy_item.id
                 local_sets = sorted(tracker_item.sets, key=lambda row: row.index)
                 hevy_sets = sorted(hevy_item.sets, key=lambda row: row.index)
+                if not local_sets and item.get("sets"):
+                    local_sets = _create_missing_local_sets(tracker_item, item, hevy_sets)
+                    uow.session.flush()
                 if len(local_sets) != len(hevy_sets):
                     unlinked_tracker_item_ids.append(item["tracker_workout_item_id"])
                 for local_set, hevy_set in zip(
@@ -433,6 +495,30 @@ class TrueCoachWorkoutBackfillReviewService:
                 ):
                     local_set.hevy_app_id = hevy_set.id
         return unlinked_tracker_item_ids
+
+
+def _create_missing_local_sets(
+    tracker_item: TrackerWorkoutItem,
+    item: dict[str, Any],
+    hevy_sets: list[Any],
+) -> list[Sets]:
+    local_sets = []
+    for index, set_data in enumerate(item.get("sets", [])):
+        hevy_set = hevy_sets[index] if index < len(hevy_sets) else None
+        local_set = Sets(
+            workout_item_id=tracker_item.id,
+            index=index,
+            type=set_data["type"],
+            weight_kg=set_data.get("weight_kg"),
+            reps=set_data.get("reps"),
+            distance_meters=set_data.get("distance_meters"),
+            duration_seconds=set_data.get("duration_seconds"),
+            rpe=set_data.get("rpe"),
+            hevy_app_id=hevy_set.id if hevy_set is not None else None,
+        )
+        tracker_item.sets.append(local_set)
+        local_sets.append(local_set)
+    return local_sets
 
 
 def _bundle_paths(
@@ -455,14 +541,19 @@ def _bundle_paths(
 def _review_items(
     tracker_items: list[Any],
     templates: list[HevyAppExercise],
+    superset_ids_by_position: dict[int, int],
 ) -> list[BackfillReviewItem]:
     items: list[BackfillReviewItem] = []
     for item in tracker_items:
-        items.extend(_review_item(item, templates))
+        items.extend(_review_item(item, templates, superset_ids_by_position))
     return items
 
 
-def _review_item(item: Any, templates: list[HevyAppExercise]) -> list[BackfillReviewItem]:
+def _review_item(
+    item: Any,
+    templates: list[HevyAppExercise],
+    superset_ids_by_position: dict[int, int],
+) -> list[BackfillReviewItem]:
     true_coach_item = item.true_coach
     template = item.exercise.hevy_app if item.exercise is not None else None
     sets = [
@@ -476,6 +567,7 @@ def _review_item(item: Any, templates: list[HevyAppExercise]) -> list[BackfillRe
             item=item,
             source_id=true_coach_item.id if true_coach_item is not None else None,
             position=item.position,
+            superset_id=superset_ids_by_position.get(item.position),
             info=info,
             comment=comment,
             templates=templates,
@@ -506,6 +598,7 @@ def _review_item(item: Any, templates: list[HevyAppExercise]) -> list[BackfillRe
             source_id=true_coach_item.id if true_coach_item is not None else None,
             tracker_workout_item_id=item.id,
             position=item.position,
+            superset_id=superset_ids_by_position.get(item.position),
             name=name,
             info=info,
             comment=comment,
@@ -551,6 +644,7 @@ def _choice_review_items(context: ChoiceReviewContext) -> list[BackfillReviewIte
                 source_id=context.source_id,
                 tracker_workout_item_id=context.item.id,
                 position=context.position + offset,
+                superset_id=context.superset_id,
                 name=performance.name,
                 info=context.info,
                 comment=context.comment,
@@ -655,6 +749,23 @@ def _is_placeholder_rest_item(*, name: str, info: str, comment: str) -> bool:
     return normalized_name == "rest" or normalized_info in {"rest", "placeholder"}
 
 
+def _superset_ids_by_position(workout: TrueCoachWorkout) -> dict[int, int]:
+    try:
+        order = parse_workout_order(str(workout.short_description or ""))
+    except ValueError:
+        return {}
+    superset_index = build_superset_index(order)
+    if not superset_index:
+        return {}
+    return {
+        position: superset_index[superset_group]
+        for position, metadata in order.items()
+        if bool(metadata.get("is_superset"))
+        and isinstance((superset_group := metadata.get("superset_group")), str)
+        and superset_group in superset_index
+    }
+
+
 def _set_to_request_set(set_row: Sets) -> PostWorkoutsRequestSet:
     return PostWorkoutsRequestSet(
         type=set_row.type,
@@ -681,32 +792,64 @@ def _comment_duplicates_structured_sets(
 ) -> bool:
     if not sets:
         return False
-    normalized_comment = _normalize_metric_text(comment)
-    if not normalized_comment:
-        return False
-    structured_tokens = [_set_metric_token(set_row) for set_row in sets]
-    return bool(structured_tokens) and normalized_comment == _normalize_metric_text(
-        ", ".join(token for token in structured_tokens if token)
+    comment_signatures = _comment_set_signatures(comment)
+    set_signatures = [_set_signature(set_row) for set_row in sets]
+    return bool(comment_signatures) and comment_signatures == set_signatures
+
+
+def _comment_set_signatures(comment: str) -> list[tuple[Any, ...]]:
+    signatures = []
+    for segment in _comment_segments(comment):
+        signature = _comment_segment_signature(segment)
+        if signature is None:
+            return []
+        signatures.append(signature)
+    return signatures
+
+
+def _comment_segment_signature(segment: str) -> tuple[Any, ...] | None:
+    normalized = segment.casefold().replace(chr(215), "x").strip()
+    explicit_weight_reps = re.fullmatch(
+        r"(?P<weight>\d+(?:\.\d+)?)\s*kg\s*x\s*(?P<reps>\d+)",
+        normalized,
     )
+    if explicit_weight_reps is not None:
+        return (
+            "weight_reps",
+            _metric_number(explicit_weight_reps.group("weight")),
+            int(explicit_weight_reps.group("reps")),
+        )
+    reps_weight = re.fullmatch(
+        r"(?P<reps>\d+)\s*x\s*(?P<weight>\d+(?:\.\d+)?)\s*(?:kg)?",
+        normalized,
+    )
+    if reps_weight is not None:
+        return (
+            "weight_reps",
+            _metric_number(reps_weight.group("weight")),
+            int(reps_weight.group("reps")),
+        )
+    duration = re.fullmatch(r"(?P<seconds>\d+(?:\.\d+)?)\s*(?:s|sec|secs|seconds?)?", normalized)
+    if duration is not None:
+        return ("duration_seconds", round(float(duration.group("seconds"))))
+    return None
 
 
-def _set_metric_token(set_row: PostWorkoutsRequestSet) -> str:
-    parts = []
-    if set_row.weight_kg is not None:
-        parts.append(f"{set_row.weight_kg:g}kg")
-    if set_row.reps is not None:
-        parts.append(f"x {set_row.reps:g}")
-    if set_row.distance_meters is not None:
-        parts.append(f"{set_row.distance_meters:g}m")
+def _set_signature(set_row: PostWorkoutsRequestSet) -> tuple[Any, ...]:
+    if set_row.weight_kg is not None and set_row.reps is not None:
+        return ("weight_reps", _metric_number(set_row.weight_kg), int(set_row.reps))
     if set_row.duration_seconds is not None:
-        parts.append(f"{set_row.duration_seconds:g}s")
-    if set_row.rpe is not None:
-        parts.append(f"rpe {set_row.rpe:g}")
-    return " ".join(parts)
+        return ("duration_seconds", int(set_row.duration_seconds))
+    if set_row.distance_meters is not None:
+        return ("distance_meters", int(set_row.distance_meters))
+    if set_row.reps is not None:
+        return ("reps", int(set_row.reps))
+    return ("empty",)
 
 
-def _normalize_metric_text(value: str) -> str:
-    return re.sub(r"\s+", " ", value.casefold().replace(" x ", " x ")).strip()
+def _metric_number(value: str | float) -> float | int:
+    number = float(value)
+    return int(number) if number.is_integer() else number
 
 
 def _plan(
@@ -735,6 +878,7 @@ def _plan_item(item: BackfillReviewItem) -> dict[str, Any]:
         "source_id": item.source_id,
         "tracker_workout_item_id": item.tracker_workout_item_id,
         "position": item.position,
+        "superset_id": item.superset_id,
         "name": item.name,
         "info": item.info,
         "comment": item.comment,
@@ -817,6 +961,18 @@ def _raise_for_unlinked_created_rows(
         )
     msg = "Could not link all created Hevy rows; recovery artifact written"
     raise WorkoutBackfillApplyError(msg)
+
+
+def _apply_result_with_action(
+    result: WorkoutBackfillApplyResult,
+    action: str,
+) -> WorkoutBackfillApplyResult:
+    return WorkoutBackfillApplyResult(
+        review_bundle=result.review_bundle,
+        request_path=result.request_path,
+        request_body=result.request_body,
+        action=action,
+    )
 
 
 def _source_workout_id(request_body: PostWorkoutsRequestBody) -> int | None:
@@ -950,6 +1106,7 @@ def _request_exercise(
         raise WorkoutBackfillReviewError(msg)
     return PostWorkoutsRequestExercise(
         exercise_template_id=template_id,
+        superset_id=item.get("superset_id"),
         notes=item["notes"] or None,
         sets=[PostWorkoutsRequestSet(**set_row) for set_row in item["sets"]],
     )
@@ -1102,7 +1259,7 @@ def _heart_rates(
             AppleHealthDataRecord.data_type_id == AppleHealthDataType.id,
         )
         .where(
-            AppleHealthDataType.name == "Heart Rate",
+            AppleHealthDataType.name.in_(("Heart Rate", "Heart Rate [Avg]")),
             AppleHealthDataRecord.timestamp.between(start, end),
         )
         .order_by(AppleHealthDataRecord.timestamp)
@@ -1145,10 +1302,14 @@ def _heart_rate_summary(
 def _candidate_windows(context: AppleHealthEvidenceContext) -> list[dict[str, str]]:
     candidates = []
     for workout in context.workouts:
-        summary = _heart_rate_summary(context.heart_rates, workout)
+        interval_values = _heart_rate_values(
+            context.heart_rates,
+            workout.start_date,
+            workout.end_date,
+        )
         if workout.start_date.date() != context.due.date():
             continue
-        if summary is not None and summary["max_bpm"] >= 120:
+        if interval_values and max(interval_values) >= 120:
             candidates.append(
                 {
                     "source": "apple_workout_interval",
@@ -1181,6 +1342,14 @@ def _candidate_windows(context: AppleHealthEvidenceContext) -> list[dict[str, st
             }
         )
     return candidates
+
+
+def _heart_rate_values(
+    heart_rates: list[AppleHealthDataRecord],
+    start: datetime,
+    end: datetime,
+) -> list[float]:
+    return [float(row.value) for row in heart_rates if start <= row.timestamp <= end]
 
 
 def _elevated_heart_rate_blocks(

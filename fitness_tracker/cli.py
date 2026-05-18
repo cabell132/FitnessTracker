@@ -47,7 +47,7 @@ from fitness_tracker.sync_review import (
 )
 
 
-def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0911
+def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0911, PLR0912
     """Run the CLI.
 
     Args:
@@ -62,6 +62,8 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0911
         return _migrate_exercise_template(args)
     if args.command == "hevy" and args.hevy_command == "routines":
         return _hevy_routines(args)
+    if args.command == "hevy" and args.hevy_command == "workouts":
+        return _hevy_workouts(args)
     if args.command == "hevy-templates" and args.hevy_templates_command == "ensure-from-plan":
         return _ensure_hevy_templates_from_plan(args)
     if args.command == "hevy-templates" and args.hevy_templates_command == "create":
@@ -79,10 +81,30 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0911
         return _sync_review_truecoach_workout_backfill_candidates(args)
     if args.command == "sync-review" and args.sync_review_command == "truecoach-workout-backfill":
         return _sync_review_truecoach_workout_backfill(args)
+    if (
+        args.command == "sync-review"
+        and args.sync_review_command == "truecoach-workout-backfill-inspect"
+    ):
+        return _sync_review_truecoach_workout_backfill_inspect(args)
+    if (
+        args.command == "sync-review"
+        and args.sync_review_command == "truecoach-workout-backfill-evidence"
+    ):
+        return _sync_review_truecoach_workout_backfill_evidence(args)
+    if (
+        args.command == "sync-review"
+        and args.sync_review_command == "truecoach-workout-backfill-diff"
+    ):
+        return _sync_review_truecoach_workout_backfill_diff(args)
     if args.command == "sync-apply" and args.sync_apply_command == "truecoach-to-hevy":
         return _sync_apply_truecoach_to_hevy(args)
     if args.command == "sync-apply" and args.sync_apply_command == "truecoach-workout-backfill":
         return _sync_apply_truecoach_workout_backfill(args)
+    if (
+        args.command == "sync-apply"
+        and args.sync_apply_command == "truecoach-workout-backfill-repair"
+    ):
+        return _sync_apply_truecoach_workout_backfill_repair(args)
     parser.print_help()
     return 1
 
@@ -131,6 +153,12 @@ def _add_hevy_parser(subparsers: Any) -> None:  # noqa: PLR0915
     create = routine_subparsers.add_parser("create-from-json")
     create.add_argument("request_path")
     create.add_argument("--response-path")
+
+    workouts = hevy_subparsers.add_parser("workouts")
+    workout_subparsers = workouts.add_subparsers(dest="workout_command")
+
+    workout_inspect = workout_subparsers.add_parser("inspect")
+    workout_inspect.add_argument("workout_id")
 
 
 def _add_hevy_templates_parser(subparsers: Any) -> None:  # noqa: PLR0915
@@ -188,7 +216,7 @@ def _add_truecoach_parser(subparsers: Any) -> None:
     due.add_argument("--database-url", help="SQLAlchemy database URL. Defaults to DATABASE_URL.")
 
 
-def _add_sync_review_parser(
+def _add_sync_review_parser(  # noqa: PLR0915
     subparsers: Any,
 ) -> None:
     sync_review = subparsers.add_parser("sync-review")
@@ -234,8 +262,29 @@ def _add_sync_review_parser(
         help="Editable Workout backfill decisions JSON to validate and apply to the draft request.",
     )
 
+    for command in (
+        "truecoach-workout-backfill-inspect",
+        "truecoach-workout-backfill-evidence",
+        "truecoach-workout-backfill-diff",
+    ):
+        helper = sync_review_subparsers.add_parser(command)
+        helper.add_argument("--workout-id", type=int, required=True)
+        helper.add_argument("--db", help="SQLite database path. Prefer --database-url.")
+        helper.add_argument(
+            "--database-url", help="SQLAlchemy database URL. Defaults to DATABASE_URL."
+        )
+        helper.add_argument(
+            "--output-dir",
+            default="reports",
+            help="Report root. Defaults to reports.",
+        )
+        helper.add_argument(
+            "--decisions",
+            help="Editable Workout backfill decisions JSON to validate and apply.",
+        )
 
-def _add_sync_apply_parser(
+
+def _add_sync_apply_parser(  # noqa: PLR0915
     subparsers: Any,
 ) -> None:
     sync_apply = subparsers.add_parser("sync-apply")
@@ -273,6 +322,22 @@ def _add_sync_apply_parser(
     )
     workout_backfill.add_argument("--dry-run", action="store_true")
     workout_backfill.add_argument("--manual-request")
+
+    workout_backfill_repair = sync_apply_subparsers.add_parser("truecoach-workout-backfill-repair")
+    workout_backfill_repair.add_argument("--workout-id", type=int, required=True)
+    workout_backfill_repair.add_argument("--db", help="SQLite database path. Prefer --database-url.")
+    workout_backfill_repair.add_argument(
+        "--database-url", help="SQLAlchemy database URL. Defaults to DATABASE_URL."
+    )
+    workout_backfill_repair.add_argument(
+        "--output-dir",
+        default="reports",
+        help="Report root. Defaults to reports.",
+    )
+    workout_backfill_repair.add_argument(
+        "--decisions",
+        help="Editable Workout backfill decisions JSON to validate and apply to the request.",
+    )
 
 
 def _migrate_exercise_template(args: argparse.Namespace) -> int:
@@ -411,6 +476,18 @@ def _hevy_routines(args: argparse.Namespace) -> int:
     return 2
 
 
+def _hevy_workouts(args: argparse.Namespace) -> int:
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    try:
+        if args.workout_command == "inspect":
+            return _inspect_hevy_workout(args)
+    except HevyAppAPIError as exc:
+        _emit(f"Error: {exc}")
+        return 2
+    _emit("Error: missing hevy workouts subcommand")
+    return 2
+
+
 def _find_hevy_routines(args: argparse.Namespace) -> int:
     routines = _find_remote_hevy_routines(args.title)
     if not routines:
@@ -438,6 +515,31 @@ def _inspect_hevy_routine(args: argparse.Namespace) -> int:
             f"{index}. superset={exercise.get('superset_id')} "
             f"template={exercise.get('exercise_template_id')} "
             f"notes={exercise.get('notes')!r} sets={len(exercise.get('sets') or [])}"
+        )
+    return 0
+
+
+def _inspect_hevy_workout(args: argparse.Namespace) -> int:
+    workout = _hevy_api_json("GET", f"/workouts/{args.workout_id}")
+    workout_data = _unwrap_workout(workout)
+    exercises = workout_data.get("exercises", [])
+    empty_set_blocks = [
+        index for index, exercise in enumerate(exercises, start=1) if not exercise.get("sets")
+    ]
+    _emit(f"id: {workout_data.get('id')}")
+    _emit(f"title: {workout_data.get('title')}")
+    _emit(f"start_time: {workout_data.get('start_time')}")
+    _emit(f"end_time: {workout_data.get('end_time')}")
+    _emit(f"exercises: {len(exercises)}")
+    _emit(f"superset_ids: {[exercise.get('superset_id') for exercise in exercises]}")
+    _emit(f"empty_set_blocks: {empty_set_blocks}")
+    for index, exercise in enumerate(exercises, start=1):
+        name = exercise.get("title") or exercise.get("name")
+        _emit(
+            f"{index}. superset={exercise.get('superset_id')} "
+            f"template={exercise.get('exercise_template_id')} "
+            f"name={name!r} notes={exercise.get('notes')!r} "
+            f"sets={len(exercise.get('sets') or [])}"
         )
     return 0
 
@@ -540,6 +642,105 @@ def _sync_review_truecoach_workout_backfill(args: argparse.Namespace) -> int:
     return 0
 
 
+def _sync_review_truecoach_workout_backfill_inspect(args: argparse.Namespace) -> int:
+    try:
+        bundle = _write_workout_backfill_review(args)
+    except WorkoutBackfillReviewError as exc:
+        _emit(f"Error: {exc}")
+        return 2
+    plan = _read_json(bundle.plan_path)
+    request = _read_json(bundle.request_path)
+    workout = plan.get("workout", {})
+    _emit(f"review_dir: {bundle.directory}")
+    _emit(
+        "workout: "
+        f"{workout.get('id')} | {workout.get('title')} | due={workout.get('due')} | "
+        f"tracker={workout.get('tracker_workout_id')} | hevy={workout.get('tracker_hevy_app_id')}"
+    )
+    _emit(f"blockers: {plan.get('blockers', [])}")
+    _emit(f"warnings: {plan.get('warnings', [])}")
+    _emit("plan_items:")
+    for item in plan.get("items", []):
+        template = item.get("selected_hevy_template") or {}
+        _emit(
+            f"{item.get('position')}. tc_item={item.get('source_id')} "
+            f"tracker_item={item.get('tracker_workout_item_id')} "
+            f"superset={item.get('superset_id')} template={template.get('id')} "
+            f"sets={len(item.get('sets') or [])} notes={bool(item.get('notes'))} "
+            f"name={item.get('name')!r}"
+        )
+        for warning in item.get("warnings", []):
+            _emit(f"  warning: {warning}")
+        for blocker in item.get("blockers", []):
+            _emit(f"  blocker: {blocker}")
+    _emit("request_exercises:")
+    for index, exercise in enumerate(request.get("workout", {}).get("exercises", []), start=1):
+        _emit(
+            f"{index}. superset={exercise.get('superset_id')} "
+            f"template={exercise.get('exercise_template_id')} "
+            f"sets={len(exercise.get('sets') or [])} notes={bool(exercise.get('notes'))}"
+        )
+    return 0
+
+
+def _sync_review_truecoach_workout_backfill_evidence(args: argparse.Namespace) -> int:
+    try:
+        bundle = _write_workout_backfill_review(args)
+    except WorkoutBackfillReviewError as exc:
+        _emit(f"Error: {exc}")
+        return 2
+    evidence = _read_json(bundle.apple_health_evidence_path)
+    _emit(f"evidence: {bundle.apple_health_evidence_path}")
+    _emit(
+        "search_window: "
+        f"{evidence.get('search_window', {}).get('start')} -> "
+        f"{evidence.get('search_window', {}).get('end')}"
+    )
+    _emit("candidate_windows:")
+    for candidate in evidence.get("candidate_windows", []):
+        _emit(
+            f"- {candidate.get('confidence')} {candidate.get('source')}: "
+            f"{candidate.get('start')} -> {candidate.get('end')} | {candidate.get('reason')}"
+        )
+    _emit("workout_intervals:")
+    for interval in evidence.get("workout_intervals", []):
+        _emit(
+            f"- {interval.get('type')}: {interval.get('start')} -> {interval.get('end')} "
+            f"({interval.get('duration_minutes')} min)"
+        )
+    _emit("heart_rate_summaries:")
+    for summary in evidence.get("heart_rate_summaries", []):
+        _emit(
+            f"- {summary.get('window_start')} -> {summary.get('window_end')} "
+            f"samples={summary.get('sample_count')} avg={summary.get('average_bpm')} "
+            f"max={summary.get('max_bpm')}"
+        )
+    return 0
+
+
+def _sync_review_truecoach_workout_backfill_diff(args: argparse.Namespace) -> int:
+    try:
+        bundle = _write_workout_backfill_review(args)
+    except WorkoutBackfillReviewError as exc:
+        _emit(f"Error: {exc}")
+        return 2
+    request = _read_json(bundle.request_path)
+    local = _linked_hevy_workout_snapshot(_engine_from_args(args), args.workout_id)
+    if local is None:
+        _emit(f"No linked local Hevy Workout for True Coach Workout {args.workout_id}.")
+        return 2
+    differences = _workout_request_local_differences(request, local)
+    _emit(f"request: {bundle.request_path}")
+    _emit(f"local_hevy_workout: {local.get('id')}")
+    if not differences:
+        _emit("No differences between request and linked local Hevy Workout cache.")
+        return 0
+    _emit("differences:")
+    for difference in differences:
+        _emit(f"- {difference}")
+    return 1
+
+
 def _sync_apply_truecoach_to_hevy(args: argparse.Namespace) -> int:  # noqa: PLR0915
     if args.manual_request:
         if args.dry_run:
@@ -572,7 +773,7 @@ def _sync_apply_truecoach_to_hevy(args: argparse.Namespace) -> int:  # noqa: PLR
     return 0
 
 
-def _sync_apply_truecoach_workout_backfill(args: argparse.Namespace) -> int:
+def _sync_apply_truecoach_workout_backfill(args: argparse.Namespace) -> int:  # noqa: PLR0915
     decisions_path = Path(args.decisions) if args.decisions else None
     try:
         if args.manual_request:
@@ -602,8 +803,28 @@ def _sync_apply_truecoach_workout_backfill(args: argparse.Namespace) -> int:
         return 2
     if args.dry_run:
         _emit(f"Wrote Hevy Workout request dry-run: {result.request_path}")
+    elif result.action == "already_linked":
+        _emit(f"Hevy Workout already linked locally: {result.request_path}")
+    elif result.action == "repaired_existing_remote":
+        _emit(f"Linked existing remote Hevy Workout from request: {result.request_path}")
     else:
         _emit(f"Created Hevy Workout from request: {result.request_path}")
+    return 0
+
+
+def _sync_apply_truecoach_workout_backfill_repair(args: argparse.Namespace) -> int:
+    decisions_path = Path(args.decisions) if args.decisions else None
+    try:
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        result = _workout_backfill_review_service(args).repair_local_links(
+            args.workout_id,
+            workout_writer=HevyWorkoutWriterAdapter(_hevy_client_from_config()),
+            decisions_path=decisions_path,
+        )
+    except (WorkoutBackfillApplyError, WorkoutBackfillReviewError, HevyAppAPIError) as exc:
+        _emit(f"Error: {exc}")
+        return 2
+    _emit(f"Linked existing remote Hevy Workout from request: {result.request_path}")
     return 0
 
 
@@ -622,6 +843,13 @@ def _workout_backfill_manual_service(
     return TrueCoachWorkoutBackfillReviewService(
         store=Store(create_database_engine("sqlite:///:memory:")),
         output_root=Path(args.output_dir),
+    )
+
+
+def _write_workout_backfill_review(args: argparse.Namespace) -> Any:
+    return _workout_backfill_review_service(args).write_review(
+        args.workout_id,
+        decisions_path=Path(args.decisions) if args.decisions else None,
     )
 
 
@@ -724,10 +952,133 @@ def _unwrap_routine(response: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
+def _unwrap_workout(response: dict[str, Any]) -> dict[str, Any]:
+    workout = response.get("workout", response)
+    if isinstance(workout, list):
+        return workout[0] if workout else {}
+    if isinstance(workout, dict):
+        return workout
+    return {}
+
+
 def _routine_response_path(response_path: str | None, request_path: Path) -> Path:
     if response_path:
         return Path(response_path)
     return request_path.with_name(f"{request_path.stem}.response.json")
+
+
+def _read_json(path: Path) -> dict[str, Any]:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _linked_hevy_workout_snapshot(engine: Engine, true_coach_workout_id: int) -> dict[str, Any] | None:
+    with engine.connect() as conn:
+        workout = (
+            conn.execute(
+                text(
+                    """
+                    SELECT h.id, h.title, h.start_time, h.end_time
+                    FROM "Workout" AS tw
+                    JOIN "HevyAppWorkout" AS h ON h.id = tw.hevy_app_id
+                    WHERE tw.true_coach_id = :true_coach_workout_id
+                    """
+                ),
+                {"true_coach_workout_id": true_coach_workout_id},
+            )
+            .mappings()
+            .first()
+        )
+        if workout is None:
+            return None
+        exercises = (
+            conn.execute(
+                text(
+                    """
+                    SELECT id, "index", name, notes, superset_id, exercise_id
+                    FROM "HevyAppWorkoutItem"
+                    WHERE workout_id = :workout_id
+                    ORDER BY "index"
+                    """
+                ),
+                {"workout_id": workout["id"]},
+            )
+            .mappings()
+            .all()
+        )
+        sets = (
+            conn.execute(
+                text(
+                    """
+                    SELECT workout_item_id, "index", type, weight_kg, reps,
+                           distance_meters, duration_seconds, rpe
+                    FROM "HevyAppSets"
+                    WHERE workout_item_id IN (
+                        SELECT id FROM "HevyAppWorkoutItem" WHERE workout_id = :workout_id
+                    )
+                    ORDER BY workout_item_id, "index"
+                    """
+                ),
+                {"workout_id": workout["id"]},
+            )
+            .mappings()
+            .all()
+        )
+    sets_by_item: dict[int, list[dict[str, Any]]] = {}
+    for row in sets:
+        sets_by_item.setdefault(int(row["workout_item_id"]), []).append(dict(row))
+    return {
+        "id": workout["id"],
+        "title": workout["title"],
+        "start_time": workout["start_time"],
+        "end_time": workout["end_time"],
+        "exercises": [
+            {
+                "id": row["id"],
+                "index": row["index"],
+                "name": row["name"],
+                "notes": row["notes"],
+                "superset_id": row["superset_id"],
+                "exercise_template_id": row["exercise_id"],
+                "sets": sets_by_item.get(int(row["id"]), []),
+            }
+            for row in exercises
+        ],
+    }
+
+
+def _workout_request_local_differences(
+    request: dict[str, Any],
+    local: dict[str, Any],
+) -> list[str]:
+    request_exercises = request.get("workout", {}).get("exercises", [])
+    local_exercises = local.get("exercises", [])
+    differences = []
+    if len(request_exercises) != len(local_exercises):
+        differences.append(
+            f"exercise count request={len(request_exercises)} local={len(local_exercises)}"
+        )
+    for index, request_exercise in enumerate(request_exercises):
+        if index >= len(local_exercises):
+            differences.append(f"exercise {index + 1} missing locally")
+            continue
+        local_exercise = local_exercises[index]
+        comparisons = (
+            ("template", request_exercise.get("exercise_template_id"), local_exercise.get("exercise_template_id")),
+            ("superset", request_exercise.get("superset_id"), local_exercise.get("superset_id")),
+            ("notes", request_exercise.get("notes") or "", local_exercise.get("notes") or ""),
+        )
+        for label, request_value, local_value in comparisons:
+            if request_value != local_value:
+                differences.append(
+                    f"exercise {index + 1} {label} request={request_value!r} local={local_value!r}"
+                )
+        request_sets = request_exercise.get("sets") or []
+        local_sets = local_exercise.get("sets") or []
+        if len(request_sets) != len(local_sets):
+            differences.append(
+                f"exercise {index + 1} set count request={len(request_sets)} local={len(local_sets)}"
+            )
+    return differences
 
 
 def _print_sync_review_summary(plan_path: Path) -> None:

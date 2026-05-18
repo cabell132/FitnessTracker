@@ -79,6 +79,7 @@ def test_workout_backfill_review_cli_writes_deterministic_bundle_for_455045484(
                 "source_id": 8101,
                 "tracker_workout_item_id": 1,
                 "position": 1,
+                "superset_id": 0,
                 "name": "Bench Press",
                 "info": "3 x 8 @ 80kg",
                 "comment": "80kg x 8, 80kg x 8, 80kg x 8",
@@ -101,6 +102,7 @@ def test_workout_backfill_review_cli_writes_deterministic_bundle_for_455045484(
                 "source_id": 8102,
                 "tracker_workout_item_id": 2,
                 "position": 2,
+                "superset_id": 0,
                 "name": "Chest Supported Row",
                 "info": "2 x 10",
                 "comment": "smooth reps",
@@ -130,7 +132,7 @@ def test_workout_backfill_review_cli_writes_deterministic_bundle_for_455045484(
             "exercises": [
                 {
                     "exercise_template_id": "hevy-bench",
-                    "superset_id": None,
+                    "superset_id": 0,
                     "notes": None,
                     "sets": [
                         {
@@ -161,7 +163,7 @@ def test_workout_backfill_review_cli_writes_deterministic_bundle_for_455045484(
                 },
                 {
                     "exercise_template_id": "hevy-row",
-                    "superset_id": None,
+                    "superset_id": 0,
                     "notes": "Athlete comment: smooth reps",
                     "sets": [
                         {
@@ -1048,6 +1050,40 @@ def test_workout_backfill_apply_repairs_local_links_from_existing_remote_marker(
         ]
 
 
+def test_workout_backfill_repair_uses_linked_remote_workout_without_creating(  # noqa: PLR0915
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    with store.unit_of_work() as uow:
+        workout = uow.tracker.get_workout(true_coach_id=455045484)
+        assert workout is not None
+        workout.hevy_app_id = "hevy-linked-455045484"
+    decisions_path = _write_timestamp_decisions(tmp_path)
+    service = TrueCoachWorkoutBackfillReviewService(store=store, output_root=tmp_path / "reports")
+    writer = _RecordingWorkoutWriter(
+        existing_workout=_hevy_workout_response(workout_id="hevy-linked-455045484").workout[0],
+    )
+
+    result = service.repair_local_links(
+        455045484,
+        workout_writer=writer,
+        decisions_path=decisions_path,
+    )
+
+    assert result.action == "repaired_existing_remote"
+    assert writer.requests == []
+    assert writer.get_workout_requests == ["hevy-linked-455045484"]
+    assert writer.marker_searches == []
+    with store.unit_of_work() as uow:
+        tracker_workout = uow.tracker.get_workout(true_coach_id=455045484)
+        assert tracker_workout is not None
+        tracker_items = sorted(tracker_workout.workout_items, key=lambda item: item.position)
+        assert [item.hevy_app_id for item in tracker_items] == [1, 2]
+
+
 def test_workout_backfill_apply_writes_recovery_artifact_when_local_linking_fails(
     tmp_path: Path,
 ) -> None:
@@ -1286,6 +1322,7 @@ def _assert_placeholder_only_review(tmp_path: Path) -> None:
             "source_id": 8201,
             "tracker_workout_item_id": 1,
             "position": 1,
+            "superset_id": None,
             "name": "Wedding Dancing",
             "info": "placeholder",
             "comment": "",
@@ -1414,7 +1451,12 @@ def _seed_backfill_review_workout(store: Store) -> None:  # noqa: PLR0915
                 id=455045484,
                 title="Upper",
                 due=due,
-                short_description="",
+                short_description=(
+                    '<p class="name-and-info">'
+                    "A1) Bench Press<br/>"
+                    "A2) Chest Supported Row"
+                    "</p>"
+                ),
                 state="completed",
                 rest_day=False,
                 created_at=due,
@@ -1551,6 +1593,7 @@ class _RecordingWorkoutWriter:
         self.response = response
         self.existing_workout = existing_workout
         self.marker_searches: list[int] = []
+        self.get_workout_requests: list[str] = []
 
     def create_workout(self, workout: PostWorkoutsRequestBody) -> PostWorkoutsResponse | None:
         self.requests.append(workout)
@@ -1559,6 +1602,12 @@ class _RecordingWorkoutWriter:
     def find_workout_by_true_coach_id(self, workout_id: int) -> HevyWorkout | None:
         self.marker_searches.append(workout_id)
         return self.existing_workout
+
+    def get_workout(self, workout_id: str) -> HevyWorkout | None:
+        self.get_workout_requests.append(workout_id)
+        if self.existing_workout and self.existing_workout.id == workout_id:
+            return self.existing_workout
+        return None
 
 
 def _write_timestamp_decisions(

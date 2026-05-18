@@ -36,3 +36,14 @@ class HevyWorkoutWriter(Protocol):
             Workout | None: Matching remote Workout when found.
         """
         ...
+
+    def get_workout(self, workout_id: str) -> Workout | None:
+        """Fetch one remote Hevy Workout by id.
+
+        Args:
+            workout_id (str): Hevy Workout id.
+
+        Returns:
+            Workout | None: Matching remote Workout when found.
+        """
+        ...

@@ -80,6 +80,49 @@ def test_hevy_routines_inspect_prints_compact_summary(
     assert "empty_set_blocks: [2]" in output
 
 
+def test_hevy_workouts_inspect_prints_compact_summary(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        cli,
+        "_hevy_api_json",
+        lambda *args, **kwargs: {
+            "workout": {
+                "id": "workout-1",
+                "title": "2024-04-10 Upper",
+                "start_time": "2024-04-10T06:43:00Z",
+                "end_time": "2024-04-10T08:30:00Z",
+                "exercises": [
+                    {
+                        "exercise_template_id": "template-a",
+                        "superset_id": 0,
+                        "name": "Row",
+                        "notes": "",
+                        "sets": [{"type": "normal", "distance_meters": 500}],
+                    },
+                    {
+                        "exercise_template_id": "template-b",
+                        "superset_id": None,
+                        "name": "Down Regulate",
+                        "notes": None,
+                        "sets": [],
+                    },
+                ],
+            }
+        },
+    )
+
+    exit_code = cli.main(["hevy", "workouts", "inspect", "workout-1"])
+
+    assert exit_code == 0
+    output = capsys.readouterr().out
+    assert "start_time: 2024-04-10T06:43:00Z" in output
+    assert "exercises: 2" in output
+    assert "superset_ids: [0, None]" in output
+    assert "empty_set_blocks: [2]" in output
+
+
 def test_hevy_routines_create_from_json_validates_and_writes_response(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
