@@ -14,5 +14,5 @@ class Exercise(BaseModel):
     title: str
     notes: str | None = None
     exercise_template_id: str
-    superset_id: int | None = None
+    superset_id: bool | int | None = None
     sets: list[Set]

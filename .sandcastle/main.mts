@@ -234,7 +234,6 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
               TASK_ID: issue.id,
               ISSUE_TITLE: issue.title,
               BRANCH: issue.branch,
-              TARGET_BRANCH: targetBranch,
             },
           });
 

@@ -108,6 +108,47 @@ def test_hevy_add_workout_item_normalizes_false_superset_id(store: Store) -> Non
     assert item.superset_id is None
 
 
+def test_hevy_add_workout_item_preserves_zero_superset_id(store: Store) -> None:
+    """Verify valid zero-based superset groups are not treated as false sentinels."""
+    dt = datetime(2026, 5, 18, 6, 0, 0)  # noqa: DTZ001
+    with store.unit_of_work() as uow:
+        uow.add(
+            HevyAppExercise(
+                id="template-1",
+                name="Incline Treadmill Walk",
+                type="duration",
+                equipment="treadmill",
+                default=True,
+            )
+        )
+        uow.add(
+            HevyAppWorkout(
+                id="workout-1",
+                title="Workout",
+                description="",
+                start_time=dt,
+                end_time=dt,
+                created_at=dt,
+                updated_at=dt,
+            )
+        )
+        uow.hevy_add_workout_item(
+            workout_id="workout-1",
+            exercise=Exercise(
+                index=8,
+                title="Incline Treadmill Walk",
+                notes="",
+                superset_id=0,
+                exercise_template_id="template-1",
+                sets=[],
+            ),
+        )
+
+    item = store.query_one(HevyAppWorkoutItem, workout_id="workout-1", index=8)
+    assert item is not None
+    assert item.superset_id == 0
+
+
 def test_hevy_add_workout_normalizes_optional_text_fields(store: Store) -> None:
     """Verify nullable API text fields fit non-null local columns."""
     with store.unit_of_work() as uow:

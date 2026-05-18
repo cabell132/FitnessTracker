@@ -342,6 +342,117 @@ def test_workout_backfill_review_defaults_down_regulate_to_duration_set(
     assert "duration_seconds: 240" in report
 
 
+def test_workout_backfill_duration_item_uses_athlete_comment_when_sets_are_missing(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    _add_choice_templates(store, [("hevy-cross-trainer", "Cross Trainer")])
+    _add_empty_backfill_item(
+        store,
+        {
+            "name": "Cross Trainer",
+            "info": "For as you have left",
+            "comment": "43mins/503kcals\n12min walk",
+            "hevy_app_id": "hevy-cross-trainer",
+        },
+    )
+
+    exit_code = main(
+        [
+            "sync-review",
+            "truecoach-workout-backfill",
+            "--workout-id",
+            "455045484",
+            "--database-url",
+            f"sqlite:///{db_path}",
+            "--output-dir",
+            str(tmp_path / "reports"),
+        ]
+    )
+
+    assert exit_code == 0
+    bundle_dir = tmp_path / "reports" / "sync-review" / "truecoach-workout-backfill" / "455045484"
+    plan = json.loads((bundle_dir / "plan.json").read_text(encoding="utf-8"))
+    request = json.loads((bundle_dir / "hevy-workout-request.json").read_text(encoding="utf-8"))
+
+    assert plan["warnings"] == []
+    assert plan["items"][2]["sets"] == [{"type": "normal", "duration_seconds": 2580}]
+    assert plan["items"][2]["notes"] == "Athlete comment: 503kcals; 12min walk"
+    assert request["workout"]["exercises"][2] == {
+        "exercise_template_id": "hevy-cross-trainer",
+        "superset_id": None,
+        "notes": "Athlete comment: 503kcals; 12min walk",
+        "sets": [
+            {
+                "type": "normal",
+                "weight_kg": None,
+                "reps": None,
+                "distance_meters": None,
+                "duration_seconds": 2580,
+                "rpe": None,
+            }
+        ],
+    }
+
+
+def test_workout_backfill_distance_items_keep_app_visible_prescription_notes(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    _add_distance_backfill_item(store)
+
+    exit_code = main(
+        [
+            "sync-review",
+            "truecoach-workout-backfill",
+            "--workout-id",
+            "455045484",
+            "--database-url",
+            f"sqlite:///{db_path}",
+            "--output-dir",
+            str(tmp_path / "reports"),
+        ]
+    )
+
+    assert exit_code == 0
+    bundle_dir = tmp_path / "reports" / "sync-review" / "truecoach-workout-backfill" / "455045484"
+    request = json.loads((bundle_dir / "hevy-workout-request.json").read_text(encoding="utf-8"))
+
+    assert request["workout"]["exercises"][2]["notes"] == "Coach prescription: 3 x 200m"
+    assert request["workout"]["exercises"][2]["sets"] == [
+        {
+            "type": "normal",
+            "weight_kg": None,
+            "reps": None,
+            "distance_meters": 200,
+            "duration_seconds": 60,
+            "rpe": None,
+        },
+        {
+            "type": "normal",
+            "weight_kg": None,
+            "reps": None,
+            "distance_meters": 200,
+            "duration_seconds": 60,
+            "rpe": None,
+        },
+        {
+            "type": "normal",
+            "weight_kg": None,
+            "reps": None,
+            "distance_meters": 200,
+            "duration_seconds": 60,
+            "rpe": None,
+        },
+    ]
+
+
 def test_workout_backfill_review_writes_apple_health_evidence_for_complete_cluster(
     tmp_path: Path,
 ) -> None:
@@ -1357,7 +1468,7 @@ def _add_empty_backfill_item(
                 workout_id=455045484,
                 name=item["name"],
                 info=item["info"],
-                comment="",
+                comment=item.get("comment") or "",
                 is_circuit=False,
                 state="completed",
                 position=3,
@@ -1419,6 +1530,55 @@ def _add_choice_backfill_item(store: Store, *, info: str, comment: str) -> None:
                 true_coach_id=8104,
             )
         )
+
+
+def _add_distance_backfill_item(store: Store) -> None:
+    with store.unit_of_work() as uow:
+        workout = uow.true_coach.get_workout(id=455045484).tracker
+        assert workout is not None
+        template = HevyAppExercise(
+            id="hevy-rower",
+            name="Rowing Machine",
+            type="distance_duration",
+            equipment="machine",
+            default=False,
+        )
+        exercise = Exercise(name="Row", hevy_app_id="hevy-rower")
+        uow.session.add(template)
+        uow.session.add(exercise)
+        uow.session.add(
+            TrueCoachWorkoutItem(
+                id=8105,
+                workout_id=455045484,
+                name="Row",
+                info="3 x 200m",
+                comment="",
+                is_circuit=False,
+                state="completed",
+                position=3,
+                exercise_id=None,
+                assessment_id=None,
+            )
+        )
+        uow.session.flush()
+        tracker_item = TrackerWorkoutItem(
+            workout_id=workout.id,
+            position=3,
+            exercise_id=exercise.id,
+            true_coach_id=8105,
+        )
+        uow.session.add(tracker_item)
+        uow.session.flush()
+        for index in range(3):
+            uow.session.add(
+                Sets(
+                    workout_item_id=tracker_item.id,
+                    index=index,
+                    type="normal",
+                    distance_meters=200,
+                    duration_seconds=60,
+                )
+            )
 
 
 def _seed_backfill_review_workout(store: Store) -> None:  # noqa: PLR0915

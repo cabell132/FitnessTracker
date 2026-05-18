@@ -112,6 +112,14 @@ class ChoicePerformance:
 
 
 @dataclass(frozen=True)
+class DurationPerformance:
+    """One duration parsed from a performed item comment."""
+
+    sets: list[PostWorkoutsRequestSet]
+    notes: str
+
+
+@dataclass(frozen=True)
 class ChoiceReviewContext:
     """Source context for expanding one Choice Workout Item."""
 
@@ -575,8 +583,14 @@ def _review_item(
     )
     if choice_items:
         return choice_items
+    notes: str | None = None
     if not sets and _is_down_regulate_item(name):
         sets = [PostWorkoutsRequestSet(type="normal", duration_seconds=240)]
+    if not sets and isinstance(template, HevyAppExercise):
+        duration_performance = _duration_performance(comment, template)
+        if duration_performance is not None:
+            sets = duration_performance.sets
+            notes = duration_performance.notes
     blockers: list[str] = []
     warnings: list[str] = []
     is_placeholder_rest = not sets and _is_placeholder_rest_item(
@@ -604,11 +618,7 @@ def _review_item(
             comment=comment,
             selected_hevy_template=template if isinstance(template, HevyAppExercise) else None,
             sets=sets,
-            notes=_notes(
-                info=info,
-                comment=comment,
-                sets=sets,
-            ),
+            notes=notes if notes is not None else _notes(info=info, comment=comment, sets=sets),
             warnings=warnings,
             blockers=blockers,
         )
@@ -689,6 +699,39 @@ def _choice_performances(comment: str, options: list[str]) -> list[ChoicePerform
             )
         )
     return performances
+
+
+def _duration_performance(
+    comment: str,
+    template: HevyAppExercise,
+) -> DurationPerformance | None:
+    if template.type not in {"duration", "distance_duration"}:
+        return None
+    for segment in _comment_segments(comment):
+        duration_seconds = _duration_seconds(segment)
+        if duration_seconds is None:
+            continue
+        return DurationPerformance(
+            sets=[PostWorkoutsRequestSet(type="normal", duration_seconds=duration_seconds)],
+            notes=_duration_performance_notes(comment, segment),
+        )
+    return None
+
+
+def _duration_performance_notes(comment: str, duration_segment: str) -> str:
+    note_segments = []
+    for segment in _comment_segments(comment):
+        if segment == duration_segment:
+            segment = re.sub(
+                r"\b\d+(?:\.\d+)?\s*(?:mins?|minutes?)\b",
+                "",
+                segment,
+                count=1,
+                flags=re.IGNORECASE,
+            ).strip(" /,-")
+        if segment:
+            note_segments.append(segment)
+    return f"Athlete comment: {'; '.join(note_segments)}" if note_segments else ""
 
 
 def _comment_segments(comment: str) -> list[str]:
@@ -781,9 +824,29 @@ def _notes(*, info: str, comment: str, sets: list[PostWorkoutsRequestSet]) -> st
     parts = []
     if info and not sets:
         parts.append(f"Coach prescription: {info}")
+    duration_note = _duration_note_for_structured_set(comment, sets)
+    if duration_note is not None:
+        if duration_note:
+            parts.append(duration_note)
+        return "\n".join(parts)
+    if info and any(set_row.distance_meters is not None for set_row in sets):
+        parts.append(f"Coach prescription: {info}")
     if comment and not _comment_duplicates_structured_sets(comment, sets):
         parts.append(f"Athlete comment: {comment}")
     return "\n".join(parts)
+
+
+def _duration_note_for_structured_set(
+    comment: str,
+    sets: list[PostWorkoutsRequestSet],
+) -> str | None:
+    if len(sets) != 1 or sets[0].duration_seconds is None:
+        return None
+    for segment in _comment_segments(comment):
+        duration_seconds = _duration_seconds(segment)
+        if duration_seconds == sets[0].duration_seconds:
+            return _duration_performance_notes(comment, segment)
+    return None
 
 
 def _comment_duplicates_structured_sets(

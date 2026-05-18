@@ -181,7 +181,7 @@ class HevyMixin(CrudMixin):
             index=exercise.index,
             name=exercise.title,
             notes=exercise.notes or "",
-            superset_id=exercise.superset_id or None,
+            superset_id=None if exercise.superset_id is False else exercise.superset_id,
             exercise_id=exercise.exercise_template_id,
         )
         if instance := self.get(
