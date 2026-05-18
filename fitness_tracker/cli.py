@@ -35,13 +35,14 @@ from fitness_tracker.maintenance.hevy_template_ensure import (
     TemplateEnsureError,
     TemplateEnsureResult,
 )
-from fitness_tracker.sync.adapters import HevyRoutineWriterAdapter
+from fitness_tracker.sync.adapters import HevyRoutineWriterAdapter, HevyWorkoutWriterAdapter
 from fitness_tracker.sync_review import (
     SyncApplyError,
     SyncReviewError,
     TrueCoachToHevyReviewService,
     TrueCoachWorkoutBackfillDiscoveryService,
     TrueCoachWorkoutBackfillReviewService,
+    WorkoutBackfillApplyError,
     WorkoutBackfillReviewError,
 )
 
@@ -80,6 +81,8 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0911
         return _sync_review_truecoach_workout_backfill(args)
     if args.command == "sync-apply" and args.sync_apply_command == "truecoach-to-hevy":
         return _sync_apply_truecoach_to_hevy(args)
+    if args.command == "sync-apply" and args.sync_apply_command == "truecoach-workout-backfill":
+        return _sync_apply_truecoach_workout_backfill(args)
     parser.print_help()
     return 1
 
@@ -252,6 +255,24 @@ def _add_sync_apply_parser(
     truecoach_to_hevy.add_argument("--dry-run", action="store_true")
     truecoach_to_hevy.add_argument("--manual-request")
     truecoach_to_hevy.add_argument("--response-path")
+
+    workout_backfill = sync_apply_subparsers.add_parser("truecoach-workout-backfill")
+    workout_backfill.add_argument("--workout-id", type=int, required=True)
+    workout_backfill.add_argument("--db", help="SQLite database path. Prefer --database-url.")
+    workout_backfill.add_argument(
+        "--database-url", help="SQLAlchemy database URL. Defaults to DATABASE_URL."
+    )
+    workout_backfill.add_argument(
+        "--output-dir",
+        default="reports",
+        help="Report root. Defaults to reports.",
+    )
+    workout_backfill.add_argument(
+        "--decisions",
+        help="Editable Workout backfill decisions JSON to validate and apply to the request.",
+    )
+    workout_backfill.add_argument("--dry-run", action="store_true")
+    workout_backfill.add_argument("--manual-request")
 
 
 def _migrate_exercise_template(args: argparse.Namespace) -> int:
@@ -549,6 +570,59 @@ def _sync_apply_truecoach_to_hevy(args: argparse.Namespace) -> int:  # noqa: PLR
     else:
         _emit(f"Created Hevy Routine from request: {result.request_path}")
     return 0
+
+
+def _sync_apply_truecoach_workout_backfill(args: argparse.Namespace) -> int:
+    decisions_path = Path(args.decisions) if args.decisions else None
+    try:
+        if args.manual_request:
+            if args.dry_run:
+                _emit("Error: --manual-request cannot be combined with --dry-run")
+                return 2
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+            result = _workout_backfill_manual_service(args).apply_manual_request(
+                Path(args.manual_request),
+                workout_id=args.workout_id,
+                workout_writer=HevyWorkoutWriterAdapter(_hevy_client_from_config()),
+            )
+        elif args.dry_run:
+            result = _workout_backfill_review_service(args).write_apply_request(
+                args.workout_id,
+                decisions_path=decisions_path,
+            )
+        else:
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+            result = _workout_backfill_review_service(args).apply(
+                args.workout_id,
+                workout_writer=HevyWorkoutWriterAdapter(_hevy_client_from_config()),
+                decisions_path=decisions_path,
+            )
+    except (WorkoutBackfillApplyError, WorkoutBackfillReviewError, HevyAppAPIError) as exc:
+        _emit(f"Error: {exc}")
+        return 2
+    if args.dry_run:
+        _emit(f"Wrote Hevy Workout request dry-run: {result.request_path}")
+    else:
+        _emit(f"Created Hevy Workout from request: {result.request_path}")
+    return 0
+
+
+def _workout_backfill_review_service(
+    args: argparse.Namespace,
+) -> TrueCoachWorkoutBackfillReviewService:
+    return TrueCoachWorkoutBackfillReviewService(
+        store=Store(_engine_from_args(args)),
+        output_root=Path(args.output_dir),
+    )
+
+
+def _workout_backfill_manual_service(
+    args: argparse.Namespace,
+) -> TrueCoachWorkoutBackfillReviewService:
+    return TrueCoachWorkoutBackfillReviewService(
+        store=Store(create_database_engine("sqlite:///:memory:")),
+        output_root=Path(args.output_dir),
+    )
 
 
 def _find_remote_hevy_routines(title: str) -> list[dict[str, Any]]:

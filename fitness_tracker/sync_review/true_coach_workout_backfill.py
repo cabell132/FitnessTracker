@@ -26,10 +26,15 @@ from fitness_tracker.database.models.apple_health import (
 from fitness_tracker.database.models.hevy_app import HevyAppExercise
 from fitness_tracker.database.models.tracker import Sets, Workout as TrackerWorkout
 from fitness_tracker.database.models.true_coach import TrueCoachWorkout
+from fitness_tracker.sync.ports import HevyWorkoutWriter
 
 
 class WorkoutBackfillReviewError(Exception):
     """Raised when a Workout backfill review cannot be produced."""
+
+
+class WorkoutBackfillApplyError(Exception):
+    """Raised when a Workout backfill request is not safe to apply."""
 
 
 @dataclass(frozen=True)
@@ -43,6 +48,15 @@ class WorkoutBackfillReviewBundle:
     apple_health_evidence_path: Path
     decisions_path: Path
     decision_validation_path: Path
+
+
+@dataclass(frozen=True)
+class WorkoutBackfillApplyResult:
+    """Paths and request body produced for a Workout backfill apply attempt."""
+
+    review_bundle: WorkoutBackfillReviewBundle | None
+    request_path: Path
+    request_body: PostWorkoutsRequestBody
 
 
 @dataclass(frozen=True)
@@ -117,6 +131,16 @@ class BackfillReportContext:
     decision_validation: dict[str, list[str]]
 
 
+@dataclass(frozen=True)
+class ApplyRequestValidationContext:
+    """Inputs for validating a dry-run Hevy Workout apply request."""
+
+    plan: dict[str, Any]
+    decision_validation: dict[str, list[str]]
+    request_body: PostWorkoutsRequestBody
+    decisions: dict[str, Any]
+
+
 class TrueCoachWorkoutBackfillReviewService:
     """Create a review bundle for one completed True Coach Workout backfill."""
 
@@ -183,6 +207,89 @@ class TrueCoachWorkoutBackfillReviewService:
             apple_health_evidence_path=apple_health_evidence_path,
             decisions_path=output_decisions_path,
             decision_validation_path=decision_validation_path,
+        )
+
+    def write_apply_request(
+        self,
+        workout_id: int,
+        decisions_path: Path | None = None,
+    ) -> WorkoutBackfillApplyResult:
+        """Validate and write the exact Hevy Workout request body for dry-run apply.
+
+        Args:
+            workout_id (int): True Coach Workout id.
+            decisions_path (Path | None): Optional editable decisions JSON to apply.
+
+        Returns:
+            WorkoutBackfillApplyResult: Validated request path and typed body.
+        """
+        bundle = self.write_review(workout_id, decisions_path=decisions_path)
+        plan = json.loads(bundle.plan_path.read_text(encoding="utf-8"))
+        request_data = json.loads(bundle.request_path.read_text(encoding="utf-8"))
+        decision_validation = json.loads(
+            bundle.decision_validation_path.read_text(encoding="utf-8")
+        )
+        decisions = json.loads(bundle.decisions_path.read_text(encoding="utf-8"))
+        request_body = PostWorkoutsRequestBody(**request_data)
+        _validate_apply_request(
+            ApplyRequestValidationContext(
+                plan=plan,
+                decision_validation=decision_validation,
+                request_body=request_body,
+                decisions=decisions,
+            )
+        )
+        return WorkoutBackfillApplyResult(
+            review_bundle=bundle,
+            request_path=bundle.request_path,
+            request_body=request_body,
+        )
+
+    def apply(
+        self,
+        workout_id: int,
+        *,
+        workout_writer: HevyWorkoutWriter,
+        decisions_path: Path | None = None,
+    ) -> WorkoutBackfillApplyResult:
+        """Create a Hevy Workout from a validated backfill request.
+
+        Args:
+            workout_id (int): True Coach Workout id.
+            workout_writer (HevyWorkoutWriter): Workout writer port.
+            decisions_path (Path | None): Optional editable decisions JSON to apply.
+
+        Returns:
+            WorkoutBackfillApplyResult: Request body and local artifacts.
+        """
+        result = self.write_apply_request(workout_id, decisions_path=decisions_path)
+        workout_writer.create_workout(result.request_body)
+        return result
+
+    def apply_manual_request(
+        self,
+        request_path: Path,
+        *,
+        workout_id: int,
+        workout_writer: HevyWorkoutWriter,
+    ) -> WorkoutBackfillApplyResult:
+        """Create a Hevy Workout from an Agent-edited request artifact.
+
+        Args:
+            request_path (Path): Edited Hevy Workout request JSON.
+            workout_id (int): Expected source True Coach Workout id marker.
+            workout_writer (HevyWorkoutWriter): Workout writer port.
+
+        Returns:
+            WorkoutBackfillApplyResult: Submitted request body.
+        """
+        request_body = _load_manual_request(request_path)
+        _validate_manual_apply_request(request_body, workout_id=workout_id)
+        workout_writer.create_workout(request_body)
+        return WorkoutBackfillApplyResult(
+            review_bundle=None,
+            request_path=request_path,
+            request_body=request_body,
         )
 
     def _build_artifacts(
@@ -717,6 +824,65 @@ def _request_exercise_template_id(
         return None
     selected_template_id = decision.get("selected_hevy_template_id")
     return selected_template_id if isinstance(selected_template_id, str) else None
+
+
+def _validate_apply_request(context: ApplyRequestValidationContext) -> None:
+    blockers = [
+        blocker
+        for item in context.plan.get("items", [])
+        for blocker in item.get("blockers", [])
+        if _request_exercise_template_id(item, context.decisions) is None
+    ]
+    blockers.extend(context.decision_validation.get("blockers", []))
+    workout = context.request_body.workout
+    if not workout.start_time or not workout.end_time:
+        blocker = "Missing required decision: selected Workout timestamps"
+        if blocker not in blockers:
+            blockers.append(blocker)
+    blockers.extend(
+        f"Missing Hevy template mapping for performed item: {item['name']}"
+        for item in context.plan.get("items", [])
+        if item.get("sets") and _request_exercise_template_id(item, context.decisions) is None
+    )
+    if blockers:
+        raise WorkoutBackfillApplyError("; ".join(blockers))
+
+
+def _load_manual_request(request_path: Path) -> PostWorkoutsRequestBody:
+    try:
+        data = json.loads(request_path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        msg = f"Could not read Hevy Workout request file {request_path}: {exc}"
+        raise WorkoutBackfillApplyError(msg) from exc
+    except json.JSONDecodeError as exc:
+        msg = f"Could not parse Hevy Workout request file {request_path}: {exc}"
+        raise WorkoutBackfillApplyError(msg) from exc
+    try:
+        return PostWorkoutsRequestBody(**data)
+    except ValueError as exc:
+        msg = f"Invalid Hevy Workout request file {request_path}: {exc}"
+        raise WorkoutBackfillApplyError(msg) from exc
+
+
+def _validate_manual_apply_request(
+    request_body: PostWorkoutsRequestBody,
+    *,
+    workout_id: int,
+) -> None:
+    blockers: list[str] = []
+    workout = request_body.workout
+    if not workout.start_time or not workout.end_time:
+        blockers.append("Missing required Hevy Workout timestamps")
+    marker = f"True Coach Workout {workout_id}"
+    if marker not in (workout.description or ""):
+        blockers.append(f"Missing source True Coach Workout id marker: {workout_id}")
+    for index, exercise in enumerate(workout.exercises, start=1):
+        if not exercise.exercise_template_id:
+            blockers.append(f"Missing Hevy template mapping for request exercise {index}")
+        if not exercise.sets:
+            blockers.append(f"Invalid set payload for request exercise {index}: no sets")
+    if blockers:
+        raise WorkoutBackfillApplyError("; ".join(blockers))
 
 
 def _apple_health_evidence(session: Any, due: datetime | None) -> dict[str, Any]:

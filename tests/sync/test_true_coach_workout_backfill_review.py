@@ -4,8 +4,10 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
 from sqlalchemy import create_engine
 
+from fitness_tracker.apis.hevy_app.types import PostWorkoutsRequestBody
 from fitness_tracker.cli import main
 from fitness_tracker.database import Store
 from fitness_tracker.database.models.apple_health import (
@@ -22,6 +24,10 @@ from fitness_tracker.database.models.tracker import (
     WorkoutItem as TrackerWorkoutItem,
 )
 from fitness_tracker.database.models.true_coach import TrueCoachWorkout, TrueCoachWorkoutItem
+from fitness_tracker.sync_review.true_coach_workout_backfill import (
+    WorkoutBackfillApplyError,
+    TrueCoachWorkoutBackfillReviewService,
+)
 
 
 def test_workout_backfill_review_cli_writes_deterministic_bundle_for_455045484(
@@ -847,6 +853,132 @@ def test_workout_backfill_choice_item_applies_template_decision_to_request(
     ]
 
 
+def test_workout_backfill_apply_dry_run_blocks_missing_timestamps(tmp_path: Path) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    service = TrueCoachWorkoutBackfillReviewService(store=store, output_root=tmp_path / "reports")
+
+    with pytest.raises(
+        WorkoutBackfillApplyError,
+        match="Missing required decision: selected Workout timestamps",
+    ):
+        service.write_apply_request(455045484)
+
+
+def test_workout_backfill_apply_dry_run_blocks_missing_hevy_template_mapping(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    with store.unit_of_work() as uow:
+        exercise = uow.tracker.get_exercise(name="Chest Supported Row")
+        assert exercise is not None
+        exercise.hevy_app_id = None
+    decisions_path = tmp_path / "decisions.json"
+    decisions_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "workout": {
+                    "id": 455045484,
+                    "selected_start_time": "2024-04-10T17:05:00Z",
+                    "selected_end_time": "2024-04-10T18:02:00Z",
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    service = TrueCoachWorkoutBackfillReviewService(store=store, output_root=tmp_path / "reports")
+
+    with pytest.raises(
+        WorkoutBackfillApplyError,
+        match="Missing Hevy template mapping for performed item: Chest Supported Row",
+    ):
+        service.write_apply_request(455045484, decisions_path=decisions_path)
+
+
+def test_workout_backfill_apply_sends_same_hevy_request_as_dry_run(tmp_path: Path) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    decisions_path = tmp_path / "decisions.json"
+    decisions_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "workout": {
+                    "id": 455045484,
+                    "selected_start_time": "2024-04-10T17:05:00Z",
+                    "selected_end_time": "2024-04-10T18:02:00Z",
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    service = TrueCoachWorkoutBackfillReviewService(store=store, output_root=tmp_path / "reports")
+    dry_run = service.write_apply_request(455045484, decisions_path=decisions_path)
+    writer = _RecordingWorkoutWriter()
+
+    applied = service.apply(
+        455045484,
+        workout_writer=writer,
+        decisions_path=decisions_path,
+    )
+
+    assert len(writer.requests) == 1
+    assert writer.requests[0].model_dump() == json.loads(dry_run.request_path.read_text())
+    assert applied.request_body.model_dump() == writer.requests[0].model_dump()
+    assert "True Coach Workout 455045484" in writer.requests[0].workout.description
+
+
+def test_workout_backfill_manual_request_apply_accepts_edited_artifact(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    decisions_path = tmp_path / "decisions.json"
+    decisions_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "workout": {
+                    "id": 455045484,
+                    "selected_start_time": "2024-04-10T17:05:00Z",
+                    "selected_end_time": "2024-04-10T18:02:00Z",
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    service = TrueCoachWorkoutBackfillReviewService(store=store, output_root=tmp_path / "reports")
+    dry_run = service.write_apply_request(455045484, decisions_path=decisions_path)
+    edited = json.loads(dry_run.request_path.read_text())
+    edited["workout"]["title"] = "Edited Upper Backfill"
+    edited_path = tmp_path / "edited-hevy-workout-request.json"
+    edited_path.write_text(json.dumps(edited) + "\n", encoding="utf-8")
+    writer = _RecordingWorkoutWriter()
+
+    result = service.apply_manual_request(
+        edited_path,
+        workout_id=455045484,
+        workout_writer=writer,
+    )
+
+    assert len(writer.requests) == 1
+    assert writer.requests[0].workout.title == "Edited Upper Backfill"
+    assert result.request_body.model_dump() == writer.requests[0].model_dump()
+
+
 def _add_empty_backfill_item(
     store: Store,
     item: dict[str, str | None],
@@ -1033,6 +1165,14 @@ def _seed_backfill_review_workout(store: Store) -> None:  # noqa: PLR0915
                     reps=10,
                 )
             )
+
+
+class _RecordingWorkoutWriter:
+    def __init__(self) -> None:
+        self.requests: list[PostWorkoutsRequestBody] = []
+
+    def create_workout(self, workout: PostWorkoutsRequestBody) -> None:
+        self.requests.append(workout)
 
 
 def _write_backfill_review(db_path: Path, tmp_path: Path) -> Path:
