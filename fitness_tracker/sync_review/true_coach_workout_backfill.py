@@ -690,17 +690,18 @@ def _circuit_review_items(context: CircuitReviewContext) -> list[BackfillReviewI
     for offset, movement in enumerate(_reviewable_circuit_movements(context.parsed_block)):
         matches = _matching_choice_templates(movement.name, context.templates)
         template = matches[0] if len(matches) == 1 else None
-        is_omitted = _movement_is_omitted(movement.name, omitted_movements)
+        omission_comment = _matching_omission_comment(movement.name, omitted_movements)
         base_sets = _sets_for_circuit_movement(movement)
-        sets = [] if is_omitted else _repeat_sets(base_sets, count=completed_round_count or 1)
+        sets = (
+            []
+            if omission_comment is not None
+            else _repeat_sets(base_sets, count=completed_round_count or 1)
+        )
         warnings: list[str] = []
         blockers: list[str] = []
         circuit_decision_reason: str | None = None
-        if is_omitted:
-            warnings.append(
-                "Athlete comment omits Circuit movement: "
-                f"{_omission_comment_for(movement.name, omitted_movements)}"
-            )
+        if omission_comment is not None:
+            warnings.append(f"Athlete comment omits Circuit movement: {omission_comment}")
         elif not matches:
             blockers.append(
                 f"Missing Hevy template mapping for Circuit Workout Item "
@@ -714,7 +715,7 @@ def _circuit_review_items(context: CircuitReviewContext) -> list[BackfillReviewI
                 f"{context.source_id}: {movement.name} ({ids})"
             )
             circuit_decision_reason = "ambiguous_template"
-        if movement.target and not base_sets and not is_omitted:
+        if movement.target and not base_sets and omission_comment is None:
             warnings.append("No deterministic set parser for Circuit movement target.")
         review_items.append(
             BackfillReviewItem(
@@ -821,17 +822,10 @@ def _omitted_movement_names(comment: str) -> dict[str, str]:
     return omitted
 
 
-def _movement_is_omitted(movement_name: str, omitted_movements: dict[str, str]) -> bool:
-    normalized_name = _normalize_choice_text(movement_name)
-    return any(
-        omitted_name == normalized_name
-        or omitted_name in normalized_name
-        or normalized_name in omitted_name
-        for omitted_name in omitted_movements
-    )
-
-
-def _omission_comment_for(movement_name: str, omitted_movements: dict[str, str]) -> str:
+def _matching_omission_comment(
+    movement_name: str,
+    omitted_movements: dict[str, str],
+) -> str | None:
     normalized_name = _normalize_choice_text(movement_name)
     for omitted_name, source_text in omitted_movements.items():
         if (
@@ -840,7 +834,7 @@ def _omission_comment_for(movement_name: str, omitted_movements: dict[str, str])
             or normalized_name in omitted_name
         ):
             return source_text
-    return movement_name
+    return None
 
 
 def _sets_for_circuit_movement(
@@ -1441,35 +1435,42 @@ def _choice_decision_for(
     decisions: dict[str, Any],
     required_choice: dict[str, Any],
 ) -> dict[str, Any] | None:
-    choice_items = decisions.get("choice_items")
-    if not isinstance(choice_items, list):
-        return None
-    for choice in choice_items:
-        if not isinstance(choice, dict):
-            continue
-        if (
-            choice.get("source_id") == required_choice["source_id"]
-            and choice.get("performed_name") == required_choice["performed_name"]
-        ):
-            return choice
-    return None
+    return _decision_for(
+        decisions=decisions,
+        required=required_choice,
+        lookup=("choice_items", "performed_name"),
+    )
 
 
 def _circuit_decision_for(
     decisions: dict[str, Any],
     required_circuit: dict[str, Any],
 ) -> dict[str, Any] | None:
-    circuit_items = decisions.get("circuit_items")
-    if not isinstance(circuit_items, list):
+    return _decision_for(
+        decisions=decisions,
+        required=required_circuit,
+        lookup=("circuit_items", "movement_name"),
+    )
+
+
+def _decision_for(
+    *,
+    decisions: dict[str, Any],
+    required: dict[str, Any],
+    lookup: tuple[str, str],
+) -> dict[str, Any] | None:
+    section, name_key = lookup
+    decision_items = decisions.get(section)
+    if not isinstance(decision_items, list):
         return None
-    for circuit in circuit_items:
-        if not isinstance(circuit, dict):
+    for decision in decision_items:
+        if not isinstance(decision, dict):
             continue
         if (
-            circuit.get("source_id") == required_circuit["source_id"]
-            and circuit.get("movement_name") == required_circuit["movement_name"]
+            decision.get("source_id") == required["source_id"]
+            and decision.get(name_key) == required[name_key]
         ):
-            return circuit
+            return decision
     return None
 
 
@@ -1518,28 +1519,34 @@ def _request_exercise_template_id(
         return item["selected_hevy_template"]["id"]
     if decisions is None:
         return None
+    decision = _manual_template_decision_for(item, decisions)
+    if decision is None:
+        return None
+    selected_template_id = decision.get("selected_hevy_template_id")
+    return selected_template_id if isinstance(selected_template_id, str) else None
+
+
+def _manual_template_decision_for(
+    item: dict[str, Any],
+    decisions: dict[str, Any],
+) -> dict[str, Any] | None:
     if item.get("choice_decision_reason") is not None:
-        decision = _choice_decision_for(
+        return _choice_decision_for(
             decisions,
             {
                 "source_id": item["source_id"],
                 "performed_name": item["name"],
             },
         )
-    elif item.get("circuit_decision_reason") is not None:
-        decision = _circuit_decision_for(
+    if item.get("circuit_decision_reason") is not None:
+        return _circuit_decision_for(
             decisions,
             {
                 "source_id": item["source_id"],
                 "movement_name": item["name"],
             },
         )
-    else:
-        decision = None
-    if decision is None:
-        return None
-    selected_template_id = decision.get("selected_hevy_template_id")
-    return selected_template_id if isinstance(selected_template_id, str) else None
+    return None
 
 
 def _validate_apply_request(context: ApplyRequestValidationContext) -> None:
@@ -1862,13 +1869,20 @@ def _report_decision_validation(decision_validation: dict[str, list[str]]) -> li
 
 def _report_item(index: int, item: dict[str, Any]) -> list[str]:
     template = item["selected_hevy_template"]
-    lines = [
-        f"## {index}. {item['name']}",
-        "",
+    details = [
         f"True Coach Workout Item: {item['source_id'] or 'none'}",
         f"Tracker WorkoutItem: {item['tracker_workout_item_id']}",
         f"Coach prescription: {item['info'] or 'none'}",
         f"Athlete comment: {item['comment'] or 'none'}",
+    ]
+    if item.get("movement_target") is not None:
+        details.append(f"Movement target: {item['movement_target'] or 'none'}")
+    if item.get("completed_round_count") is not None:
+        details.append(f"Completed rounds: {item['completed_round_count']}")
+    lines = [
+        f"## {index}. {item['name']}",
+        "",
+        *details,
         (
             f"Selected Hevy template: {template['name']} ({template['id']})"
             if template is not None
@@ -1876,10 +1890,6 @@ def _report_item(index: int, item: dict[str, Any]) -> list[str]:
         ),
         "Structured sets:",
     ]
-    if item.get("movement_target") is not None:
-        lines.insert(6, f"Movement target: {item['movement_target'] or 'none'}")
-    if item.get("completed_round_count") is not None:
-        lines.insert(7, f"Completed rounds: {item['completed_round_count']}")
     if item["sets"]:
         lines.extend(f"- {_format_set(set_row)}" for set_row in item["sets"])
     else:
