@@ -425,7 +425,20 @@ class TrueCoachToHevyReviewService:
         blocks: list[PlannedBlock] = []
         block_kind = _circuit_block_kind(parsed_block)
         for index, movement in enumerate(parsed_block.movements, start=1):
-            template = _selected_template_for_movement(uow, movement)
+            base_template = _selected_template_for_movement(uow, movement)
+            required_templates = self._required_templates_for_context(
+                uow,
+                TemplateMatchContext(
+                    item=item,
+                    selected_template=base_template,
+                    text=movement.source_text,
+                ),
+            )
+            template = _selected_template_for_required_templates(
+                uow,
+                fallback_template=base_template,
+                required_templates=required_templates,
+            )
             proposed_sets = _sets_for_circuit_movement(movement)
             proposed_sets, set_provenance = _enrich_sets_from_history(uow, template, proposed_sets)
             blocks.append(
@@ -440,7 +453,7 @@ class TrueCoachToHevyReviewService:
                     movement_name=movement.name,
                     movement_target=movement.target,
                     selected_hevy_template=template,
-                    required_hevy_templates=[],
+                    required_hevy_templates=required_templates,
                     proposed_sets=proposed_sets,
                     set_provenance=set_provenance,
                     warnings=_circuit_movement_warnings(
@@ -452,7 +465,8 @@ class TrueCoachToHevyReviewService:
                         template=template,
                         movement=movement,
                         parsed_block=parsed_block,
-                    ),
+                    )
+                    + _required_template_blockers(required_templates),
                 )
             )
         return blocks
@@ -917,11 +931,24 @@ def _selected_template_for_phase(
 ) -> HevyAppExercise | None:
     if selection.phase_kind == "dynamic_reps":
         return selection.selected_template
-    if len(selection.required_templates) != 1:
-        return None
-    required_template = selection.required_templates[0]
+    return _selected_template_for_required_templates(
+        uow,
+        fallback_template=None,
+        required_templates=selection.required_templates,
+    )
+
+
+def _selected_template_for_required_templates(
+    uow: Tx,
+    *,
+    fallback_template: HevyAppExercise | None,
+    required_templates: list[RequiredHevyTemplate],
+) -> HevyAppExercise | None:
+    if len(required_templates) != 1:
+        return fallback_template
+    required_template = required_templates[0]
     if required_template.status != "existing" or len(required_template.matching_template_ids) != 1:
-        return None
+        return fallback_template
     return uow.session.get(HevyAppExercise, id=required_template.matching_template_ids[0])
 
 
@@ -930,16 +957,25 @@ def _selected_template_for_movement(
     movement: ParsedCircuitMovement,
 ) -> HevyAppExercise | None:
     tracker_exercise = uow.tracker.get_exercise(name=movement.name)
-    if tracker_exercise and isinstance(tracker_exercise.hevy_app, HevyAppExercise):
+    if (
+        tracker_exercise
+        and isinstance(tracker_exercise.hevy_app, HevyAppExercise)
+        and not _is_placeholder_template(tracker_exercise.hevy_app)
+    ):
         return tracker_exercise.hevy_app
     matching_templates = [
         template
         for template in uow.session.get_all(HevyAppExercise)
         if template.name.casefold() == movement.name.casefold()
+        and not _is_placeholder_template(template)
     ]
     if len(matching_templates) == 1:
         return matching_templates[0]
     return None
+
+
+def _is_placeholder_template(template: HevyAppExercise) -> bool:
+    return template.name == "#####PLACEHOLDER#####"
 
 
 def _circuit_block_kind(parsed_block: ParsedCircuitBlock) -> PlannedBlockKind:

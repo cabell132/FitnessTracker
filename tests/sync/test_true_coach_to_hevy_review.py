@@ -403,6 +403,100 @@ def test_sync_review_splits_resolved_amrap_movements_into_planned_blocks(
     _assert_resolved_amrap_movement_blocks(item)
 
 
+def test_sync_review_resolves_circuit_movements_with_template_overrides(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_circuit_template_override_workout(store)
+
+    _, plan = _write_sync_review(tmp_path, db_path, workout_id=54)
+
+    item = plan["items"][0]
+    blocks = item["planned_blocks"]
+    assert blocks[0]["movement_name"] == "Bodyweight Calf Raise"
+    assert blocks[0]["selected_hevy_template"]["id"] == "hevy-single-leg-calf-iso"
+    assert blocks[0]["required_hevy_templates"] == [
+        {
+            "title": "Single-Leg Isometric Calf Raise",
+            "expected_type": "duration",
+            "equipment_category": "bodyweight",
+            "muscle_group": "calves",
+            "other_muscles": [],
+            "status": "existing",
+            "source_workout_item_ids": [1013],
+            "matching_template_ids": ["hevy-single-leg-calf-iso"],
+        }
+    ]
+    assert blocks[0]["proposed_sets"] == [{"type": "normal", "duration_seconds": 20}]
+    assert blocks[0]["blockers"] == []
+    assert blocks[1]["selected_hevy_template"]["id"] == "hevy-push-up"
+    assert item["blockers"] == []
+
+
+def test_sync_apply_blocks_circuit_movement_placeholder_templates(tmp_path: Path) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_placeholder_circuit_movement_workout(store)
+    service = TrueCoachToHevyReviewService(store=store, output_root=tmp_path / "reports")
+
+    _, plan = _write_sync_review(tmp_path, db_path, workout_id=55)
+
+    blocks = plan["items"][0]["planned_blocks"]
+    assert blocks[0]["selected_hevy_template"] is None
+    assert blocks[0]["blockers"] == ["Missing required Hevy exercise mapping: Burpees"]
+    assert blocks[1]["selected_hevy_template"]["id"] == "hevy-bike"
+    with pytest.raises(
+        SyncApplyError,
+        match="Missing required Hevy exercise mapping: Burpees",
+    ):
+        service.write_apply_request(55)
+
+
+def test_sync_apply_keeps_single_movement_circuit_as_one_routine_exercise(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_single_movement_circuit_workout(store)
+    service = TrueCoachToHevyReviewService(store=store, output_root=tmp_path / "reports")
+
+    result = service.write_apply_request(56)
+
+    item = json.loads(result.review_bundle.plan_path.read_text())["items"][0]
+    assert item["parsed_circuit_block"] is None
+    assert item["planned_blocks"] == []
+    exercises = result.request_body.model_dump()["routine"]["exercises"]
+    assert len(exercises) == 1
+    assert exercises[0]["exercise_template_id"] == "hevy-push-up"
+    assert exercises[0]["sets"] == [
+        {
+            "weight_kg": None,
+            "reps": 10,
+            "distance_meters": None,
+            "duration_seconds": None,
+            "type": "normal",
+        },
+        {
+            "weight_kg": None,
+            "reps": 10,
+            "distance_meters": None,
+            "duration_seconds": None,
+            "type": "normal",
+        },
+        {
+            "weight_kg": None,
+            "reps": 10,
+            "distance_meters": None,
+            "duration_seconds": None,
+            "type": "normal",
+        },
+    ]
+
+
 def test_sync_review_blocks_circuit_ladder_planned_blocks_for_agent_decision(
     tmp_path: Path,
 ) -> None:
@@ -1046,6 +1140,193 @@ def _seed_round_ladder_circuit_workout(store: Store) -> None:
                 state="pending",
                 position=1,
                 exercise_id=514,
+                assessment_id=None,
+            )
+        )
+
+
+def _seed_circuit_template_override_workout(store: Store) -> None:
+    now = datetime(2026, 5, 17, tzinfo=UTC)
+    with store.unit_of_work() as uow:
+        uow.session.add(
+            TrueCoachWorkout(
+                id=54,
+                title="Override Circuit",
+                due=now,
+                short_description='<p class="name-and-info">A) Single-leg iso circuit</p>',
+                state="pending",
+                rest_day=False,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        uow.session.add(TrueCoachExercise(id=517, name="Single-leg iso circuit", default=False))
+        uow.session.add(TrueCoachExercise(id=518, name="Bodyweight Calf Raise", default=False))
+        uow.session.add(TrueCoachExercise(id=519, name="Push Up", default=False))
+        uow.session.add(
+            HevyAppExercise(
+                id="hevy-circuit",
+                name="Circuit",
+                type="reps_only",
+                equipment="bodyweight",
+                default=True,
+            )
+        )
+        uow.session.add(
+            HevyAppExercise(
+                id="hevy-calf-raise",
+                name="Bodyweight Calf Raise",
+                type="reps_only",
+                equipment="bodyweight",
+                default=True,
+            )
+        )
+        uow.session.add(
+            HevyAppExercise(
+                id="hevy-single-leg-calf-iso",
+                name="Single-Leg Isometric Calf Raise",
+                type="duration",
+                equipment="bodyweight",
+                default=False,
+            )
+        )
+        uow.session.add(
+            HevyAppExercise(
+                id="hevy-push-up",
+                name="Push Up",
+                type="reps_only",
+                equipment="bodyweight",
+                default=True,
+            )
+        )
+        uow.session.add(
+            TrackerExercise(
+                name="Single-leg iso circuit",
+                hevy_app_id="hevy-circuit",
+                true_coach_id=517,
+            )
+        )
+        uow.session.add(
+            TrackerExercise(
+                name="Bodyweight Calf Raise",
+                hevy_app_id="hevy-calf-raise",
+                true_coach_id=518,
+            )
+        )
+        uow.session.add(
+            TrackerExercise(name="Push Up", hevy_app_id="hevy-push-up", true_coach_id=519)
+        )
+        uow.session.add(
+            TrueCoachWorkoutItem(
+                id=1013,
+                workout_id=54,
+                name="Single-leg iso circuit",
+                info="Bodyweight Calf Raise 20s\n10 Push Up",
+                comment="single leg iso hold",
+                is_circuit=True,
+                state="pending",
+                position=1,
+                exercise_id=517,
+                assessment_id=None,
+            )
+        )
+
+
+def _seed_placeholder_circuit_movement_workout(store: Store) -> None:
+    now = datetime(2026, 5, 17, tzinfo=UTC)
+    with store.unit_of_work() as uow:
+        uow.session.add(
+            TrueCoachWorkout(
+                id=55,
+                title="Placeholder Circuit",
+                due=now,
+                short_description='<p class="name-and-info">A) 10\' AMRAP</p>',
+                state="pending",
+                rest_day=False,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        uow.session.add(TrueCoachExercise(id=520, name="10' AMRAP", default=False))
+        uow.session.add(TrueCoachExercise(id=521, name="Burpees", default=False))
+        uow.session.add(TrueCoachExercise(id=522, name="Bike", default=False))
+        uow.session.add(
+            HevyAppExercise(
+                id="hevy-placeholder",
+                name="#####PLACEHOLDER#####",
+                type="reps_only",
+                equipment="bodyweight",
+                default=False,
+            )
+        )
+        uow.session.add(
+            HevyAppExercise(
+                id="hevy-bike",
+                name="Bike",
+                type="short_distance",
+                equipment="machine",
+                default=True,
+            )
+        )
+        uow.session.add(
+            TrackerExercise(name="Burpees", hevy_app_id="hevy-placeholder", true_coach_id=521)
+        )
+        uow.session.add(TrackerExercise(name="Bike", hevy_app_id="hevy-bike", true_coach_id=522))
+        uow.session.add(
+            TrueCoachWorkoutItem(
+                id=1014,
+                workout_id=55,
+                name="10' AMRAP",
+                info="10 Burpees\nBike 500m",
+                comment="",
+                is_circuit=True,
+                state="pending",
+                position=1,
+                exercise_id=520,
+                assessment_id=None,
+            )
+        )
+
+
+def _seed_single_movement_circuit_workout(store: Store) -> None:
+    now = datetime(2026, 5, 17, tzinfo=UTC)
+    with store.unit_of_work() as uow:
+        uow.session.add(
+            TrueCoachWorkout(
+                id=56,
+                title="Single Movement Circuit",
+                due=now,
+                short_description='<p class="name-and-info">A) Push Up</p>',
+                state="pending",
+                rest_day=False,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        uow.session.add(TrueCoachExercise(id=523, name="Push Up", default=False))
+        uow.session.add(
+            HevyAppExercise(
+                id="hevy-push-up",
+                name="Push Up",
+                type="reps_only",
+                equipment="bodyweight",
+                default=True,
+            )
+        )
+        uow.session.add(
+            TrackerExercise(name="Push Up", hevy_app_id="hevy-push-up", true_coach_id=523)
+        )
+        uow.session.add(
+            TrueCoachWorkoutItem(
+                id=1015,
+                workout_id=56,
+                name="Push Up",
+                info="3 x 10",
+                comment="",
+                is_circuit=True,
+                state="pending",
+                position=1,
+                exercise_id=523,
                 assessment_id=None,
             )
         )
