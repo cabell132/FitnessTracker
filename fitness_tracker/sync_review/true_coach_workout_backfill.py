@@ -72,6 +72,29 @@ class BackfillReviewItem:
     notes: str
     warnings: list[str]
     blockers: list[str]
+    choice_template_candidate_ids: list[str] | None = None
+    choice_decision_reason: str | None = None
+
+
+@dataclass(frozen=True)
+class ChoicePerformance:
+    """One performed modality parsed from a Choice Workout Item comment."""
+
+    name: str
+    sets: list[PostWorkoutsRequestSet]
+    notes: str
+
+
+@dataclass(frozen=True)
+class ChoiceReviewContext:
+    """Source context for expanding one Choice Workout Item."""
+
+    item: Any
+    source_id: int | None
+    position: int
+    info: str
+    comment: str
+    templates: list[HevyAppExercise]
 
 
 @dataclass(frozen=True)
@@ -177,17 +200,22 @@ class TrueCoachWorkoutBackfillReviewService:
                 msg = f"True Coach workout {workout_id} has no local tracker Workout row"
                 raise WorkoutBackfillReviewError(msg)
 
-            items = [
-                _review_item(item)
-                for item in sorted(
+            templates = list(
+                uow.session.execute(
+                    select(HevyAppExercise).order_by(HevyAppExercise.name)
+                ).scalars()
+            )
+            items = _review_items(
+                sorted(
                     tracker_workout.workout_items,
                     key=lambda item: (item.position, item.id),
-                )
-            ]
+                ),
+                templates,
+            )
             plan = _plan(workout, tracker_workout, items)
             apple_health_evidence = _apple_health_evidence(uow.session, workout.due)
-            resolved_decisions = decisions or _decision_template(workout_id)
-            decision_validation = _validate_decisions(workout_id, resolved_decisions)
+            resolved_decisions = decisions or _decision_template(workout_id, plan)
+            decision_validation = _validate_decisions(workout_id, resolved_decisions, plan)
             return WorkoutBackfillReviewArtifacts(
                 plan=plan,
                 request=_build_hevy_workout_request(plan, resolved_decisions),
@@ -222,7 +250,17 @@ def _bundle_paths(
     )
 
 
-def _review_item(item: Any) -> BackfillReviewItem:
+def _review_items(
+    tracker_items: list[Any],
+    templates: list[HevyAppExercise],
+) -> list[BackfillReviewItem]:
+    items: list[BackfillReviewItem] = []
+    for item in tracker_items:
+        items.extend(_review_item(item, templates))
+    return items
+
+
+def _review_item(item: Any, templates: list[HevyAppExercise]) -> list[BackfillReviewItem]:
     true_coach_item = item.true_coach
     template = item.exercise.hevy_app if item.exercise is not None else None
     sets = [
@@ -231,6 +269,18 @@ def _review_item(item: Any) -> BackfillReviewItem:
     info = true_coach_item.info or "" if true_coach_item is not None else ""
     comment = true_coach_item.comment or "" if true_coach_item is not None else ""
     name = true_coach_item.name if true_coach_item is not None else item.exercise.name
+    choice_items = _choice_review_items(
+        ChoiceReviewContext(
+            item=item,
+            source_id=true_coach_item.id if true_coach_item is not None else None,
+            position=item.position,
+            info=info,
+            comment=comment,
+            templates=templates,
+        )
+    )
+    if choice_items:
+        return choice_items
     if not sets and _is_down_regulate_item(name):
         sets = [PostWorkoutsRequestSet(type="normal", duration_seconds=240)]
     blockers: list[str] = []
@@ -249,23 +299,146 @@ def _review_item(item: Any) -> BackfillReviewItem:
             )
         else:
             warnings.append("No structured tracker Sets rows found; omitted from draft request.")
-    return BackfillReviewItem(
-        source_id=true_coach_item.id if true_coach_item is not None else None,
-        tracker_workout_item_id=item.id,
-        position=item.position,
-        name=name,
-        info=info,
-        comment=comment,
-        selected_hevy_template=template if isinstance(template, HevyAppExercise) else None,
-        sets=sets,
-        notes=_notes(
+    return [
+        BackfillReviewItem(
+            source_id=true_coach_item.id if true_coach_item is not None else None,
+            tracker_workout_item_id=item.id,
+            position=item.position,
+            name=name,
             info=info,
             comment=comment,
+            selected_hevy_template=template if isinstance(template, HevyAppExercise) else None,
             sets=sets,
-        ),
-        warnings=warnings,
-        blockers=blockers,
-    )
+            notes=_notes(
+                info=info,
+                comment=comment,
+                sets=sets,
+            ),
+            warnings=warnings,
+            blockers=blockers,
+        )
+    ]
+
+
+def _choice_review_items(context: ChoiceReviewContext) -> list[BackfillReviewItem]:
+    options = _choice_options(context.info)
+    performances = _choice_performances(context.comment, options)
+    if not options or not performances:
+        return []
+    review_items = []
+    for offset, performance in enumerate(performances):
+        matches = _matching_choice_templates(performance.name, context.templates)
+        blockers = []
+        if not matches:
+            blockers.append(
+                "Missing Hevy template mapping for Choice Workout Item "
+                f"{context.source_id}: {performance.name}"
+            )
+            choice_decision_reason = "missing_template"
+        elif len(matches) > 1:
+            ids = ", ".join(template.id for template in matches)
+            blockers.append(
+                f"Ambiguous Hevy template mapping for Choice Workout Item {context.source_id}: "
+                f"{performance.name} ({ids})"
+            )
+            choice_decision_reason = "ambiguous_template"
+        else:
+            choice_decision_reason = None
+        review_items.append(
+            BackfillReviewItem(
+                source_id=context.source_id,
+                tracker_workout_item_id=context.item.id,
+                position=context.position + offset,
+                name=performance.name,
+                info=context.info,
+                comment=context.comment,
+                selected_hevy_template=matches[0] if len(matches) == 1 else None,
+                sets=performance.sets,
+                notes=performance.notes,
+                warnings=[],
+                blockers=blockers,
+                choice_template_candidate_ids=[template.id for template in matches],
+                choice_decision_reason=choice_decision_reason,
+            )
+        )
+    return review_items
+
+
+def _choice_options(info: str) -> list[str]:
+    if not _looks_like_choice_text(info):
+        return []
+    normalized = re.sub(r"\bor a combination\b", "", info, flags=re.IGNORECASE)
+    normalized = re.sub(r"\bcombination\b", "", normalized, flags=re.IGNORECASE)
+    parts = re.split(r",|/|\bor\b", normalized, flags=re.IGNORECASE)
+    return [part.strip(" .") for part in parts if part.strip(" .")]
+
+
+def _looks_like_choice_text(info: str) -> bool:
+    return bool(re.search(r",|/|\bor\b|\bcombination\b", info, flags=re.IGNORECASE))
+
+
+def _choice_performances(comment: str, options: list[str]) -> list[ChoicePerformance]:
+    performances = []
+    for segment in _comment_segments(comment):
+        option = _matching_choice_option(segment, options)
+        duration_seconds = _duration_seconds(segment)
+        if option is None or duration_seconds is None:
+            continue
+        notes = _choice_segment_notes(comment, segment)
+        performances.append(
+            ChoicePerformance(
+                name=option,
+                sets=[PostWorkoutsRequestSet(type="normal", duration_seconds=duration_seconds)],
+                notes=notes,
+            )
+        )
+    return performances
+
+
+def _comment_segments(comment: str) -> list[str]:
+    return [segment.strip() for segment in re.split(r",|\n|;", comment) if segment.strip()]
+
+
+def _matching_choice_option(segment: str, options: list[str]) -> str | None:
+    normalized_segment = _normalize_choice_text(segment)
+    for option in options:
+        if _normalize_choice_text(option) in normalized_segment:
+            return option
+    return None
+
+
+def _normalize_choice_text(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", value.casefold()).strip()
+
+
+def _duration_seconds(segment: str) -> int | None:
+    match = re.search(r"(\d+(?:\.\d+)?)\s*(?:mins?|minutes?)\b", segment, flags=re.IGNORECASE)
+    if match is None:
+        return None
+    return round(float(match.group(1)) * 60)
+
+
+def _choice_segment_notes(comment: str, performed_segment: str) -> str:
+    note_segments = [
+        segment
+        for segment in _comment_segments(comment)
+        if segment.strip() != performed_segment.strip()
+    ]
+    if not note_segments:
+        return ""
+    return f"Athlete comment: {', '.join(note_segments)}"
+
+
+def _matching_choice_templates(
+    performance_name: str,
+    templates: list[HevyAppExercise],
+) -> list[HevyAppExercise]:
+    normalized_name = _normalize_choice_text(performance_name)
+    return [
+        template
+        for template in templates
+        if _normalize_choice_text(template.name) == normalized_name
+    ]
 
 
 def _is_down_regulate_item(name: str) -> bool:
@@ -356,7 +529,7 @@ def _plan(
 
 
 def _plan_item(item: BackfillReviewItem) -> dict[str, Any]:
-    return {
+    plan = {
         "source_id": item.source_id,
         "tracker_workout_item_id": item.tracker_workout_item_id,
         "position": item.position,
@@ -369,6 +542,10 @@ def _plan_item(item: BackfillReviewItem) -> dict[str, Any]:
         "warnings": item.warnings,
         "blockers": item.blockers,
     }
+    if item.choice_decision_reason is not None:
+        plan["choice_template_candidates"] = item.choice_template_candidate_ids or []
+        plan["choice_decision_reason"] = item.choice_decision_reason
+    return plan
 
 
 def _template_to_dict(template: HevyAppExercise | None) -> dict[str, str] | None:
@@ -401,8 +578,8 @@ def _load_decisions(decisions_path: Path) -> dict[str, Any]:
     return data
 
 
-def _decision_template(workout_id: int) -> dict[str, Any]:
-    return {
+def _decision_template(workout_id: int, plan: dict[str, Any] | None = None) -> dict[str, Any]:
+    decisions: dict[str, Any] = {
         "version": 1,
         "workout": {
             "id": workout_id,
@@ -410,9 +587,31 @@ def _decision_template(workout_id: int) -> dict[str, Any]:
             "selected_end_time": None,
         },
     }
+    choice_items = _choice_decision_templates(plan) if plan is not None else []
+    if choice_items:
+        decisions["choice_items"] = choice_items
+    return decisions
 
 
-def _validate_decisions(workout_id: int, decisions: dict[str, Any]) -> dict[str, list[str]]:
+def _choice_decision_templates(plan: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        {
+            "source_id": item["source_id"],
+            "performed_name": item["name"],
+            "selected_hevy_template_id": None,
+            "candidate_template_ids": item["choice_template_candidates"],
+            "reason": item["choice_decision_reason"],
+        }
+        for item in plan["items"]
+        if item.get("choice_decision_reason") is not None
+    ]
+
+
+def _validate_decisions(
+    workout_id: int,
+    decisions: dict[str, Any],
+    plan: dict[str, Any] | None = None,
+) -> dict[str, list[str]]:
     blockers: list[str] = []
     warnings: list[str] = []
     workout = decisions.get("workout")
@@ -425,7 +624,42 @@ def _validate_decisions(workout_id: int, decisions: dict[str, Any]) -> dict[str,
         blockers.append(f"Decision workout id must match True Coach Workout {workout_id}")
     if not workout.get("selected_start_time") or not workout.get("selected_end_time"):
         blockers.append("Missing required decision: selected Workout timestamps")
+    for required_choice in _choice_decision_templates(plan) if plan is not None else []:
+        decision = _choice_decision_for(decisions, required_choice)
+        if decision is None or not decision.get("selected_hevy_template_id"):
+            blockers.append(
+                "Missing required decision: Choice Workout Item "
+                f"{required_choice['source_id']} {required_choice['performed_name']} template"
+            )
+        elif (
+            required_choice["candidate_template_ids"]
+            and decision["selected_hevy_template_id"]
+            not in required_choice["candidate_template_ids"]
+        ):
+            blockers.append(
+                "Choice Workout Item "
+                f"{required_choice['source_id']} {required_choice['performed_name']} "
+                "decision must use one of the candidate Hevy templates"
+            )
     return {"blockers": blockers, "warnings": warnings}
+
+
+def _choice_decision_for(
+    decisions: dict[str, Any],
+    required_choice: dict[str, Any],
+) -> dict[str, Any] | None:
+    choice_items = decisions.get("choice_items")
+    if not isinstance(choice_items, list):
+        return None
+    for choice in choice_items:
+        if not isinstance(choice, dict):
+            continue
+        if (
+            choice.get("source_id") == required_choice["source_id"]
+            and choice.get("performed_name") == required_choice["performed_name"]
+        ):
+            return choice
+    return None
 
 
 def _build_hevy_workout_request(
@@ -442,19 +676,47 @@ def _build_hevy_workout_request(
         start_time=workout_decisions.get("selected_start_time"),
         end_time=workout_decisions.get("selected_end_time"),
         exercises=[
-            _request_exercise(item)
+            _request_exercise(item, decisions)
             for item in plan["items"]
-            if item["selected_hevy_template"] is not None and item["sets"]
+            if _request_exercise_template_id(item, decisions) is not None and item["sets"]
         ],
     )
 
 
-def _request_exercise(item: dict[str, Any]) -> PostWorkoutsRequestExercise:
+def _request_exercise(
+    item: dict[str, Any],
+    decisions: dict[str, Any] | None,
+) -> PostWorkoutsRequestExercise:
+    template_id = _request_exercise_template_id(item, decisions)
+    if template_id is None:
+        msg = f"Missing Hevy template for request exercise: {item['name']}"
+        raise WorkoutBackfillReviewError(msg)
     return PostWorkoutsRequestExercise(
-        exercise_template_id=item["selected_hevy_template"]["id"],
+        exercise_template_id=template_id,
         notes=item["notes"] or None,
         sets=[PostWorkoutsRequestSet(**set_row) for set_row in item["sets"]],
     )
+
+
+def _request_exercise_template_id(
+    item: dict[str, Any],
+    decisions: dict[str, Any] | None,
+) -> str | None:
+    if item["selected_hevy_template"] is not None:
+        return item["selected_hevy_template"]["id"]
+    if decisions is None or item.get("choice_decision_reason") is None:
+        return None
+    decision = _choice_decision_for(
+        decisions,
+        {
+            "source_id": item["source_id"],
+            "performed_name": item["name"],
+        },
+    )
+    if decision is None:
+        return None
+    selected_template_id = decision.get("selected_hevy_template_id")
+    return selected_template_id if isinstance(selected_template_id, str) else None
 
 
 def _apple_health_evidence(session: Any, due: datetime | None) -> dict[str, Any]:

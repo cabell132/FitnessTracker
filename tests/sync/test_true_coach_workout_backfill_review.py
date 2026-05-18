@@ -603,6 +603,250 @@ def test_workout_backfill_review_applies_editable_timestamp_decisions(
     assert "selected_start_time" not in plan["workout"]
 
 
+def test_workout_backfill_choice_item_converts_single_performed_modality(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    _add_choice_templates(store, [("hevy-cycle", "Cycle")])
+    _add_choice_backfill_item(
+        store,
+        info="Cycle, Cross Trainer, Stairmaster or a Combination",
+        comment="Cycle 20mins, 150 calories",
+    )
+
+    bundle_dir = _write_backfill_review(db_path, tmp_path)
+    plan = json.loads((bundle_dir / "plan.json").read_text(encoding="utf-8"))
+    request = json.loads((bundle_dir / "hevy-workout-request.json").read_text(encoding="utf-8"))
+
+    choice_item = plan["items"][2]
+    assert plan["blockers"] == []
+    assert choice_item["name"] == "Cycle"
+    assert choice_item["selected_hevy_template"] == {
+        "id": "hevy-cycle",
+        "name": "Cycle",
+        "type": "duration",
+        "equipment": "machine",
+    }
+    assert choice_item["sets"] == [{"type": "normal", "duration_seconds": 1200}]
+    assert choice_item["notes"] == "Athlete comment: 150 calories"
+    assert request["workout"]["exercises"][2] == {
+        "exercise_template_id": "hevy-cycle",
+        "superset_id": None,
+        "notes": "Athlete comment: 150 calories",
+        "sets": [
+            {
+                "type": "normal",
+                "weight_kg": None,
+                "reps": None,
+                "distance_meters": None,
+                "duration_seconds": 1200,
+                "rpe": None,
+            }
+        ],
+    }
+
+
+def test_workout_backfill_choice_item_splits_multiple_performed_modalities(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    _add_choice_templates(
+        store,
+        [
+            ("hevy-cycle", "Cycle"),
+            ("hevy-stairmaster", "Stairmaster"),
+        ],
+    )
+    _add_choice_backfill_item(
+        store,
+        info="Cycle, Cross Trainer, Stairmaster or a Combination",
+        comment="Stairmaster 10mins, Cycle 20mins, 1840 steps, 250 calories",
+    )
+
+    bundle_dir = _write_backfill_review(db_path, tmp_path)
+    plan = json.loads((bundle_dir / "plan.json").read_text(encoding="utf-8"))
+    request = json.loads((bundle_dir / "hevy-workout-request.json").read_text(encoding="utf-8"))
+
+    assert plan["blockers"] == []
+    assert [item["name"] for item in plan["items"][2:]] == ["Stairmaster", "Cycle"]
+    assert [item["sets"] for item in plan["items"][2:]] == [
+        [{"type": "normal", "duration_seconds": 600}],
+        [{"type": "normal", "duration_seconds": 1200}],
+    ]
+    assert [exercise["exercise_template_id"] for exercise in request["workout"]["exercises"]] == [
+        "hevy-bench",
+        "hevy-row",
+        "hevy-stairmaster",
+        "hevy-cycle",
+    ]
+    assert request["workout"]["exercises"][2]["notes"] == (
+        "Athlete comment: Cycle 20mins, 1840 steps, 250 calories"
+    )
+    assert request["workout"]["exercises"][3]["notes"] == (
+        "Athlete comment: Stairmaster 10mins, 1840 steps, 250 calories"
+    )
+
+
+def test_workout_backfill_choice_item_missing_template_writes_required_decision(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    _add_choice_backfill_item(
+        store,
+        info="Cycle, Cross Trainer, Stairmaster or a Combination",
+        comment="Cross Trainer 15mins",
+    )
+
+    bundle_dir = _write_backfill_review(db_path, tmp_path)
+    plan = json.loads((bundle_dir / "plan.json").read_text(encoding="utf-8"))
+    request = json.loads((bundle_dir / "hevy-workout-request.json").read_text(encoding="utf-8"))
+    decisions = json.loads((bundle_dir / "backfill-decisions.json").read_text(encoding="utf-8"))
+    validation = json.loads((bundle_dir / "decision-validation.json").read_text(encoding="utf-8"))
+
+    assert plan["blockers"] == [
+        "Missing Hevy template mapping for Choice Workout Item 8104: Cross Trainer"
+    ]
+    assert decisions["choice_items"] == [
+        {
+            "source_id": 8104,
+            "performed_name": "Cross Trainer",
+            "selected_hevy_template_id": None,
+            "candidate_template_ids": [],
+            "reason": "missing_template",
+        }
+    ]
+    assert validation["blockers"] == [
+        "Missing required decision: selected Workout timestamps",
+        "Missing required decision: Choice Workout Item 8104 Cross Trainer template",
+    ]
+    assert [exercise["exercise_template_id"] for exercise in request["workout"]["exercises"]] == [
+        "hevy-bench",
+        "hevy-row",
+    ]
+
+
+def test_workout_backfill_choice_item_ambiguous_template_writes_required_decision(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    _add_choice_templates(
+        store,
+        [
+            ("hevy-cross-trainer-a", "Cross Trainer"),
+            ("hevy-cross-trainer-b", "Cross Trainer"),
+        ],
+    )
+    _add_choice_backfill_item(
+        store,
+        info="Cycle, Cross Trainer, Stairmaster or a Combination",
+        comment="Cross Trainer 15mins",
+    )
+
+    bundle_dir = _write_backfill_review(db_path, tmp_path)
+    plan = json.loads((bundle_dir / "plan.json").read_text(encoding="utf-8"))
+    decisions = json.loads((bundle_dir / "backfill-decisions.json").read_text(encoding="utf-8"))
+    validation = json.loads((bundle_dir / "decision-validation.json").read_text(encoding="utf-8"))
+
+    assert plan["blockers"] == [
+        "Ambiguous Hevy template mapping for Choice Workout Item 8104: "
+        "Cross Trainer (hevy-cross-trainer-a, hevy-cross-trainer-b)"
+    ]
+    assert decisions["choice_items"] == [
+        {
+            "source_id": 8104,
+            "performed_name": "Cross Trainer",
+            "selected_hevy_template_id": None,
+            "candidate_template_ids": ["hevy-cross-trainer-a", "hevy-cross-trainer-b"],
+            "reason": "ambiguous_template",
+        }
+    ]
+    assert validation["blockers"] == [
+        "Missing required decision: selected Workout timestamps",
+        "Missing required decision: Choice Workout Item 8104 Cross Trainer template",
+    ]
+
+
+def test_workout_backfill_choice_item_applies_template_decision_to_request(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    _add_choice_backfill_item(
+        store,
+        info="Cycle, Cross Trainer, Stairmaster or a Combination",
+        comment="Cross Trainer 15mins",
+    )
+    decisions_path = tmp_path / "decisions.json"
+    decisions_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "workout": {
+                    "id": 455045484,
+                    "selected_start_time": "2024-04-10T17:05:00Z",
+                    "selected_end_time": "2024-04-10T18:02:00Z",
+                },
+                "choice_items": [
+                    {
+                        "source_id": 8104,
+                        "performed_name": "Cross Trainer",
+                        "selected_hevy_template_id": "hevy-cross-trainer",
+                    }
+                ],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    exit_code = main(
+        [
+            "sync-review",
+            "truecoach-workout-backfill",
+            "--workout-id",
+            "455045484",
+            "--database-url",
+            f"sqlite:///{db_path}",
+            "--output-dir",
+            str(tmp_path / "reports"),
+            "--decisions",
+            str(decisions_path),
+        ]
+    )
+
+    assert exit_code == 0
+    bundle_dir = tmp_path / "reports" / "sync-review" / "truecoach-workout-backfill" / "455045484"
+    request = json.loads((bundle_dir / "hevy-workout-request.json").read_text(encoding="utf-8"))
+    validation = json.loads((bundle_dir / "decision-validation.json").read_text(encoding="utf-8"))
+
+    assert validation == {"blockers": [], "warnings": []}
+    assert request["workout"]["exercises"][2]["exercise_template_id"] == "hevy-cross-trainer"
+    assert request["workout"]["exercises"][2]["sets"] == [
+        {
+            "type": "normal",
+            "weight_kg": None,
+            "reps": None,
+            "distance_meters": None,
+            "duration_seconds": 900,
+            "rpe": None,
+        }
+    ]
+
+
 def _add_empty_backfill_item(
     store: Store,
     item: dict[str, str | None],
@@ -633,6 +877,51 @@ def _add_empty_backfill_item(
                 position=3,
                 exercise_id=exercise.id,
                 true_coach_id=8103,
+            )
+        )
+
+
+def _add_choice_templates(store: Store, templates: list[tuple[str, str]]) -> None:
+    with store.unit_of_work() as uow:
+        for template_id, name in templates:
+            uow.session.add(
+                HevyAppExercise(
+                    id=template_id,
+                    name=name,
+                    type="duration",
+                    equipment="machine",
+                    default=False,
+                )
+            )
+
+
+def _add_choice_backfill_item(store: Store, *, info: str, comment: str) -> None:
+    with store.unit_of_work() as uow:
+        workout = uow.true_coach.get_workout(id=455045484).tracker
+        assert workout is not None
+        exercise = Exercise(name="Choice Conditioning", hevy_app_id=None)
+        uow.session.add(exercise)
+        uow.session.add(
+            TrueCoachWorkoutItem(
+                id=8104,
+                workout_id=455045484,
+                name="Conditioning Choice",
+                info=info,
+                comment=comment,
+                is_circuit=False,
+                state="completed",
+                position=3,
+                exercise_id=None,
+                assessment_id=None,
+            )
+        )
+        uow.session.flush()
+        uow.session.add(
+            TrackerWorkoutItem(
+                workout_id=workout.id,
+                position=3,
+                exercise_id=exercise.id,
+                true_coach_id=8104,
             )
         )
 
