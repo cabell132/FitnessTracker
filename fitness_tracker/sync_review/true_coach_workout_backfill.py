@@ -209,8 +209,8 @@ class BackfillLinkContext:
 
 
 @dataclass(frozen=True)
-class SyntheticTrackerItemContext:
-    """Inputs needed to resolve one synthetic split tracker item."""
+class CreatedWorkoutItemLinkContext:
+    """Inputs needed to link one created Hevy item to a tracker item."""
 
     tracker_workout: TrackerWorkout
     item: dict[str, Any]
@@ -527,7 +527,7 @@ class TrueCoachWorkoutBackfillReviewService:
             ):
                 tracker_item = _tracker_item_for_created_hevy_row(
                     uow.session,
-                    SyntheticTrackerItemContext(
+                    CreatedWorkoutItemLinkContext(
                         tracker_workout=tracker_workout,
                         item=item,
                         decisions=context.decisions,
@@ -561,7 +561,7 @@ class TrueCoachWorkoutBackfillReviewService:
 
 def _tracker_item_for_created_hevy_row(
     session: Any,
-    context: SyntheticTrackerItemContext,
+    context: CreatedWorkoutItemLinkContext,
 ) -> TrackerWorkoutItem | None:
     item = context.item
     if not _is_expanded_circuit_movement_item(item):
@@ -618,7 +618,7 @@ def _tracker_exercise_for_synthetic_item(
 
 def _existing_synthetic_tracker_item(
     session: Any,
-    context: SyntheticTrackerItemContext,
+    context: CreatedWorkoutItemLinkContext,
     *,
     exercise_id: int,
 ) -> TrackerWorkoutItem | None:
@@ -681,26 +681,36 @@ def _review_items(
     superset_ids_by_position: dict[int, int],
 ) -> list[BackfillReviewItem]:
     items: list[BackfillReviewItem] = []
+    expanded_circuit_source_ids = _source_ids_with_unexpanded_circuit_items(tracker_items)
     for item in tracker_items:
-        if _is_persisted_synthetic_circuit_tracker_item(item, tracker_items):
+        if _is_persisted_synthetic_circuit_tracker_item(item, expanded_circuit_source_ids):
             continue
         items.extend(_review_item(item, templates, superset_ids_by_position))
     return items
 
 
-def _is_persisted_synthetic_circuit_tracker_item(item: Any, tracker_items: list[Any]) -> bool:
+def _source_ids_with_unexpanded_circuit_items(tracker_items: list[Any]) -> set[int]:
+    return {
+        item.true_coach_id
+        for item in tracker_items
+        if item.true_coach_id is not None
+        and item.true_coach is not None
+        and bool(item.true_coach.is_circuit)
+        and item.exercise is not None
+        and item.exercise.hevy_app is None
+    }
+
+
+def _is_persisted_synthetic_circuit_tracker_item(
+    item: Any,
+    expanded_circuit_source_ids: set[int],
+) -> bool:
     true_coach_item = item.true_coach
     if true_coach_item is None or not bool(true_coach_item.is_circuit):
         return False
     if item.exercise is None or item.exercise.hevy_app is None:
         return False
-    return any(
-        other.id != item.id
-        and other.true_coach_id == item.true_coach_id
-        and other.exercise is not None
-        and other.exercise.hevy_app is None
-        for other in tracker_items
-    )
+    return item.true_coach_id in expanded_circuit_source_ids
 
 
 def _review_item(  # noqa: C901, PLR0915
