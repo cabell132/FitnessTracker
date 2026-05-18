@@ -5,8 +5,11 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
+from datetime import datetime, time, timedelta
 from pathlib import Path
 from typing import Any
+
+from sqlalchemy import select
 
 from fitness_tracker.apis.hevy_app.types.workout_request_body import PostWorkoutsRequestBody
 from fitness_tracker.apis.hevy_app.types.workout_requests import (
@@ -14,6 +17,12 @@ from fitness_tracker.apis.hevy_app.types.workout_requests import (
     PostWorkoutsRequestSet,
 )
 from fitness_tracker.database import Store
+from fitness_tracker.database.models.apple_health import (
+    AppleHealthDataRecord,
+    AppleHealthDataType,
+    AppleHealthWorkout,
+    AppleHealthWorkoutType,
+)
 from fitness_tracker.database.models.hevy_app import HevyAppExercise
 from fitness_tracker.database.models.tracker import Sets, Workout as TrackerWorkout
 from fitness_tracker.database.models.true_coach import TrueCoachWorkout
@@ -31,6 +40,7 @@ class WorkoutBackfillReviewBundle:
     report_path: Path
     plan_path: Path
     request_path: Path
+    apple_health_evidence_path: Path
 
 
 @dataclass(frozen=True)
@@ -39,6 +49,7 @@ class WorkoutBackfillReviewArtifacts:
 
     plan: dict[str, Any]
     request: PostWorkoutsRequestBody
+    apple_health_evidence: dict[str, Any]
     report: str
 
 
@@ -57,6 +68,16 @@ class BackfillReviewItem:
     notes: str
     warnings: list[str]
     blockers: list[str]
+
+
+@dataclass(frozen=True)
+class AppleHealthEvidenceContext:
+    """Apple Health rows scoped to one True Coach due date."""
+
+    workouts: list[AppleHealthWorkout]
+    heart_rates: list[AppleHealthDataRecord]
+    heart_rate_blocks: list[list[AppleHealthDataRecord]]
+    due: datetime
 
 
 class TrueCoachWorkoutBackfillReviewService:
@@ -82,8 +103,8 @@ class TrueCoachWorkoutBackfillReviewService:
             WorkoutBackfillReviewBundle: Paths written by the service.
         """
         artifacts = self._build_artifacts(workout_id)
-        bundle_dir, plan_path, request_path, report_path = _bundle_paths(
-            self._output_root, workout_id
+        bundle_dir, plan_path, request_path, apple_health_evidence_path, report_path = (
+            _bundle_paths(self._output_root, workout_id)
         )
         plan_path.write_text(
             json.dumps(artifacts.plan, indent=2, sort_keys=True) + "\n", encoding="utf-8"
@@ -92,12 +113,17 @@ class TrueCoachWorkoutBackfillReviewService:
             json.dumps(artifacts.request.model_dump(), indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
+        apple_health_evidence_path.write_text(
+            json.dumps(artifacts.apple_health_evidence, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
         report_path.write_text(artifacts.report, encoding="utf-8")
         return WorkoutBackfillReviewBundle(
             directory=bundle_dir,
             report_path=report_path,
             plan_path=plan_path,
             request_path=request_path,
+            apple_health_evidence_path=apple_health_evidence_path,
         )
 
     def _build_artifacts(self, workout_id: int) -> WorkoutBackfillReviewArtifacts:
@@ -119,23 +145,26 @@ class TrueCoachWorkoutBackfillReviewService:
                 )
             ]
             plan = _plan(workout, tracker_workout, items)
+            apple_health_evidence = _apple_health_evidence(uow.session, workout.due)
             return WorkoutBackfillReviewArtifacts(
                 plan=plan,
                 request=_build_hevy_workout_request(plan),
-                report=_report(workout, plan),
+                apple_health_evidence=apple_health_evidence,
+                report=_report(workout, plan, apple_health_evidence),
             )
 
 
 def _bundle_paths(
     output_root: Path,
     workout_id: int,
-) -> tuple[Path, Path, Path, Path]:
+) -> tuple[Path, Path, Path, Path, Path]:
     bundle_dir = output_root / "sync-review" / "truecoach-workout-backfill" / str(workout_id)
     bundle_dir.mkdir(parents=True, exist_ok=True)
     return (
         bundle_dir,
         bundle_dir / "plan.json",
         bundle_dir / "hevy-workout-request.json",
+        bundle_dir / "apple-health-evidence.json",
         bundle_dir / "report.md",
     )
 
@@ -304,13 +333,208 @@ def _request_exercise(item: dict[str, Any]) -> PostWorkoutsRequestExercise:
     )
 
 
-def _report(workout: TrueCoachWorkout, plan: dict[str, Any]) -> str:
+def _apple_health_evidence(session: Any, due: datetime | None) -> dict[str, Any]:
+    if due is None:
+        return {
+            "true_coach_due_date": None,
+            "search_window": {"start": None, "end": None},
+            "workout_intervals": [],
+            "heart_rate_summaries": [],
+            "candidate_windows": [],
+        }
+    window_start = datetime.combine(due.date() - timedelta(days=1), time.min)
+    window_end = datetime.combine(due.date() + timedelta(days=1), time(23, 59, 59))
+    workouts = _apple_workouts(session, window_start, window_end)
+    heart_rates = _heart_rates(session, window_start, window_end)
+    context = AppleHealthEvidenceContext(
+        workouts=workouts,
+        heart_rates=heart_rates,
+        heart_rate_blocks=_elevated_heart_rate_blocks(heart_rates, due),
+        due=due,
+    )
+    summaries = [_heart_rate_summary(heart_rates, workout) for workout in workouts]
+    summaries = [summary for summary in summaries if summary is not None]
+    summaries.extend(
+        _heart_rate_block_summary(block)
+        for block in context.heart_rate_blocks
+        if not _block_overlaps_workouts(block, workouts)
+    )
+    return {
+        "true_coach_due_date": due.date().isoformat(),
+        "search_window": {
+            "start": window_start.isoformat(),
+            "end": window_end.isoformat(),
+        },
+        "workout_intervals": [_workout_interval_dict(workout) for workout in workouts],
+        "heart_rate_summaries": summaries,
+        "candidate_windows": _candidate_windows(context),
+    }
+
+
+def _apple_workouts(session: Any, start: datetime, end: datetime) -> list[AppleHealthWorkout]:
+    statement = (
+        select(AppleHealthWorkout)
+        .join(
+            AppleHealthWorkoutType,
+            AppleHealthWorkout.workout_type_id == AppleHealthWorkoutType.id,
+        )
+        .where(AppleHealthWorkout.start_date.between(start, end))
+        .order_by(AppleHealthWorkout.start_date)
+    )
+    return list(session.execute(statement).scalars().all())
+
+
+def _heart_rates(
+    session: Any,
+    start: datetime,
+    end: datetime,
+) -> list[AppleHealthDataRecord]:
+    statement = (
+        select(AppleHealthDataRecord)
+        .join(
+            AppleHealthDataType,
+            AppleHealthDataRecord.data_type_id == AppleHealthDataType.id,
+        )
+        .where(
+            AppleHealthDataType.name == "Heart Rate",
+            AppleHealthDataRecord.timestamp.between(start, end),
+        )
+        .order_by(AppleHealthDataRecord.timestamp)
+    )
+    return list(session.execute(statement).scalars().all())
+
+
+def _workout_interval_dict(workout: AppleHealthWorkout) -> dict[str, Any]:
+    return {
+        "type": workout.workout_type.name,
+        "start": workout.start_date.isoformat(),
+        "end": workout.end_date.isoformat(),
+        "duration_minutes": round(
+            (workout.end_date - workout.start_date).total_seconds() / 60,
+            1,
+        ),
+    }
+
+
+def _heart_rate_summary(
+    heart_rates: list[AppleHealthDataRecord],
+    workout: AppleHealthWorkout,
+) -> dict[str, Any] | None:
+    window_start = workout.start_date - timedelta(minutes=30)
+    window_end = workout.end_date + timedelta(minutes=30)
+    values = [
+        float(row.value) for row in heart_rates if window_start <= row.timestamp <= window_end
+    ]
+    if not values:
+        return None
+    return {
+        "window_start": window_start.isoformat(),
+        "window_end": window_end.isoformat(),
+        "sample_count": len(values),
+        "average_bpm": round(sum(values) / len(values), 1),
+        "max_bpm": round(max(values), 1),
+    }
+
+
+def _candidate_windows(context: AppleHealthEvidenceContext) -> list[dict[str, str]]:
+    candidates = []
+    for workout in context.workouts:
+        summary = _heart_rate_summary(context.heart_rates, workout)
+        if workout.start_date.date() != context.due.date():
+            continue
+        if summary is not None and summary["max_bpm"] >= 120:
+            candidates.append(
+                {
+                    "source": "apple_workout_interval",
+                    "confidence": "high",
+                    "start": workout.start_date.isoformat(),
+                    "end": workout.end_date.isoformat(),
+                    "reason": "Apple Health workout interval with elevated heart-rate samples.",
+                }
+            )
+        else:
+            candidates.append(
+                {
+                    "source": "apple_workout_interval",
+                    "confidence": "medium",
+                    "start": workout.start_date.isoformat(),
+                    "end": workout.end_date.isoformat(),
+                    "reason": "Apple Health workout interval on the True Coach due date.",
+                }
+            )
+    for block in context.heart_rate_blocks:
+        if _block_overlaps_workouts(block, context.workouts):
+            continue
+        candidates.append(
+            {
+                "source": "heart_rate_block",
+                "confidence": "medium",
+                "start": block[0].timestamp.isoformat(),
+                "end": block[-1].timestamp.isoformat(),
+                "reason": "Elevated heart-rate block without a matching Apple Health workout interval.",
+            }
+        )
+    return candidates
+
+
+def _elevated_heart_rate_blocks(
+    heart_rates: list[AppleHealthDataRecord],
+    due: datetime,
+) -> list[list[AppleHealthDataRecord]]:
+    blocks: list[list[AppleHealthDataRecord]] = []
+    current: list[AppleHealthDataRecord] = []
+    for row in heart_rates:
+        if row.timestamp.date() == due.date() and row.value >= 120:
+            current.append(row)
+        else:
+            _append_elevated_block(blocks, current)
+            current = []
+    _append_elevated_block(blocks, current)
+    return blocks
+
+
+def _append_elevated_block(
+    blocks: list[list[AppleHealthDataRecord]],
+    current: list[AppleHealthDataRecord],
+) -> None:
+    if len(current) >= 3:
+        blocks.append(current.copy())
+
+
+def _heart_rate_block_summary(block: list[AppleHealthDataRecord]) -> dict[str, Any]:
+    values = [float(row.value) for row in block]
+    return {
+        "window_start": block[0].timestamp.isoformat(),
+        "window_end": block[-1].timestamp.isoformat(),
+        "sample_count": len(values),
+        "average_bpm": round(sum(values) / len(values), 1),
+        "max_bpm": round(max(values), 1),
+    }
+
+
+def _block_overlaps_workouts(
+    block: list[AppleHealthDataRecord],
+    workouts: list[AppleHealthWorkout],
+) -> bool:
+    block_start = block[0].timestamp
+    block_end = block[-1].timestamp
+    return any(
+        block_start <= workout.end_date and block_end >= workout.start_date for workout in workouts
+    )
+
+
+def _report(
+    workout: TrueCoachWorkout,
+    plan: dict[str, Any],
+    apple_health_evidence: dict[str, Any],
+) -> str:
     lines = [
         f"# True Coach Workout Backfill Review: {workout.id}",
         "",
         f"Workout: {workout.title or 'Untitled'}",
         f"Due: {workout.due.isoformat() if workout.due else 'unknown'}",
         "Draft Hevy Workout request: hevy-workout-request.json",
+        "Apple Health evidence: apple-health-evidence.json",
         "",
     ]
     if plan["blockers"]:
@@ -321,6 +545,12 @@ def _report(workout: TrueCoachWorkout, plan: dict[str, Any]) -> str:
     if plan["warnings"]:
         lines.append("Warnings:")
         lines.extend(f"- {warning}" for warning in plan["warnings"])
+    if apple_health_evidence["candidate_windows"]:
+        lines.append("Candidate timing windows:")
+        lines.extend(
+            f"- {candidate['confidence']}: {candidate['start']} to {candidate['end']}"
+            for candidate in apple_health_evidence["candidate_windows"]
+        )
     lines.append("")
     for index, item in enumerate(plan["items"], start=1):
         lines.extend(_report_item(index, item))
