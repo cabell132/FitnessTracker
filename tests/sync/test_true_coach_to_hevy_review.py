@@ -398,6 +398,19 @@ def test_sync_apply_sends_same_hevy_request_as_dry_run(tmp_path: Path) -> None:
     assert applied.request_body.model_dump() == writer.requests[0].model_dump()
 
 
+def test_sync_apply_preserves_true_coach_superset_groups(tmp_path: Path) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_superset_plan_workout(store)
+    service = TrueCoachToHevyReviewService(store=store, output_root=tmp_path / "reports")
+
+    result = service.write_apply_request(52)
+
+    exercises = result.request_body.model_dump()["routine"]["exercises"]
+    assert [exercise["superset_id"] for exercise in exercises] == [0, 0, 1, 1, None]
+
+
 def test_sync_apply_blocks_missing_required_exercise_mapping(tmp_path: Path) -> None:
     db_path = tmp_path / "tracker.sqlite"
     store = Store(create_engine(f"sqlite:///{db_path}"))
@@ -1028,6 +1041,74 @@ def _seed_clean_plan_workout(store: Store) -> None:
                 assessment_id=None,
             )
         )
+
+
+def _seed_superset_plan_workout(store: Store) -> None:
+    now = datetime(2026, 5, 17, tzinfo=UTC)
+    exercises = [
+        (520, "Cat Cow", "hevy-cat-cow"),
+        (521, "Bent Knee Lumbar Rotations", "hevy-lumbar-rotations"),
+        (522, "Banded Good Morning", "hevy-good-morning"),
+        (523, "Spanish Squat Iso", "hevy-spanish-squat"),
+        (524, "Bulgarians", "hevy-bulgarians"),
+    ]
+    items = [
+        (1020, "Cat Cow", 520, 1),
+        (1021, "Bent Knee Lumbar Rotations", 521, 2),
+        (1022, "Banded Good Morning", 522, 3),
+        (1023, "Spanish Squat Iso", 523, 4),
+        (1024, "Bulgarians", 524, 5),
+    ]
+    with store.unit_of_work() as uow:
+        uow.session.add(
+            TrueCoachWorkout(
+                id=52,
+                title="Superset Plan",
+                due=now,
+                short_description=(
+                    '<p class="name-and-info">'
+                    "A1) Cat Cow<br/>"
+                    "A2) Bent Knee Lumbar Rotations<br/>"
+                    "B1) Banded Good Morning<br/>"
+                    "B2) Spanish Squat Iso<br/>"
+                    "C) Bulgarians"
+                    "</p>"
+                ),
+                state="pending",
+                rest_day=False,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        for exercise_id, name, hevy_id in exercises:
+            uow.session.add(TrueCoachExercise(id=exercise_id, name=name, default=False))
+            uow.session.add(
+                HevyAppExercise(
+                    id=hevy_id,
+                    name=name,
+                    type="reps_only",
+                    equipment="bodyweight",
+                    default=True,
+                )
+            )
+            uow.session.add(
+                TrackerExercise(name=name, hevy_app_id=hevy_id, true_coach_id=exercise_id)
+            )
+        for item_id, name, exercise_id, position in items:
+            uow.session.add(
+                TrueCoachWorkoutItem(
+                    id=item_id,
+                    workout_id=52,
+                    name=name,
+                    info="1 x 5",
+                    comment="",
+                    is_circuit=False,
+                    state="pending",
+                    position=position,
+                    exercise_id=exercise_id,
+                    assessment_id=None,
+                )
+            )
 
 
 def _seed_clean_weight_plan_workout(store: Store) -> None:

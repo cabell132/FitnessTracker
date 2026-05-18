@@ -21,7 +21,11 @@ from fitness_tracker.database.models import HevyAppExercise, TrueCoachExercise
 from fitness_tracker.database.models.hevy_app import HevyAppSets, HevyAppWorkout, HevyAppWorkoutItem
 from fitness_tracker.database.models.true_coach import TrueCoachWorkout, TrueCoachWorkoutItem
 from fitness_tracker.database.tx import Tx
-from fitness_tracker.sync._true_coach_html import parse_prescribed_sets
+from fitness_tracker.sync._true_coach_html import (
+    build_superset_index,
+    parse_prescribed_sets,
+    parse_workout_order,
+)
 from fitness_tracker.sync.ports import HevyRoutineWriter
 
 SET_DISPLAY_KEYS = ("type", "weight_kg", "reps", "distance_meters", "duration_seconds")
@@ -67,6 +71,7 @@ class ReviewItem:
     """One True Coach workout item review row."""
 
     source_id: int
+    superset_id: int | None
     name: str
     info: str
     comment: str
@@ -123,6 +128,7 @@ class PlannedBlock:
     """One Hevy Routine exercise block planned from a True Coach Workout Item phase."""
 
     source_id: int
+    superset_id: int | None
     phase_index: int
     phase_kind: PhaseKind
     source_text: str
@@ -198,12 +204,14 @@ class TrueCoachToHevyReviewService:
                 msg = f"True Coach workout {workout_id} was not found in the local DB"
                 raise SyncReviewError(msg)
 
+            sorted_items = sorted(
+                workout.workout_items,
+                key=lambda item: (item.position is None, item.position or 0, item.id),
+            )
+            superset_ids = _superset_ids_by_position(workout)
             items = [
-                self._review_item(uow, item)
-                for item in sorted(
-                    workout.workout_items,
-                    key=lambda item: (item.position is None, item.position or 0, item.id),
-                )
+                self._review_item(uow, item, superset_ids.get(item.position or index))
+                for index, item in enumerate(sorted_items, start=1)
             ]
             plan = self._plan(workout, items)
             report = self._report(workout, items)
@@ -253,10 +261,15 @@ class TrueCoachToHevyReviewService:
         routine_writer.create_routine(result.request_body)
         return result
 
-    def _review_item(self, uow: Tx, item: TrueCoachWorkoutItem) -> ReviewItem:
+    def _review_item(
+        self,
+        uow: Tx,
+        item: TrueCoachWorkoutItem,
+        superset_id: int | None,
+    ) -> ReviewItem:
         template = self._selected_template(uow, item)
         required_templates = self._required_templates(uow, item, template)
-        planned_blocks = self._planned_blocks(uow, item, template)
+        planned_blocks = self._planned_blocks(uow, item, template, superset_id)
         proposed_sets = parse_prescribed_sets(item.info or "")
         proposed_sets, set_provenance = _enrich_sets_from_history(uow, template, proposed_sets)
         warnings: list[str] = []
@@ -271,6 +284,7 @@ class TrueCoachToHevyReviewService:
             warnings.append(NO_MATCHING_HISTORY_LOAD_WARNING)
         return ReviewItem(
             source_id=item.id,
+            superset_id=superset_id,
             name=item.name,
             info=item.info or "",
             comment=item.comment or "",
@@ -322,6 +336,7 @@ class TrueCoachToHevyReviewService:
         uow: Tx,
         item: TrueCoachWorkoutItem,
         selected_template: HevyAppExercise | None,
+        superset_id: int | None,
     ) -> list[PlannedBlock]:
         phases = _parse_mixed_mode_phases(item.info or "")
         if not phases:
@@ -355,6 +370,7 @@ class TrueCoachToHevyReviewService:
             blocks.append(
                 PlannedBlock(
                     source_id=item.id,
+                    superset_id=superset_id,
                     phase_index=index,
                     phase_kind=phase.kind,
                     source_text=phase.source_text,
@@ -396,6 +412,7 @@ class TrueCoachToHevyReviewService:
         template = item.selected_hevy_template
         return {
             "source_id": item.source_id,
+            "superset_id": item.superset_id,
             "name": item.name,
             "info": item.info,
             "comment": item.comment,
@@ -531,6 +548,7 @@ def _request_exercises_for_item(item: dict[str, Any]) -> list[PostRoutinesReques
     return [
         _request_exercise(
             template_id=item["selected_hevy_template"]["id"],
+            superset_id=item.get("superset_id"),
             notes=_item_notes(item),
             sets=item["proposed_sets"],
         )
@@ -546,6 +564,7 @@ def _item_notes(item: dict[str, Any]) -> str:
 def _request_exercise_from_block(block: dict[str, Any]) -> PostRoutinesRequestExercise:
     return _request_exercise(
         template_id=block["selected_hevy_template"]["id"],
+        superset_id=block.get("superset_id"),
         notes=block["notes"],
         sets=block["proposed_sets"],
     )
@@ -554,11 +573,13 @@ def _request_exercise_from_block(block: dict[str, Any]) -> PostRoutinesRequestEx
 def _request_exercise(
     *,
     template_id: str,
+    superset_id: int | None,
     notes: str,
     sets: list[dict[str, Any]],
 ) -> PostRoutinesRequestExercise:
     return PostRoutinesRequestExercise(
         exercise_template_id=template_id,
+        superset_id=superset_id,
         notes=notes,
         rest_seconds=0,
         sets=[
@@ -568,6 +589,23 @@ def _request_exercise(
             for set_row in sets
         ],
     )
+
+
+def _superset_ids_by_position(workout: TrueCoachWorkout) -> dict[int, int]:
+    try:
+        order = parse_workout_order(str(workout.short_description or ""))
+    except ValueError:
+        return {}
+    superset_index = build_superset_index(order)
+    if not superset_index:
+        return {}
+    return {
+        position: superset_index[superset_group]
+        for position, metadata in order.items()
+        if bool(metadata.get("is_superset"))
+        and isinstance((superset_group := metadata.get("superset_group")), str)
+        and superset_group in superset_index
+    }
 
 
 @cache
@@ -945,6 +983,7 @@ def _required_template_to_dict(
 def _planned_block_to_dict(block: PlannedBlock) -> dict[str, Any]:
     return {
         "source_id": block.source_id,
+        "superset_id": block.superset_id,
         "phase_index": block.phase_index,
         "phase_kind": block.phase_kind,
         "source_text": block.source_text,
