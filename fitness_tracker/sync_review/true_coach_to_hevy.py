@@ -38,6 +38,7 @@ BLOCKING_REQUIRED_TEMPLATE_STATUSES = frozenset({"missing", "ambiguous"})
 NO_LINKED_TEMPLATE_WARNING = "No linked Hevy exercise template found."
 NO_DETERMINISTIC_SET_PARSER_WARNING = "No deterministic set parser result found."
 NO_MATCHING_HISTORY_LOAD_WARNING = "No matching Athlete history load found."
+HEVY_PLACEHOLDER_TEMPLATE_NAME = "#####PLACEHOLDER#####"
 CIRCUIT_BLOCK_CONTEXT_PATTERN = re.compile(r"\b(?:amrap|circuit|\d+\s*rounds?)\b", re.IGNORECASE)
 RequiredTemplateStatus = Literal["existing", "missing", "ambiguous"]
 PhaseKind = Literal["isometric_hold", "dynamic_reps"]
@@ -425,19 +426,8 @@ class TrueCoachToHevyReviewService:
         blocks: list[PlannedBlock] = []
         block_kind = _circuit_block_kind(parsed_block)
         for index, movement in enumerate(parsed_block.movements, start=1):
-            base_template = _selected_template_for_movement(uow, movement)
-            required_templates = self._required_templates_for_context(
-                uow,
-                TemplateMatchContext(
-                    item=item,
-                    selected_template=base_template,
-                    text=movement.source_text,
-                ),
-            )
-            template = _selected_template_for_required_templates(
-                uow,
-                fallback_template=base_template,
-                required_templates=required_templates,
+            template, required_templates = self._selected_template_for_circuit_movement(
+                uow, item, movement
             )
             proposed_sets = _sets_for_circuit_movement(movement)
             proposed_sets, set_provenance = _enrich_sets_from_history(uow, template, proposed_sets)
@@ -470,6 +460,30 @@ class TrueCoachToHevyReviewService:
                 )
             )
         return blocks
+
+    def _selected_template_for_circuit_movement(
+        self,
+        uow: Tx,
+        item: TrueCoachWorkoutItem,
+        movement: ParsedCircuitMovement,
+    ) -> tuple[HevyAppExercise | None, list[RequiredHevyTemplate]]:
+        base_template = _selected_template_for_movement(uow, movement)
+        required_templates = self._required_templates_for_context(
+            uow,
+            TemplateMatchContext(
+                item=item,
+                selected_template=base_template,
+                text=movement.source_text,
+            ),
+        )
+        return (
+            _required_template_override_or_fallback(
+                uow,
+                fallback_template=base_template,
+                required_templates=required_templates,
+            ),
+            required_templates,
+        )
 
     def _required_templates_for_context(
         self,
@@ -931,14 +945,14 @@ def _selected_template_for_phase(
 ) -> HevyAppExercise | None:
     if selection.phase_kind == "dynamic_reps":
         return selection.selected_template
-    return _selected_template_for_required_templates(
+    return _required_template_override_or_fallback(
         uow,
         fallback_template=None,
         required_templates=selection.required_templates,
     )
 
 
-def _selected_template_for_required_templates(
+def _required_template_override_or_fallback(
     uow: Tx,
     *,
     fallback_template: HevyAppExercise | None,
@@ -975,7 +989,7 @@ def _selected_template_for_movement(
 
 
 def _is_placeholder_template(template: HevyAppExercise) -> bool:
-    return template.name == "#####PLACEHOLDER#####"
+    return template.name == HEVY_PLACEHOLDER_TEMPLATE_NAME
 
 
 def _circuit_block_kind(parsed_block: ParsedCircuitBlock) -> PlannedBlockKind:
