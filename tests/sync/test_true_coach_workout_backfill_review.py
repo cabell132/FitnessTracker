@@ -1127,6 +1127,196 @@ def test_workout_backfill_manual_request_apply_accepts_edited_artifact(
     assert result.request_body.model_dump() == writer.requests[0].model_dump()
 
 
+def test_455045484_workout_backfill_fixture_runs_end_to_end(
+    tmp_path: Path,
+) -> None:
+    db_path, store = _new_sqlite_store(tmp_path)
+    _seed_backfill_review_workout(store)
+    decisions_path = _write_timestamp_decisions(tmp_path)
+
+    discovery_exit_code = _run_backfill_discovery(db_path, tmp_path)
+    review_exit_code = _run_backfill_review(tmp_path, 455045484, decisions_path)
+
+    assert discovery_exit_code == 0
+    assert review_exit_code == 0
+    _assert_discovered_workout_ids(tmp_path, [455045484])
+
+    service = TrueCoachWorkoutBackfillReviewService(store=store, output_root=tmp_path / "reports")
+    dry_run = service.write_apply_request(455045484, decisions_path=decisions_path)
+    _assert_455045484_request(dry_run.request_body.model_dump())
+
+    writer = _RecordingWorkoutWriter(
+        response=_hevy_workout_response(workout_id="hevy-created-455045484")
+    )
+    service.apply(455045484, workout_writer=writer, decisions_path=decisions_path)
+
+    assert len(writer.requests) == 1
+    assert writer.marker_searches == [455045484]
+    _assert_455045484_local_links(store)
+
+
+def test_placeholder_only_workout_backfill_is_visible_but_not_applyable(
+    tmp_path: Path,
+) -> None:
+    _, store = _new_sqlite_store(tmp_path)
+    _seed_placeholder_only_backfill_workout(store)
+    decisions_path = _write_placeholder_timestamp_decisions(tmp_path)
+
+    exit_code = _run_backfill_review(tmp_path, 455047508, decisions_path)
+    assert exit_code == 0
+    _assert_placeholder_only_review(tmp_path)
+
+    service = TrueCoachWorkoutBackfillReviewService(store=store, output_root=tmp_path / "reports")
+    with pytest.raises(
+        WorkoutBackfillApplyError,
+        match="No performed exercise blocks are requestable for Workout backfill",
+    ):
+        service.write_apply_request(455047508, decisions_path=decisions_path)
+
+
+def _new_sqlite_store(tmp_path: Path) -> tuple[Path, Store]:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    return db_path, store
+
+
+def _run_backfill_discovery(db_path: Path, tmp_path: Path) -> int:
+    return main(
+        [
+            "sync-review",
+            "truecoach-workout-backfill-candidates",
+            "--database-url",
+            f"sqlite:///{db_path}",
+            "--output-dir",
+            str(tmp_path / "reports"),
+        ]
+    )
+
+
+def _run_backfill_review(
+    tmp_path: Path,
+    workout_id: int,
+    decisions_path: Path,
+) -> int:
+    return main(
+        [
+            "sync-review",
+            "truecoach-workout-backfill",
+            "--workout-id",
+            str(workout_id),
+            "--database-url",
+            f"sqlite:///{tmp_path / 'tracker.sqlite'}",
+            "--output-dir",
+            str(tmp_path / "reports"),
+            "--decisions",
+            str(decisions_path),
+        ]
+    )
+
+
+def _assert_discovered_workout_ids(tmp_path: Path, expected_ids: list[int]) -> None:
+    candidates_path = (
+        tmp_path
+        / "reports"
+        / "sync-review"
+        / "truecoach-workout-backfill-candidates"
+        / "candidates.json"
+    )
+    candidates = json.loads(candidates_path.read_text(encoding="utf-8"))
+    assert [candidate["true_coach_id"] for candidate in candidates] == expected_ids
+
+
+def _assert_455045484_request(request: dict) -> None:
+    assert request["workout"]["description"] == "Backfill from True Coach Workout 455045484"
+    assert request["workout"]["exercises"][0]["notes"] is None
+    assert request["workout"]["exercises"][0]["sets"] == [
+        _structured_set(weight_kg=80.0, reps=8),
+        _structured_set(weight_kg=80.0, reps=8),
+        _structured_set(weight_kg=80.0, reps=8),
+    ]
+    assert request["workout"]["exercises"][1]["notes"] == "Athlete comment: smooth reps"
+
+
+def _structured_set(*, weight_kg: float, reps: int) -> dict[str, int | float | str | None]:
+    return {
+        "type": "normal",
+        "weight_kg": weight_kg,
+        "reps": reps,
+        "distance_meters": None,
+        "duration_seconds": None,
+        "rpe": None,
+    }
+
+
+def _assert_455045484_local_links(store: Store) -> None:
+    with store.unit_of_work() as uow:
+        tracker_workout = uow.tracker.get_workout(true_coach_id=455045484)
+        assert tracker_workout is not None
+        assert tracker_workout.hevy_app_id == "hevy-created-455045484"
+        tracker_items = sorted(tracker_workout.workout_items, key=lambda item: item.position)
+        assert [item.hevy_app_id for item in tracker_items] == [1, 2]
+        assert [
+            set_row.hevy_app_id
+            for item in tracker_items
+            for set_row in sorted(item.sets, key=lambda row: row.index)
+        ] == [1, 2, 3, 4, 5]
+
+
+def _write_placeholder_timestamp_decisions(tmp_path: Path) -> Path:
+    decisions_path = tmp_path / "decisions.json"
+    decisions_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "workout": {
+                    "id": 455047508,
+                    "selected_start_time": "2024-04-12T20:00:00Z",
+                    "selected_end_time": "2024-04-12T23:00:00Z",
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return decisions_path
+
+
+def _assert_placeholder_only_review(tmp_path: Path) -> None:
+    bundle_dir = tmp_path / "reports" / "sync-review" / "truecoach-workout-backfill" / "455047508"
+    plan = json.loads((bundle_dir / "plan.json").read_text(encoding="utf-8"))
+    request = json.loads((bundle_dir / "hevy-workout-request.json").read_text(encoding="utf-8"))
+    report = (bundle_dir / "report.md").read_text(encoding="utf-8")
+    validation = json.loads((bundle_dir / "decision-validation.json").read_text(encoding="utf-8"))
+
+    assert plan["blockers"] == []
+    assert plan["warnings"] == [
+        "Placeholder rest item has no structured Sets rows; omitted from draft request."
+    ]
+    assert plan["items"] == [
+        {
+            "source_id": 8201,
+            "tracker_workout_item_id": 1,
+            "position": 1,
+            "name": "Wedding Dancing",
+            "info": "placeholder",
+            "comment": "",
+            "selected_hevy_template": None,
+            "sets": [],
+            "notes": "Coach prescription: placeholder",
+            "warnings": [
+                "Placeholder rest item has no structured Sets rows; omitted from draft request."
+            ],
+            "blockers": [],
+        }
+    ]
+    assert request["workout"]["title"] == "2024-04-12 Wedding Dancing"
+    assert request["workout"]["description"] == "Backfill from True Coach Workout 455047508"
+    assert request["workout"]["exercises"] == []
+    assert validation == {"blockers": [], "warnings": []}
+    assert "WARNING: Placeholder rest item has no structured Sets rows" in report
+
+
 def _add_empty_backfill_item(
     store: Store,
     item: dict[str, str | None],
@@ -1313,6 +1503,54 @@ def _seed_backfill_review_workout(store: Store) -> None:  # noqa: PLR0915
                     reps=10,
                 )
             )
+
+
+def _seed_placeholder_only_backfill_workout(store: Store) -> None:
+    with store.unit_of_work() as uow:
+        placeholder = Exercise(name="Wedding Dancing", hevy_app_id=None)
+        uow.session.add(placeholder)
+        due = datetime(2024, 4, 12, tzinfo=UTC)
+        uow.session.add(
+            TrueCoachWorkout(
+                id=455047508,
+                title="Wedding Dancing",
+                due=due,
+                short_description="",
+                state="completed",
+                rest_day=False,
+                created_at=due,
+                updated_at=due,
+            )
+        )
+        uow.session.add(
+            TrueCoachWorkoutItem(
+                id=8201,
+                workout_id=455047508,
+                name="Wedding Dancing",
+                info="placeholder",
+                comment="",
+                is_circuit=False,
+                state="completed",
+                position=1,
+                exercise_id=None,
+                assessment_id=None,
+            )
+        )
+        tracker_workout = TrackerWorkout(
+            title="Wedding Dancing",
+            description="",
+            true_coach_id=455047508,
+        )
+        uow.session.add(tracker_workout)
+        uow.session.flush()
+        uow.session.add(
+            TrackerWorkoutItem(
+                workout_id=tracker_workout.id,
+                position=1,
+                exercise_id=placeholder.id,
+                true_coach_id=8201,
+            )
+        )
 
 
 class _RecordingWorkoutWriter:

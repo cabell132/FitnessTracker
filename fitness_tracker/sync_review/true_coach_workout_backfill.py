@@ -984,6 +984,8 @@ def _validate_apply_request(context: ApplyRequestValidationContext) -> None:
         blocker = "Missing required decision: selected Workout timestamps"
         if blocker not in blockers:
             blockers.append(blocker)
+    if not workout.exercises:
+        blockers.append("No performed exercise blocks are requestable for Workout backfill")
     blockers.extend(
         f"Missing Hevy template mapping for performed item: {item['name']}"
         for item in context.plan.get("items", [])
@@ -1021,6 +1023,8 @@ def _validate_manual_apply_request(
     marker = f"True Coach Workout {workout_id}"
     if marker not in (workout.description or ""):
         blockers.append(f"Missing source True Coach Workout id marker: {workout_id}")
+    if not workout.exercises:
+        blockers.append("No performed exercise blocks are requestable for Workout backfill")
     for index, exercise in enumerate(workout.exercises, start=1):
         if not exercise.exercise_template_id:
             blockers.append(f"Missing Hevy template mapping for request exercise {index}")
