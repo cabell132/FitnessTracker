@@ -178,15 +178,6 @@ class HistoricalLoad:
     weight_kg: float
 
 
-@dataclass(frozen=True)
-class RequestExerciseOverrides:
-    """Optional request-only values for a generated Hevy exercise block."""
-
-    superset_id: int | None = None
-    sets: list[dict[str, Any]] | None = None
-    rest_seconds: int | None = None
-
-
 DEFAULT_TEMPLATE_OVERRIDE_RULES_PATH = Path(__file__).with_name("template_override_rules.json")
 MIXED_PHASE_SPLIT_PATTERN = re.compile(r"\s+(?:then|followed by)\s+|[;,]\s*", re.IGNORECASE)
 SET_PRESCRIPTION_MARKER_PATTERN = re.compile(r"\b\d+\s*[xX]\s*")
@@ -668,12 +659,9 @@ def _request_exercises_for_plan(plan: dict[str, Any]) -> list[PostRoutinesReques
 
 class _SupersetAllocator:
     def __init__(self, items: list[dict[str, Any]]) -> None:
-        superset_ids = [
-            superset_id
-            for item in items
-            for superset_id in [item.get("superset_id")]
-            if superset_id is not None
-        ]
+        superset_ids = (
+            item["superset_id"] for item in items if item.get("superset_id") is not None
+        )
         self._next_id = max(superset_ids, default=-1) + 1
 
     def superset_id_for_item(self, item: dict[str, Any]) -> int:
@@ -716,21 +704,30 @@ def _request_exercises_from_blocks(
     if _is_circuit_request_item(item, blocks):
         superset_id = superset_allocator.superset_id_for_item(item)
         final_block_index = len(blocks) - 1
-        return [
-            _request_exercise_from_block(
-                block,
-                overrides=RequestExerciseOverrides(
-                    superset_id=superset_id,
-                    sets=_circuit_request_sets(item, block),
-                    rest_seconds=_circuit_rest_seconds(
-                        item,
-                        block,
-                        is_final_block=index == final_block_index,
-                    ),
-                ),
+        set_count = _circuit_request_set_count(item)
+        exercises: list[PostRoutinesRequestExercise] = []
+        for index, block in enumerate(blocks):
+            sets = _repeated_request_sets(block["proposed_sets"], count=set_count)
+            rest_seconds = _explicit_circuit_rest_seconds(
+                item,
+                is_final_block=index == final_block_index,
             )
-            for index, block in enumerate(blocks)
-        ]
+            if rest_seconds is None:
+                rest_seconds = _rest_seconds_from_sets(
+                    sets,
+                    template=block["selected_hevy_template"],
+                )
+            exercises.append(
+                _request_exercise(
+                    template_id=block["selected_hevy_template"]["id"],
+                    superset_id=superset_id,
+                    notes=block["notes"],
+                    sets=sets,
+                    rest_seconds=rest_seconds,
+                    template=block["selected_hevy_template"],
+                )
+            )
+        return exercises
     return [_request_exercise_from_block(block) for block in blocks]
 
 
@@ -742,12 +739,12 @@ def _is_circuit_request_item(item: dict[str, Any], blocks: list[dict[str, Any]])
     )
 
 
-def _circuit_request_sets(
-    item: dict[str, Any],
-    block: dict[str, Any],
+def _repeated_request_sets(
+    sets: list[dict[str, Any]],
+    *,
+    count: int,
 ) -> list[dict[str, Any]]:
-    set_count = _circuit_request_set_count(item)
-    return [set_row for _ in range(set_count) for set_row in block["proposed_sets"]]
+    return [set_row for _ in range(count) for set_row in sets]
 
 
 def _circuit_request_set_count(item: dict[str, Any]) -> int:
@@ -760,22 +757,18 @@ def _circuit_request_set_count(item: dict[str, Any]) -> int:
     return 1
 
 
-def _circuit_rest_seconds(
+def _explicit_circuit_rest_seconds(
     item: dict[str, Any],
-    block: dict[str, Any],
     *,
     is_final_block: bool,
-) -> int:
+) -> int | None:
     round_rest_seconds = _round_rest_seconds(item)
     if is_final_block and round_rest_seconds > 0:
         return round_rest_seconds
     movement_rest_seconds = _movement_rest_seconds(item)
     if not is_final_block and movement_rest_seconds > 0:
         return movement_rest_seconds
-    return _rest_seconds_from_sets(
-        _circuit_request_sets(item, block),
-        template=block["selected_hevy_template"],
-    )
+    return None
 
 
 def _round_rest_seconds(item: dict[str, Any]) -> int:
@@ -821,18 +814,12 @@ def _is_movement_rest_text(text: str) -> bool:
 
 def _request_exercise_from_block(
     block: dict[str, Any],
-    *,
-    overrides: RequestExerciseOverrides | None = None,
 ) -> PostRoutinesRequestExercise:
-    overrides = overrides or RequestExerciseOverrides()
     return _request_exercise(
         template_id=block["selected_hevy_template"]["id"],
-        superset_id=(
-            block.get("superset_id") if overrides.superset_id is None else overrides.superset_id
-        ),
+        superset_id=block.get("superset_id"),
         notes=block["notes"],
-        sets=block["proposed_sets"] if overrides.sets is None else overrides.sets,
-        rest_seconds=overrides.rest_seconds,
+        sets=block["proposed_sets"],
         template=block["selected_hevy_template"],
     )
 
@@ -846,15 +833,14 @@ def _request_exercise(  # noqa: PLR0913
     rest_seconds: int | None = None,
     template: dict[str, Any] | None = None,
 ) -> PostRoutinesRequestExercise:
+    if rest_seconds is None:
+        rest_seconds = _rest_seconds_from_sets(sets, template=template)
+
     return PostRoutinesRequestExercise(
         exercise_template_id=template_id,
         superset_id=superset_id,
         notes=notes,
-        rest_seconds=(
-            _rest_seconds_from_sets(sets, template=template)
-            if rest_seconds is None
-            else rest_seconds
-        ),
+        rest_seconds=rest_seconds,
         sets=[
             PostRoutinesRequestSet(
                 **{key: value for key, value in set_row.items() if not key.startswith("_")}
