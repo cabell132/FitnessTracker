@@ -30,6 +30,11 @@ from fitness_tracker.database.models.tracker import (
     WorkoutItem as TrackerWorkoutItem,
 )
 from fitness_tracker.database.models.true_coach import TrueCoachWorkout
+from fitness_tracker.sync._circuit_block_parser import (
+    ParsedCircuitBlock,
+    ParsedCircuitMovement,
+    parse_circuit_block,
+)
 from fitness_tracker.sync._true_coach_html import build_superset_index, parse_workout_order
 from fitness_tracker.sync.ports import HevyWorkoutWriter
 
@@ -98,8 +103,13 @@ class BackfillReviewItem:
     notes: str
     warnings: list[str]
     blockers: list[str]
+    movement_target: str | None = None
+    original_prescription_text: str | None = None
+    completed_round_count: int | None = None
     choice_template_candidate_ids: list[str] | None = None
     choice_decision_reason: str | None = None
+    circuit_template_candidate_ids: list[str] | None = None
+    circuit_decision_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -117,6 +127,31 @@ class DurationPerformance:
 
     sets: list[PostWorkoutsRequestSet]
     notes: str
+
+
+@dataclass(frozen=True)
+class CircuitReviewContext:
+    """Source context for expanding one Circuit or AMRAP Workout Item."""
+
+    item: Any
+    source_id: int
+    position: int
+    superset_id: int | None
+    info: str
+    comment: str
+    templates: list[HevyAppExercise]
+    parsed_block: ParsedCircuitBlock
+
+
+@dataclass(frozen=True)
+class CircuitMovementNoteContext:
+    """Inputs for rendering notes on one generated Circuit movement."""
+
+    movement: ParsedCircuitMovement
+    parsed_block: ParsedCircuitBlock
+    source_text: str
+    comment: str
+    round_time_lines: list[str]
 
 
 @dataclass(frozen=True)
@@ -562,7 +597,7 @@ def _review_items(
     return items
 
 
-def _review_item(  # noqa: PLR0915
+def _review_item(  # noqa: C901, PLR0915
     item: Any,
     templates: list[HevyAppExercise],
     superset_ids_by_position: dict[int, int],
@@ -575,6 +610,23 @@ def _review_item(  # noqa: PLR0915
     info = true_coach_item.info or "" if true_coach_item is not None else ""
     comment = true_coach_item.comment or "" if true_coach_item is not None else ""
     name = true_coach_item.name if true_coach_item is not None else item.exercise.name
+    if true_coach_item is not None and bool(true_coach_item.is_circuit):
+        parsed_block = parse_circuit_block(name=name, text=info)
+        if parsed_block is not None:
+            if true_coach_item.state == "missed":
+                return []
+            return _circuit_review_items(
+                CircuitReviewContext(
+                    item=item,
+                    source_id=true_coach_item.id,
+                    position=item.position,
+                    superset_id=superset_ids_by_position.get(item.position),
+                    info=info,
+                    comment=comment,
+                    templates=templates,
+                    parsed_block=parsed_block,
+                )
+            )
     choice_items = _choice_review_items(
         ChoiceReviewContext(
             item=item,
@@ -628,6 +680,222 @@ def _review_item(  # noqa: PLR0915
             blockers=blockers,
         )
     ]
+
+
+def _circuit_review_items(context: CircuitReviewContext) -> list[BackfillReviewItem]:  # noqa: PLR0915
+    completed_round_count = _completed_round_count(context.comment, context.parsed_block)
+    round_time_lines = _round_time_lines(context.comment)
+    omitted_movements = _omitted_movement_names(context.comment)
+    review_items: list[BackfillReviewItem] = []
+    for offset, movement in enumerate(_reviewable_circuit_movements(context.parsed_block)):
+        matches = _matching_choice_templates(movement.name, context.templates)
+        template = matches[0] if len(matches) == 1 else None
+        is_omitted = _movement_is_omitted(movement.name, omitted_movements)
+        base_sets = _sets_for_circuit_movement(movement)
+        sets = [] if is_omitted else _repeat_sets(base_sets, count=completed_round_count or 1)
+        warnings: list[str] = []
+        blockers: list[str] = []
+        circuit_decision_reason: str | None = None
+        if is_omitted:
+            warnings.append(
+                "Athlete comment omits Circuit movement: "
+                f"{_omission_comment_for(movement.name, omitted_movements)}"
+            )
+        elif not matches:
+            blockers.append(
+                f"Missing Hevy template mapping for Circuit Workout Item "
+                f"{context.source_id}: {movement.name}"
+            )
+            circuit_decision_reason = "missing_template"
+        elif len(matches) > 1:
+            ids = ", ".join(template.id for template in matches)
+            blockers.append(
+                f"Ambiguous Hevy template mapping for Circuit Workout Item "
+                f"{context.source_id}: {movement.name} ({ids})"
+            )
+            circuit_decision_reason = "ambiguous_template"
+        if movement.target and not base_sets and not is_omitted:
+            warnings.append("No deterministic set parser for Circuit movement target.")
+        review_items.append(
+            BackfillReviewItem(
+                source_id=context.source_id,
+                tracker_workout_item_id=context.item.id,
+                position=context.position + offset,
+                superset_id=context.superset_id,
+                name=movement.name,
+                info=context.info,
+                comment=context.comment,
+                selected_hevy_template=template,
+                sets=sets,
+                notes=_circuit_movement_notes(
+                    CircuitMovementNoteContext(
+                        movement=movement,
+                        parsed_block=context.parsed_block,
+                        source_text=context.info,
+                        comment=context.comment,
+                        round_time_lines=round_time_lines,
+                    )
+                ),
+                warnings=warnings,
+                blockers=blockers,
+                movement_target=movement.target,
+                original_prescription_text=movement.source_text,
+                completed_round_count=completed_round_count,
+                circuit_template_candidate_ids=[template.id for template in matches],
+                circuit_decision_reason=circuit_decision_reason,
+            )
+        )
+    return review_items
+
+
+def _reviewable_circuit_movements(
+    parsed_block: ParsedCircuitBlock,
+) -> list[ParsedCircuitMovement]:
+    return [
+        movement
+        for movement in parsed_block.movements
+        if not re.fullmatch(r"\d+\s*rounds?", movement.source_text.strip(), re.IGNORECASE)
+    ]
+
+
+def _completed_round_count(comment: str, parsed_block: ParsedCircuitBlock) -> int | None:
+    explicit_rounds = _explicit_round_count(comment)
+    if explicit_rounds is not None:
+        return explicit_rounds
+    round_times = _round_time_lines(comment)
+    if round_times:
+        return len(round_times)
+    return parsed_block.round_count
+
+
+def _explicit_round_count(comment: str) -> int | None:
+    for segment in _comment_segments(comment):
+        match = re.fullmatch(r"(?P<count>\d+)\s*rounds?", segment, flags=re.IGNORECASE)
+        if match is not None:
+            return int(match.group("count"))
+    return None
+
+
+def _round_time_lines(comment: str) -> list[str]:
+    return [
+        segment
+        for segment in _comment_segments(comment)
+        if _round_time_seconds(segment) is not None
+    ]
+
+
+def _round_time_seconds(segment: str) -> int | None:
+    matches = list(
+        re.finditer(
+            r"(?P<value>\d+)\s*(?P<unit>min|mins|minute|minutes|s|sec|secs|second|seconds)\b",
+            segment,
+            flags=re.IGNORECASE,
+        )
+    )
+    if not matches:
+        return None
+    normalized = re.sub(
+        r"\d+\s*(?:min|mins|minute|minutes|s|sec|secs|second|seconds)\b",
+        "",
+        segment,
+        flags=re.IGNORECASE,
+    ).strip(" ,-/")
+    if normalized:
+        return None
+    total = 0
+    for match in matches:
+        value = int(match.group("value"))
+        unit = match.group("unit").lower()
+        total += value * 60 if unit.startswith("min") else value
+    return total
+
+
+def _omitted_movement_names(comment: str) -> dict[str, str]:
+    omitted: dict[str, str] = {}
+    for segment in _comment_segments(comment):
+        match = re.fullmatch(r"(?:w/o|without|no)\s+(?P<name>.+)", segment, re.IGNORECASE)
+        if match is None:
+            continue
+        name = match.group("name").strip()
+        omitted[_normalize_choice_text(name)] = segment
+    return omitted
+
+
+def _movement_is_omitted(movement_name: str, omitted_movements: dict[str, str]) -> bool:
+    normalized_name = _normalize_choice_text(movement_name)
+    return any(
+        omitted_name == normalized_name
+        or omitted_name in normalized_name
+        or normalized_name in omitted_name
+        for omitted_name in omitted_movements
+    )
+
+
+def _omission_comment_for(movement_name: str, omitted_movements: dict[str, str]) -> str:
+    normalized_name = _normalize_choice_text(movement_name)
+    for omitted_name, source_text in omitted_movements.items():
+        if (
+            omitted_name == normalized_name
+            or omitted_name in normalized_name
+            or normalized_name in omitted_name
+        ):
+            return source_text
+    return movement_name
+
+
+def _sets_for_circuit_movement(
+    movement: ParsedCircuitMovement,
+) -> list[PostWorkoutsRequestSet]:
+    target = movement.target.strip()
+    if not target:
+        return []
+    if match := re.fullmatch(r"(?P<reps>\d+)(?:\s+(?:each side|es))?", target, re.IGNORECASE):
+        return [PostWorkoutsRequestSet(type="normal", reps=int(match.group("reps")))]
+    if match := re.fullmatch(r"(?P<distance>\d+)\s*(?:m|meters?)", target, re.IGNORECASE):
+        return [PostWorkoutsRequestSet(type="normal", distance_meters=int(match.group("distance")))]
+    if match := re.fullmatch(
+        r"(?P<seconds>\d+)\s*(?:s|sec|secs|second|seconds)", target, re.IGNORECASE
+    ):
+        return [PostWorkoutsRequestSet(type="normal", duration_seconds=int(match.group("seconds")))]
+    if match := re.fullmatch(
+        r"(?P<minutes>\d+)\s*(?:min|mins|minute|minutes)(?:\s+\w+)?",
+        target,
+        re.IGNORECASE,
+    ):
+        return [
+            PostWorkoutsRequestSet(type="normal", duration_seconds=int(match.group("minutes")) * 60)
+        ]
+    return []
+
+
+def _repeat_sets(
+    sets: list[PostWorkoutsRequestSet],
+    *,
+    count: int,
+) -> list[PostWorkoutsRequestSet]:
+    return [set_row for _ in range(count) for set_row in sets]
+
+
+def _circuit_movement_notes(context: CircuitMovementNoteContext) -> str:
+    movement = context.movement
+    parsed_block = context.parsed_block
+    parts = [
+        movement.source_text,
+        f"Movement: {movement.name}",
+        f"Movement target: {movement.target or 'none'}",
+    ]
+    if parsed_block.round_count is not None:
+        parts.append(f"Prescribed rounds: {parsed_block.round_count}")
+    if parsed_block.amrap_time_cap_seconds is not None:
+        parts.append(f"AMRAP time cap seconds: {parsed_block.amrap_time_cap_seconds}")
+    if context.round_time_lines:
+        parts.append(f"Completed round times: {'; '.join(context.round_time_lines)}")
+    if parsed_block.rests:
+        parts.append("Rest lines: " + "; ".join(rest.source_text for rest in parsed_block.rests))
+    if context.comment:
+        parts.append(f"Athlete comment: {context.comment}")
+    parts.append(f"Source: {context.source_text}")
+    return "\n".join(parts)
 
 
 def _choice_review_items(context: ChoiceReviewContext) -> list[BackfillReviewItem]:
@@ -957,9 +1225,18 @@ def _plan_item(item: BackfillReviewItem) -> dict[str, Any]:
         "warnings": item.warnings,
         "blockers": item.blockers,
     }
+    if item.movement_target is not None:
+        plan["movement_target"] = item.movement_target
+    if item.original_prescription_text is not None:
+        plan["original_prescription_text"] = item.original_prescription_text
+    if item.completed_round_count is not None:
+        plan["completed_round_count"] = item.completed_round_count
     if item.choice_decision_reason is not None:
         plan["choice_template_candidates"] = item.choice_template_candidate_ids or []
         plan["choice_decision_reason"] = item.choice_decision_reason
+    if item.circuit_decision_reason is not None:
+        plan["circuit_template_candidates"] = item.circuit_template_candidate_ids or []
+        plan["circuit_decision_reason"] = item.circuit_decision_reason
     return plan
 
 
@@ -1072,6 +1349,9 @@ def _decision_template(workout_id: int, plan: dict[str, Any] | None = None) -> d
     choice_items = _choice_decision_templates(plan) if plan is not None else []
     if choice_items:
         decisions["choice_items"] = choice_items
+    circuit_items = _circuit_decision_templates(plan) if plan is not None else []
+    if circuit_items:
+        decisions["circuit_items"] = circuit_items
     return decisions
 
 
@@ -1086,6 +1366,20 @@ def _choice_decision_templates(plan: dict[str, Any]) -> list[dict[str, Any]]:
         }
         for item in plan["items"]
         if item.get("choice_decision_reason") is not None
+    ]
+
+
+def _circuit_decision_templates(plan: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        {
+            "source_id": item["source_id"],
+            "movement_name": item["name"],
+            "selected_hevy_template_id": None,
+            "candidate_template_ids": item["circuit_template_candidates"],
+            "reason": item["circuit_decision_reason"],
+        }
+        for item in plan["items"]
+        if item.get("circuit_decision_reason") is not None
     ]
 
 
@@ -1123,6 +1417,23 @@ def _validate_decisions(
                 f"{required_choice['source_id']} {required_choice['performed_name']} "
                 "decision must use one of the candidate Hevy templates"
             )
+    for required_circuit in _circuit_decision_templates(plan) if plan is not None else []:
+        decision = _circuit_decision_for(decisions, required_circuit)
+        if decision is None or not decision.get("selected_hevy_template_id"):
+            blockers.append(
+                "Missing required decision: Circuit Workout Item "
+                f"{required_circuit['source_id']} {required_circuit['movement_name']} template"
+            )
+        elif (
+            required_circuit["candidate_template_ids"]
+            and decision["selected_hevy_template_id"]
+            not in required_circuit["candidate_template_ids"]
+        ):
+            blockers.append(
+                "Circuit Workout Item "
+                f"{required_circuit['source_id']} {required_circuit['movement_name']} "
+                "decision must use one of the candidate Hevy templates"
+            )
     return {"blockers": blockers, "warnings": warnings}
 
 
@@ -1141,6 +1452,24 @@ def _choice_decision_for(
             and choice.get("performed_name") == required_choice["performed_name"]
         ):
             return choice
+    return None
+
+
+def _circuit_decision_for(
+    decisions: dict[str, Any],
+    required_circuit: dict[str, Any],
+) -> dict[str, Any] | None:
+    circuit_items = decisions.get("circuit_items")
+    if not isinstance(circuit_items, list):
+        return None
+    for circuit in circuit_items:
+        if not isinstance(circuit, dict):
+            continue
+        if (
+            circuit.get("source_id") == required_circuit["source_id"]
+            and circuit.get("movement_name") == required_circuit["movement_name"]
+        ):
+            return circuit
     return None
 
 
@@ -1187,15 +1516,26 @@ def _request_exercise_template_id(
 ) -> str | None:
     if item["selected_hevy_template"] is not None:
         return item["selected_hevy_template"]["id"]
-    if decisions is None or item.get("choice_decision_reason") is None:
+    if decisions is None:
         return None
-    decision = _choice_decision_for(
-        decisions,
-        {
-            "source_id": item["source_id"],
-            "performed_name": item["name"],
-        },
-    )
+    if item.get("choice_decision_reason") is not None:
+        decision = _choice_decision_for(
+            decisions,
+            {
+                "source_id": item["source_id"],
+                "performed_name": item["name"],
+            },
+        )
+    elif item.get("circuit_decision_reason") is not None:
+        decision = _circuit_decision_for(
+            decisions,
+            {
+                "source_id": item["source_id"],
+                "movement_name": item["name"],
+            },
+        )
+    else:
+        decision = None
     if decision is None:
         return None
     selected_template_id = decision.get("selected_hevy_template_id")
@@ -1536,6 +1876,10 @@ def _report_item(index: int, item: dict[str, Any]) -> list[str]:
         ),
         "Structured sets:",
     ]
+    if item.get("movement_target") is not None:
+        lines.insert(6, f"Movement target: {item['movement_target'] or 'none'}")
+    if item.get("completed_round_count") is not None:
+        lines.insert(7, f"Completed rounds: {item['completed_round_count']}")
     if item["sets"]:
         lines.extend(f"- {_format_set(set_row)}" for set_row in item["sets"])
     else:

@@ -818,6 +818,156 @@ def test_workout_backfill_choice_item_splits_multiple_performed_modalities(
     )
 
 
+def test_workout_backfill_circuit_item_expands_performed_movements(  # noqa: PLR0915
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    _add_choice_templates(
+        store,
+        [
+            ("hevy-bike", "Bike"),
+            ("hevy-burpees", "Burpees"),
+            ("hevy-plank", "Plank"),
+        ],
+    )
+    _add_circuit_backfill_item(
+        store,
+        info="3 Rounds\n10 Burpees\n15 cals Bike\nPlank 30s",
+        comment="2 min 10 sec\n2 min 15 sec\nW/o Bike",
+    )
+
+    bundle_dir = _write_backfill_review(db_path, tmp_path)
+    plan = json.loads((bundle_dir / "plan.json").read_text(encoding="utf-8"))
+    request = json.loads((bundle_dir / "hevy-workout-request.json").read_text(encoding="utf-8"))
+    report = (bundle_dir / "report.md").read_text(encoding="utf-8")
+
+    circuit_items = plan["items"][2:]
+    assert [item["name"] for item in circuit_items] == ["Burpees", "Bike", "Plank"]
+    assert [item["movement_target"] for item in circuit_items] == ["10", "15 cals", "30s"]
+    assert [item["completed_round_count"] for item in circuit_items] == [2, 2, 2]
+    assert circuit_items[0]["sets"] == [
+        {"type": "normal", "reps": 10},
+        {"type": "normal", "reps": 10},
+    ]
+    assert circuit_items[1]["sets"] == []
+    assert circuit_items[1]["warnings"] == ["Athlete comment omits Circuit movement: W/o Bike"]
+    assert circuit_items[2]["sets"] == [
+        {"type": "normal", "duration_seconds": 30},
+        {"type": "normal", "duration_seconds": 30},
+    ]
+    assert "Completed round times: 2 min 10 sec; 2 min 15 sec" in circuit_items[0]["notes"]
+    assert "2 min 10 sec" not in json.dumps(circuit_items[0]["sets"])
+    assert [exercise["exercise_template_id"] for exercise in request["workout"]["exercises"]] == [
+        "hevy-bench",
+        "hevy-row",
+        "hevy-burpees",
+        "hevy-plank",
+    ]
+    assert "Movement target: 15 cals" in report
+    assert "WARNING: Athlete comment omits Circuit movement: W/o Bike" in report
+
+
+def test_workout_backfill_missed_amrap_item_does_not_expand_performed_work(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    _add_choice_templates(store, [("hevy-bike", "Bike"), ("hevy-burpees", "Burpees")])
+    _add_circuit_backfill_item(
+        store,
+        name="12' AMRAP",
+        info="20 cal Bike\n10 Burpees",
+        comment="",
+        state="missed",
+    )
+
+    bundle_dir = _write_backfill_review(db_path, tmp_path)
+    plan = json.loads((bundle_dir / "plan.json").read_text(encoding="utf-8"))
+    request = json.loads((bundle_dir / "hevy-workout-request.json").read_text(encoding="utf-8"))
+
+    assert [item["source_id"] for item in plan["items"]] == [8101, 8102]
+    assert [exercise["exercise_template_id"] for exercise in request["workout"]["exercises"]] == [
+        "hevy-bench",
+        "hevy-row",
+    ]
+
+
+def test_workout_backfill_circuit_round_count_can_come_from_athlete_comment(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    _add_choice_templates(store, [("hevy-burpees", "Burpees"), ("hevy-plank", "Plank")])
+    _add_circuit_backfill_item(
+        store,
+        info="10 Burpees\nPlank 30s",
+        comment="3 Rounds",
+    )
+
+    bundle_dir = _write_backfill_review(db_path, tmp_path)
+    plan = json.loads((bundle_dir / "plan.json").read_text(encoding="utf-8"))
+
+    circuit_items = plan["items"][2:]
+    assert [item["completed_round_count"] for item in circuit_items] == [3, 3]
+    assert circuit_items[0]["sets"] == [
+        {"type": "normal", "reps": 10},
+        {"type": "normal", "reps": 10},
+        {"type": "normal", "reps": 10},
+    ]
+    assert circuit_items[1]["sets"] == [
+        {"type": "normal", "duration_seconds": 30},
+        {"type": "normal", "duration_seconds": 30},
+        {"type": "normal", "duration_seconds": 30},
+    ]
+
+
+def test_workout_backfill_circuit_item_missing_template_writes_required_decision(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    _add_circuit_backfill_item(
+        store,
+        info="10 Burpees\nPlank 30s",
+        comment="3 Rounds",
+    )
+
+    bundle_dir = _write_backfill_review(db_path, tmp_path)
+    decisions = json.loads((bundle_dir / "backfill-decisions.json").read_text(encoding="utf-8"))
+    validation = json.loads((bundle_dir / "decision-validation.json").read_text(encoding="utf-8"))
+
+    assert decisions["circuit_items"] == [
+        {
+            "source_id": 8106,
+            "movement_name": "Burpees",
+            "selected_hevy_template_id": None,
+            "candidate_template_ids": [],
+            "reason": "missing_template",
+        },
+        {
+            "source_id": 8106,
+            "movement_name": "Plank",
+            "selected_hevy_template_id": None,
+            "candidate_template_ids": [],
+            "reason": "missing_template",
+        },
+    ]
+    assert validation["blockers"] == [
+        "Missing required decision: selected Workout timestamps",
+        "Missing required decision: Circuit Workout Item 8106 Burpees template",
+        "Missing required decision: Circuit Workout Item 8106 Plank template",
+    ]
+
+
 def test_workout_backfill_choice_item_missing_template_writes_required_decision(
     tmp_path: Path,
 ) -> None:
@@ -1528,6 +1678,44 @@ def _add_choice_backfill_item(store: Store, *, info: str, comment: str) -> None:
                 position=3,
                 exercise_id=exercise.id,
                 true_coach_id=8104,
+            )
+        )
+
+
+def _add_circuit_backfill_item(  # noqa: PLR0913
+    store: Store,
+    *,
+    name: str = "Conditioning Circuit",
+    info: str,
+    comment: str,
+    state: str = "completed",
+) -> None:
+    with store.unit_of_work() as uow:
+        workout = uow.true_coach.get_workout(id=455045484).tracker
+        assert workout is not None
+        exercise = Exercise(name="Circuit", hevy_app_id=None)
+        uow.session.add(exercise)
+        uow.session.add(
+            TrueCoachWorkoutItem(
+                id=8106,
+                workout_id=455045484,
+                name=name,
+                info=info,
+                comment=comment,
+                is_circuit=True,
+                state=state,
+                position=3,
+                exercise_id=None,
+                assessment_id=None,
+            )
+        )
+        uow.session.flush()
+        uow.session.add(
+            TrackerWorkoutItem(
+                workout_id=workout.id,
+                position=3,
+                exercise_id=exercise.id,
+                true_coach_id=8106,
             )
         )
 
