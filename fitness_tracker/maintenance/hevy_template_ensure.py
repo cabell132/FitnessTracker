@@ -14,6 +14,7 @@ from fitness_tracker.apis.hevy_app.types import (
     ExerciseTemplate,
 )
 from fitness_tracker.database import Store
+from fitness_tracker.database.models.hevy_app import HevyAppExercise
 
 
 class TemplateEnsureError(Exception):
@@ -124,6 +125,64 @@ class HevyTemplateEnsureService:
             ambiguous=groups.ambiguous,
         )
 
+    def create_template(  # noqa: PLR0913
+        self,
+        *,
+        title: str,
+        expected_type: str,
+        equipment_category: str,
+        muscle_group: str,
+        other_muscles: tuple[str, ...] = (),
+        dry_run: bool,
+    ) -> TemplateEnsureResult:
+        """Create one custom Hevy template from explicit CLI fields.
+
+        Args:
+            title (str): Hevy template title.
+            expected_type (str): Hevy custom exercise type.
+            equipment_category (str): Hevy equipment category.
+            muscle_group (str): Primary muscle group.
+            other_muscles (tuple[str, ...]): Secondary muscle groups.
+            dry_run (bool): When true, report only and write nothing.
+
+        Returns:
+            TemplateEnsureResult: Single-template action result.
+        """
+        existing_ids = self._matching_local_template_ids(title)
+        template = RequiredTemplate(
+            title=title,
+            expected_type=expected_type,
+            equipment_category=equipment_category,
+            muscle_group=muscle_group,
+            other_muscles=other_muscles,
+            status="existing" if existing_ids else "missing",
+            source_workout_item_ids=(),
+            matching_template_ids=existing_ids,
+        )
+        if existing_ids:
+            return TemplateEnsureResult(
+                created=(),
+                would_create=(),
+                existing=(template,),
+                ambiguous=(),
+            )
+        if dry_run:
+            return TemplateEnsureResult(
+                created=(),
+                would_create=(template,),
+                existing=(),
+                ambiguous=(),
+            )
+
+        created_id = self._create_remote_template(self._require_hevy_exercises(), template)
+        self._persist_created_template(template, created_id)
+        return TemplateEnsureResult(
+            created=(template,),
+            would_create=(),
+            existing=(),
+            ambiguous=(),
+        )
+
     def _require_hevy_exercises(self) -> HevyExerciseCreator:
         hevy_exercises = self._hevy_exercises
         if hevy_exercises is None:
@@ -153,6 +212,16 @@ class HevyTemplateEnsureService:
         )
         with self._store.unit_of_work() as uow:
             uow.hevy.add_exercise(exercise)
+
+    def _matching_local_template_ids(self, title: str) -> tuple[str, ...]:
+        normalized_title = title.casefold().strip()
+        with self._store.unit_of_work() as uow:
+            rows = (
+                uow.session.query(HevyAppExercise)
+                .filter(HevyAppExercise.name.ilike(title.strip()))
+                .all()
+            )
+        return tuple(str(row.id) for row in rows if row.name.casefold().strip() == normalized_title)
 
 
 def _required_templates_from_plan(plan_path: Path) -> tuple[RequiredTemplate, ...]:

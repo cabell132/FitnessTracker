@@ -14,10 +14,27 @@ from fitness_tracker.apis.hevy_app.types import PostRoutinesRequestSet
 
 PRESCRIBED_SETS_PATTERN = re.compile(
     r"(?P<count>\d+)\s*[xX]\s*"
-    r"(?P<reps>\d+(?:\s*-\s*\d+)?(?:\s*[+>]\s*\d+(?:\s*-\s*\d+)?)*)"
-    r"(?:\s*@\s*(?P<load>\d+(?:\.\d+)?)\s*(?:kg)?)?"
+    r"(?P<reps>\d+(?:[ \t]*-[ \t]*\d+)?(?:\s*[+>]\s*\d+(?:[ \t]*-[ \t]*\d+)?)*)"
+    r"(?!\s*(?:s|sec|secs|second|seconds)\b)"
+    r"(?P<suffix>[^\n]*)",
+    re.IGNORECASE,
+)
+DURATION_SETS_PATTERN = re.compile(
+    r"(?P<count>\d+)\s*[xX]\s*"
+    r"(?P<seconds>\d+(?:[ \t]*-[ \t]*\d+)?)\s*"
+    r"(?:s|sec|secs|second|seconds)\b",
+    re.IGNORECASE,
+)
+LENGTH_SETS_PATTERN = re.compile(
+    r"(?P<count>\d+)\s*[xX]\s*(?P<lengths>\d+)\s*L\b",
+    re.IGNORECASE,
 )
 DROPSET_REP_SEPARATOR_PATTERN = re.compile(r"\s*[+>]\s*")
+LOAD_PATTERN = re.compile(
+    r"@\s*(?P<load>\d+(?:\.\d+)?)(?:\s*kg\b|(?!\s*[A-Za-z]))",
+    re.IGNORECASE,
+)
+BODYWEIGHT_LOAD_PATTERN = re.compile(r"@\s*BW\b", re.IGNORECASE)
 
 
 def parse_workout_order(description: str) -> dict[int, dict[str, str | int | None]]:
@@ -138,14 +155,26 @@ def parse_prescribed_sets(description: str) -> list[PostRoutinesRequestSet]:
     Returns:
         list[PostRoutinesRequestSet]: Parsed Hevy set rows, or an empty list.
     """
-    match = PRESCRIBED_SETS_PATTERN.search(description)
+    duration_match = DURATION_SETS_PATTERN.search(description)
+    length_match = LENGTH_SETS_PATTERN.search(description)
+    rep_match = PRESCRIBED_SETS_PATTERN.search(description)
+    if duration_match and (rep_match is None or duration_match.start() <= rep_match.start()):
+        return [
+            set_
+            for match in DURATION_SETS_PATTERN.finditer(description)
+            for set_ in _duration_sets(match)
+        ]
+    if length_match and (rep_match is None or length_match.start() <= rep_match.start()):
+        return _length_sets(length_match)
+
+    match = rep_match
     if not match:
         return []
 
     set_count = int(match.group("count"))
     rep_parts = DROPSET_REP_SEPARATOR_PATTERN.split(match.group("reps"))
     rep_targets = [_parse_rep_target(part) for part in rep_parts]
-    load = _parse_optional_load(match.group("load"))
+    load = _parse_optional_load(match.group("suffix"))
 
     sets: list[PostRoutinesRequestSet] = []
     for _ in range(set_count):
@@ -156,12 +185,33 @@ def parse_prescribed_sets(description: str) -> list[PostRoutinesRequestSet]:
     return sets
 
 
+def _duration_sets(match: re.Match[str]) -> list[PostRoutinesRequestSet]:
+    set_count = int(match.group("count"))
+    duration_seconds = _parse_rep_target(match.group("seconds"))
+    return [
+        PostRoutinesRequestSet(type="normal", duration_seconds=duration_seconds)
+        for _ in range(set_count)
+    ]
+
+
+def _length_sets(match: re.Match[str]) -> list[PostRoutinesRequestSet]:
+    set_count = int(match.group("count"))
+    distance_meters = int(match.group("lengths")) * 10
+    return [
+        PostRoutinesRequestSet(type="normal", distance_meters=distance_meters)
+        for _ in range(set_count)
+    ]
+
+
 def _parse_rep_target(value: str) -> int:
     bounds = [int(part.strip()) for part in value.split("-")]
     return max(bounds)
 
 
-def _parse_optional_load(value: str | None) -> float | None:
-    if value is None:
+def _parse_optional_load(value: str) -> float | None:
+    if BODYWEIGHT_LOAD_PATTERN.search(value):
+        return 0.0
+    match = LOAD_PATTERN.search(value)
+    if match is None:
         return None
-    return float(value)
+    return float(match.group("load"))

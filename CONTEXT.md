@@ -33,6 +33,53 @@ _Avoid_: plan, template, workout
 A single training session that has been performed and logged.
 _Avoid_: session, routine
 
+**Workout backfill**:
+Creating a logged Hevy Workout from an already-completed True Coach Workout
+that was not originally recorded in Hevy. Backfill is historical result
+transfer, not Routine creation.
+Every performed Workout Item included in a backfilled Hevy Workout must resolve
+to a concrete Hevy exercise template. Placeholder items may be omitted only when
+they represent non-exercise context such as rest notes.
+A completed backfill links the created Hevy Workout and its included exercise
+blocks back to the existing local tracker rows, so the local tracker records
+that the historical Workout has been transferred.
+Backfilled Hevy Workouts include the source True Coach Workout id as an
+idempotency marker, so retries can detect or repair an existing remote backfill
+instead of creating a duplicate.
+Backfill timing may be inferred from Apple Health evidence such as nearby
+workout intervals and heart-rate patterns. Timing inference is a review
+judgement, not a silent automatic fact; if confidence is too low, the timestamp
+should remain unset until the Athlete or Agent chooses it.
+The deterministic backfill plan is an audit trail of local source data. Agent or
+Athlete judgement belongs in editable request or decision artifacts, not by
+rewriting the deterministic plan.
+
+**Performed results**:
+The Athlete's completed set outcomes for a Workout, such as load, reps,
+distance, duration, and effort. For Workout backfill, performed results are the
+data being transferred; Coach-authored prescription text remains context for
+review and notes.
+When performed-result text cannot be fully represented in Hevy's structured set
+fields, the raw text is preserved in Hevy exercise notes.
+Exercise notes should preserve non-structured context and Athlete feedback, not
+duplicate values already represented in structured Hevy set rows.
+
+**Choice Workout Item**:
+A Coach-authored Workout Item where the Coach offers multiple movement options
+and the Athlete's result text identifies which option was performed. During
+Workout backfill, the performed exercise is selected from the Athlete's result
+text rather than the Coach's generic choice wording.
+If the Athlete performed multiple options, the backfill may split one Choice
+Workout Item into multiple Hevy exercise blocks. Metrics that Hevy cannot store
+structurally for those blocks remain in notes.
+Ambiguous Choice Workout Item mappings are resolved as explicit backfill
+decisions that select the performed Hevy exercise template.
+
+**Down Regulate**:
+A Coach-authored breathing exercise normally performed at the end of a Workout.
+It is performed work, not a note-only cooldown marker. When no more specific
+performed result exists, the Athlete treats it as 4 minutes.
+
 **Workout Item**:
 One exercise prescription within a True Coach plan — the unit the Coach writes.
 

@@ -135,6 +135,7 @@ def test_sync_review_splits_mixed_iso_hold_and_reps_prescription(
 
     item = plan["items"][0]
     assert item["source_id"] == 1005
+    assert item["proposed_sets"] == []
     _assert_mixed_knee_extension_blocks(item)
     assert item["blockers"] == ["Missing required Hevy template: Isometric Seated Knee Extension"]
 
@@ -280,6 +281,35 @@ def test_sync_review_treats_missing_history_as_warning_not_blocker(tmp_path: Pat
     bench_item = plan["items"][0]
     assert bench_item["warnings"] == ["No matching Athlete history load found."]
     assert bench_item["blockers"] == []
+
+
+def test_sync_review_enriches_distance_loads_from_recent_matching_history(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_sled_workout(store)
+    _seed_sled_history(store)
+
+    _, plan = _write_sync_review(tmp_path, db_path, workout_id=48)
+
+    item = plan["items"][0]
+    assert item["warnings"] == []
+    assert item["proposed_sets"] == [
+        {
+            "type": "normal",
+            "weight_kg": 120.0,
+            "distance_meters": 10,
+            "_provenance": {"weight_kg": "athlete_history"},
+        },
+        {
+            "type": "normal",
+            "weight_kg": 120.0,
+            "distance_meters": 10,
+            "_provenance": {"weight_kg": "athlete_history"},
+        },
+    ]
 
 
 def test_sync_review_agent_next_actions_include_parser_gap_source_text(
@@ -483,6 +513,35 @@ def test_sync_apply_allows_missing_history_enrichment_warning(tmp_path: Path) ->
     ]
 
 
+def test_sync_apply_uses_first_duration_set_as_rest_timer(tmp_path: Path) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_clean_duration_plan_workout(store)
+    service = TrueCoachToHevyReviewService(store=store, output_root=tmp_path / "reports")
+
+    result = service.write_apply_request(51)
+
+    exercise = result.request_body.model_dump()["routine"]["exercises"][0]
+    assert exercise["rest_seconds"] == 30
+    assert exercise["sets"] == [
+        {
+            "weight_kg": None,
+            "reps": None,
+            "distance_meters": None,
+            "duration_seconds": 30,
+            "type": "normal",
+        },
+        {
+            "weight_kg": None,
+            "reps": None,
+            "distance_meters": None,
+            "duration_seconds": 45,
+            "type": "normal",
+        },
+    ]
+
+
 def test_sync_apply_blocks_unsplit_required_mixed_mode_item(tmp_path: Path) -> None:
     db_path = tmp_path / "tracker.sqlite"
     store = Store(create_engine(f"sqlite:///{db_path}"))
@@ -560,7 +619,7 @@ def _assert_mixed_knee_extension_blocks(item: dict) -> None:
     assert [block["source_id"] for block in blocks] == [1005, 1005]
     assert [block["phase_kind"] for block in blocks] == ["isometric_hold", "dynamic_reps"]
     assert blocks[0]["source_text"] == "2 x 30s iso hold"
-    assert blocks[0]["notes"] == "2 x 30s iso hold\nSource: 2 x 30s iso hold then 3 x 10-12"
+    assert blocks[0]["notes"] == "2 x 30s iso hold\nSource: Single Leg\n2 x 30s iso hold\n3 x 10-12"
     assert blocks[0]["selected_hevy_template"] is None
     assert blocks[0]["required_hevy_templates"] == [
         {
@@ -715,6 +774,85 @@ def _seed_workout(store: Store) -> None:
 
 def _seed_bench_history(store: Store) -> None:
     _seed_bench_normal_history(store, reps=12, weight_kg=80.0)
+
+
+def _seed_sled_workout(store: Store) -> None:
+    now = datetime(2026, 5, 17, tzinfo=UTC)
+    with store.unit_of_work() as uow:
+        uow.session.add(
+            TrueCoachWorkout(
+                id=48,
+                title="Sled Day",
+                due=now,
+                short_description='<p class="name-and-info">A) Sled Push</p>',
+                state="pending",
+                rest_day=False,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        uow.session.add(TrueCoachExercise(id=508, name="Sled Push", default=False))
+        uow.session.add(
+            HevyAppExercise(
+                id="hevy-sled",
+                name="Sled Push (Weight & Distance)",
+                type="short_distance_weight",
+                equipment="other",
+                default=True,
+            )
+        )
+        uow.session.add(
+            TrackerExercise(name="Sled Push", hevy_app_id="hevy-sled", true_coach_id=508)
+        )
+        uow.session.add(
+            TrueCoachWorkoutItem(
+                id=1008,
+                workout_id=48,
+                name="Sled Push",
+                info="2 x 1L\n- 120kg of plates",
+                comment="",
+                is_circuit=False,
+                state="pending",
+                position=1,
+                exercise_id=508,
+                assessment_id=None,
+            )
+        )
+
+
+def _seed_sled_history(store: Store) -> None:
+    now = datetime(2026, 5, 10, tzinfo=UTC)
+    with store.unit_of_work() as uow:
+        uow.session.add(
+            HevyAppWorkout(
+                id="hevy-sled-history-1",
+                title="Sled Day Logged",
+                description="",
+                start_time=now,
+                end_time=now,
+            )
+        )
+        uow.session.add(
+            HevyAppWorkoutItem(
+                id=2008,
+                workout_id="hevy-sled-history-1",
+                index=0,
+                name="Sled Push (Weight & Distance)",
+                notes="",
+                superset_id=None,
+                exercise_id="hevy-sled",
+            )
+        )
+        for index in range(2):
+            uow.session.add(
+                HevyAppSets(
+                    workout_item_id=2008,
+                    index=index,
+                    type="normal",
+                    weight_kg=120.0,
+                    distance_meters=10,
+                )
+            )
 
 
 def _seed_bench_normal_history(store: Store, *, reps: int, weight_kg: float) -> None:
@@ -944,7 +1082,7 @@ def _seed_mixed_mode_knee_extension_workout(store: Store) -> None:
                 id=1005,
                 workout_id=45,
                 name="Seated Knee Extension",
-                info="2 x 30s iso hold then 3 x 10-12",
+                info="Single Leg\n2 x 30s iso hold\n3 x 10-12",
                 comment="",
                 is_circuit=False,
                 state="pending",
@@ -1148,6 +1286,54 @@ def _seed_clean_weight_plan_workout(store: Store) -> None:
                 state="pending",
                 position=1,
                 exercise_id=507,
+                assessment_id=None,
+            )
+        )
+
+
+def _seed_clean_duration_plan_workout(store: Store) -> None:
+    now = datetime(2026, 5, 17, tzinfo=UTC)
+    with store.unit_of_work() as uow:
+        uow.session.add(
+            TrueCoachWorkout(
+                id=51,
+                title="Duration Plan",
+                due=now,
+                short_description="",
+                state="pending",
+                rest_day=False,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        uow.session.add(TrueCoachExercise(id=510, name="Couch Stretch", default=False))
+        uow.session.add(
+            HevyAppExercise(
+                id="hevy-couch-stretch",
+                name="Couch Stretch",
+                type="duration",
+                equipment="none",
+                default=True,
+            )
+        )
+        uow.session.add(
+            TrackerExercise(
+                name="Couch Stretch",
+                hevy_app_id="hevy-couch-stretch",
+                true_coach_id=510,
+            )
+        )
+        uow.session.add(
+            TrueCoachWorkoutItem(
+                id=1010,
+                workout_id=51,
+                name="Couch Stretch",
+                info="1 x 30s then 1 x 45s",
+                comment="",
+                is_circuit=False,
+                state="pending",
+                position=1,
+                exercise_id=510,
                 assessment_id=None,
             )
         )

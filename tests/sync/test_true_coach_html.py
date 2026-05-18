@@ -6,6 +6,7 @@ from fitness_tracker.sync._true_coach_html import (
     build_superset_index,
     extract_notes,
     fallback_sets,
+    parse_prescribed_sets,
     parse_workout_order,
 )
 
@@ -164,4 +165,52 @@ def test_fallback_sets_parses_greater_than_notation_as_dropsets() -> None:
         {"type": "normal", "reps": 8},
         {"type": "dropset", "reps": 8},
         {"type": "dropset", "reps": 8},
+    ]
+
+
+def test_parse_prescribed_sets_does_not_treat_bullet_rest_as_rep_range() -> None:
+    sets = parse_prescribed_sets("5 x 8\n- 45s rest")
+
+    assert [set_.model_dump(exclude_none=True) for set_ in sets] == [
+        {"type": "normal", "reps": 8},
+        {"type": "normal", "reps": 8},
+        {"type": "normal", "reps": 8},
+        {"type": "normal", "reps": 8},
+        {"type": "normal", "reps": 8},
+    ]
+
+
+def test_parse_prescribed_sets_parses_second_based_prescriptions_as_duration() -> None:
+    sets = parse_prescribed_sets("2 x 20-30s ES")
+
+    assert [set_.model_dump(exclude_none=True) for set_ in sets] == [
+        {"type": "normal", "duration_seconds": 30},
+        {"type": "normal", "duration_seconds": 30},
+    ]
+
+
+def test_parse_prescribed_sets_preserves_explicit_load_after_each_side_marker() -> None:
+    sets = parse_prescribed_sets("3 x 8 ES @ 15kg")
+
+    assert [set_.model_dump(exclude_none=True) for set_ in sets] == [
+        {"type": "normal", "weight_kg": 15.0, "reps": 8},
+        {"type": "normal", "weight_kg": 15.0, "reps": 8},
+        {"type": "normal", "weight_kg": 15.0, "reps": 8},
+    ]
+
+
+def test_parse_prescribed_sets_treats_sled_lengths_as_distance() -> None:
+    sets = parse_prescribed_sets("10 x 1L\n- 120kg of plates\n- 30s rest")
+
+    assert [set_.model_dump(exclude_none=True) for set_ in sets] == [
+        {"type": "normal", "distance_meters": 10},
+        {"type": "normal", "distance_meters": 10},
+        {"type": "normal", "distance_meters": 10},
+        {"type": "normal", "distance_meters": 10},
+        {"type": "normal", "distance_meters": 10},
+        {"type": "normal", "distance_meters": 10},
+        {"type": "normal", "distance_meters": 10},
+        {"type": "normal", "distance_meters": 10},
+        {"type": "normal", "distance_meters": 10},
+        {"type": "normal", "distance_meters": 10},
     ]

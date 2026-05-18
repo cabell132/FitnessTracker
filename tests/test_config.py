@@ -7,11 +7,13 @@ from pydantic import SecretStr
 from sqlalchemy import create_engine
 
 from fitness_tracker.config import Config
+from fitness_tracker.database.config import get_database_url
 from fitness_tracker.sync._deps import SyncDeps
 
 
 def test_from_env_reports_all_missing_required_vars(monkeypatch: pytest.MonkeyPatch) -> None:
     """Missing required settings are reported together at startup."""
+    monkeypatch.setattr("fitness_tracker.config.load_dotenv", lambda: None)
     for name in Config.required_env_vars():
         monkeypatch.delenv(name, raising=False)
 
@@ -22,6 +24,18 @@ def test_from_env_reports_all_missing_required_vars(monkeypatch: pytest.MonkeyPa
     assert "Missing required environment variables:" in message
     for name in Config.required_env_vars():
         assert f"  - {name}" in message
+
+
+def test_database_url_defaults_to_env_without_full_config_validation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Database-only commands can read DATABASE_URL without requiring all credentials."""
+    monkeypatch.setattr("fitness_tracker.database.config.load_dotenv", lambda: None)
+    for name in Config.required_env_vars():
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///from-env.db")
+
+    assert get_database_url() == "sqlite:///from-env.db"
 
 
 def test_sync_deps_from_config_wires_configured_credentials(

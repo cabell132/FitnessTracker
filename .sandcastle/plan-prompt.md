@@ -4,11 +4,16 @@ Here are the open issues in the repo:
 
 <issues-json>
 
-!`gh issue list --state open --label ready-for-agent --json number,title,body,labels,comments --jq '[.[] | {number, title, body, labels: [.labels[].name], comments: [.comments[].body]}]'`
+!`gh issue list --state open --label ready-for-agent --json number,title,body,labels,comments --jq '[.[] | select((.title | test("^PRD:"; "i") | not) and ((.body // "") | test("## User Stories|## Implementation Decisions|## Testing Decisions"; "i") | not)) | {number, title, body, labels: [.labels[].name], comments: [.comments[].body]}]'`
 
 </issues-json>
 
 The list above has already been filtered to issues ready for work.
+
+Parent issues, PRDs, epics, and other container/specification issues are not
+implementation tasks. They may explain the feature and may be referenced by
+child issues, but they must never be selected for implementation, including in
+the fallback case where every child issue appears blocked.
 
 # TASK
 
@@ -32,4 +37,7 @@ Output your plan as a JSON object wrapped in `<plan>` tags:
 {"issues": [{"id": "42", "title": "Fix auth bug", "branch": "sandcastle/issue-42-fix-auth-bug"}]}
 </plan>
 
-Include only unblocked issues. If every issue is blocked, include the single highest-priority candidate (the one with the fewest or weakest dependencies).
+Include only unblocked implementation issues. If every implementation issue is
+blocked, include the single highest-priority implementation candidate (the one
+with the fewest or weakest dependencies). Do not include parent issues, PRDs,
+epics, or other container/specification issues.

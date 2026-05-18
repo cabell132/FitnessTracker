@@ -24,30 +24,8 @@ Also accept natural day arguments such as `today`, `tomorrow`, or `yesterday`, b
 
 3. Find True Coach Workouts due on that date from the configured database.
 
-   Prefer the app's configured `DATABASE_URL` over assuming the local SQLite file is populated:
-
    ```bash
-   uv run python - <<'PY'
-   from sqlalchemy import text
-   from fitness_tracker.database.config import create_database_engine
-
-   target_date = "YYYY-MM-DD"
-   engine = create_database_engine()
-   with engine.connect() as conn:
-       rows = conn.execute(
-           text(
-               """
-               SELECT id, title, due, state, rest_day
-               FROM "TrueCoachWorkout"
-               WHERE date(due) = :target_date
-               ORDER BY due, id
-               """
-           ),
-           {"target_date": target_date},
-       ).fetchall()
-       for row in rows:
-           print(row)
-   PY
+   uv run fitness-tracker truecoach due --date YYYY-MM-DD
    ```
 
    If no rows are found, stop and report that the configured DB has no True Coach Workouts due on that date.
@@ -55,7 +33,7 @@ Also accept natural day arguments such as `today`, `tomorrow`, or `yesterday`, b
 4. For each non-rest-day workout, generate a sync review.
 
    ```bash
-   uv run fitness-tracker sync-review truecoach-to-hevy --workout-id WORKOUT_ID
+   uv run fitness-tracker sync-review truecoach-to-hevy --workout-id WORKOUT_ID --summary
    ```
 
 5. Inspect the report and plan.
@@ -80,12 +58,18 @@ Also accept natural day arguments such as `today`, `tomorrow`, or `yesterday`, b
    uv run fitness-tracker hevy-templates ensure-from-plan reports/sync-review/truecoach-to-hevy/WORKOUT_ID/plan.json --yes
    ```
 
-   If a Hevy template create returns HTTP 200/201 but local response parsing fails, do not retry the POST immediately. Verify remotely whether the template was created, then persist the discovered template ID locally and continue. This avoids duplicate custom templates.
+   If a Hevy template create returns HTTP 200/201 but local response parsing fails, do not retry the POST immediately. Verify remotely whether the template was created:
+
+   ```bash
+   uv run fitness-tracker hevy-templates find --title "Template Title"
+   ```
+
+   If it exists remotely, persist the discovered template ID locally and continue. This avoids duplicate custom templates.
 
    Then regenerate the review:
 
    ```bash
-   uv run fitness-tracker sync-review truecoach-to-hevy --workout-id WORKOUT_ID
+   uv run fitness-tracker sync-review truecoach-to-hevy --workout-id WORKOUT_ID --summary
    ```
 
 7. Generate the exact Hevy request body without writing to Hevy.
@@ -104,10 +88,14 @@ Also accept natural day arguments such as `today`, `tomorrow`, or `yesterday`, b
 
    When manually adjusting a request:
    - Write it as `reports/sync-review/truecoach-to-hevy/WORKOUT_ID/hevy-request.manual.json`.
-   - Verify no exercise has empty `sets`.
+   - Verify no exercise has empty `sets`, using `jq` if useful.
    - Keep the manual changes scoped to the workout-specific nuance.
 
 9. Before creating a routine, search Hevy for an existing routine with the exact generated title.
+
+   ```bash
+   uv run fitness-tracker hevy routines find --title $'DD Mon YYYY\nWorkout Title\nWORKOUT_ID'
+   ```
 
    If one exists, ask the user whether to delete and recreate, update in place, or stop. Do not update in place by default. Prefer delete-and-recreate only after explicit confirmation.
 
@@ -120,6 +108,30 @@ Also accept natural day arguments such as `today`, `tomorrow`, or `yesterday`, b
    ```
 
    For a manual request body, create the routine from the reviewed JSON body. If the user chose delete-and-recreate, delete the existing routine first and then create fresh from the manual request.
+
+   Delete an existing routine only with explicit user confirmation:
+
+   ```bash
+   uv run fitness-tracker hevy routines delete ROUTINE_ID --yes
+   ```
+
+   Create from the manual request:
+
+   ```bash
+   uv run fitness-tracker hevy routines create-from-json reports/sync-review/truecoach-to-hevy/WORKOUT_ID/hevy-request.manual.json
+   ```
+
+   Or use the sync apply manual-request wrapper:
+
+   ```bash
+   uv run fitness-tracker sync-apply truecoach-to-hevy --workout-id WORKOUT_ID --manual-request reports/sync-review/truecoach-to-hevy/WORKOUT_ID/hevy-request.manual.json
+   ```
+
+   Inspect the created routine after writing:
+
+   ```bash
+   uv run fitness-tracker hevy routines inspect ROUTINE_ID
+   ```
 
 11. Report the result.
    - List each processed True Coach Workout ID and title.

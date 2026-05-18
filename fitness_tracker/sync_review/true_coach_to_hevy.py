@@ -166,6 +166,7 @@ class HistoricalLoad:
 
 DEFAULT_TEMPLATE_OVERRIDE_RULES_PATH = Path(__file__).with_name("template_override_rules.json")
 MIXED_PHASE_SPLIT_PATTERN = re.compile(r"\s+(?:then|followed by)\s+|[;,]\s*", re.IGNORECASE)
+SET_PRESCRIPTION_MARKER_PATTERN = re.compile(r"\b\d+\s*[xX]\s*")
 DURATION_PHASE_PATTERN = re.compile(
     r"(?P<count>\d+)\s*[xX]\s*(?P<seconds>\d+)\s*(?:s|sec|secs|second|seconds)\b",
     re.IGNORECASE,
@@ -270,8 +271,12 @@ class TrueCoachToHevyReviewService:
         template = self._selected_template(uow, item)
         required_templates = self._required_templates(uow, item, template)
         planned_blocks = self._planned_blocks(uow, item, template, superset_id)
-        proposed_sets = parse_prescribed_sets(item.info or "")
-        proposed_sets, set_provenance = _enrich_sets_from_history(uow, template, proposed_sets)
+        if planned_blocks:
+            proposed_sets: list[PostRoutinesRequestSet] = []
+            set_provenance: list[SetProvenance] = []
+        else:
+            proposed_sets = parse_prescribed_sets(item.info or "")
+            proposed_sets, set_provenance = _enrich_sets_from_history(uow, template, proposed_sets)
         warnings: list[str] = []
         if template is None:
             warnings.append(NO_LINKED_TEMPLATE_WARNING)
@@ -581,7 +586,7 @@ def _request_exercise(  # noqa: PLR0913
         exercise_template_id=template_id,
         superset_id=superset_id,
         notes=notes,
-        rest_seconds=0,
+        rest_seconds=_rest_seconds_from_sets(sets),
         sets=[
             PostRoutinesRequestSet(
                 **{key: value for key, value in set_row.items() if not key.startswith("_")}
@@ -589,6 +594,14 @@ def _request_exercise(  # noqa: PLR0913
             for set_row in sets
         ],
     )
+
+
+def _rest_seconds_from_sets(sets: list[dict[str, Any]]) -> int:
+    for set_row in sets:
+        duration_seconds = set_row.get("duration_seconds")
+        if duration_seconds is not None:
+            return int(duration_seconds)
+    return 0
 
 
 def _superset_ids_by_position(workout: TrueCoachWorkout) -> dict[int, int]:
@@ -769,11 +782,7 @@ def _required_templates_for_blockers(
 
 
 def _parse_mixed_mode_phases(description: str) -> list[ParsedPhase]:
-    parts = [
-        part.strip()
-        for part in MIXED_PHASE_SPLIT_PATTERN.split(description)
-        if part and part.strip()
-    ]
+    parts = _mixed_mode_phase_parts(description)
     if len(parts) < 2:
         return []
 
@@ -788,6 +797,16 @@ def _parse_mixed_mode_phases(description: str) -> list[ParsedPhase]:
     if phase_kinds != {"isometric_hold", "dynamic_reps"}:
         return []
     return phases
+
+
+def _mixed_mode_phase_parts(description: str) -> list[str]:
+    parts: list[str] = []
+    for line in description.splitlines():
+        for part in MIXED_PHASE_SPLIT_PATTERN.split(line):
+            stripped = part.strip()
+            if stripped and SET_PRESCRIPTION_MARKER_PATTERN.search(stripped):
+                parts.append(stripped)
+    return parts
 
 
 def _parse_phase(text: str) -> ParsedPhase | None:
@@ -874,7 +893,11 @@ def _has_missing_history_load(
         return False
     return any(
         planned_set.weight_kg is None
-        and (planned_set.reps is not None or planned_set.duration_seconds is not None)
+        and (
+            planned_set.reps is not None
+            or planned_set.distance_meters is not None
+            or planned_set.duration_seconds is not None
+        )
         for planned_set in planned_sets
     )
 
@@ -907,6 +930,8 @@ def _set_history_signature(value: Any) -> SetSignature | None:
     set_type = value.type
     if value.reps is not None:
         return (set_type, "reps", int(value.reps))
+    if value.distance_meters is not None:
+        return (set_type, "distance_meters", int(value.distance_meters))
     if value.duration_seconds is not None:
         return (set_type, "duration_seconds", int(value.duration_seconds))
     return None
