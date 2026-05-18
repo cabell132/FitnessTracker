@@ -1155,12 +1155,19 @@ def test_455045484_workout_backfill_fixture_runs_end_to_end(
     _assert_455045484_local_links(store)
 
 
-def test_placeholder_only_workout_backfill_is_visible_but_not_applyable(
+def test_placeholder_only_workout_backfill_is_visible_but_not_applicable(
     tmp_path: Path,
 ) -> None:
     _, store = _new_sqlite_store(tmp_path)
     _seed_placeholder_only_backfill_workout(store)
-    decisions_path = _write_placeholder_timestamp_decisions(tmp_path)
+    decisions_path = _write_timestamp_decisions(
+        tmp_path,
+        {
+            "id": 455047508,
+            "selected_start_time": "2024-04-12T20:00:00Z",
+            "selected_end_time": "2024-04-12T23:00:00Z",
+        },
+    )
 
     exit_code = _run_backfill_review(tmp_path, 455047508, decisions_path)
     assert exit_code == 0
@@ -1261,25 +1268,6 @@ def _assert_455045484_local_links(store: Store) -> None:
             for item in tracker_items
             for set_row in sorted(item.sets, key=lambda row: row.index)
         ] == [1, 2, 3, 4, 5]
-
-
-def _write_placeholder_timestamp_decisions(tmp_path: Path) -> Path:
-    decisions_path = tmp_path / "decisions.json"
-    decisions_path.write_text(
-        json.dumps(
-            {
-                "version": 1,
-                "workout": {
-                    "id": 455047508,
-                    "selected_start_time": "2024-04-12T20:00:00Z",
-                    "selected_end_time": "2024-04-12T23:00:00Z",
-                },
-            }
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    return decisions_path
 
 
 def _assert_placeholder_only_review(tmp_path: Path) -> None:
@@ -1573,17 +1561,22 @@ class _RecordingWorkoutWriter:
         return self.existing_workout
 
 
-def _write_timestamp_decisions(tmp_path: Path) -> Path:
+def _write_timestamp_decisions(
+    tmp_path: Path,
+    workout: dict[str, int | str] | None = None,
+) -> Path:
+    if workout is None:
+        workout = {
+            "id": 455045484,
+            "selected_start_time": "2024-04-10T17:05:00Z",
+            "selected_end_time": "2024-04-10T18:02:00Z",
+        }
     decisions_path = tmp_path / "decisions.json"
     decisions_path.write_text(
         json.dumps(
             {
                 "version": 1,
-                "workout": {
-                    "id": 455045484,
-                    "selected_start_time": "2024-04-10T17:05:00Z",
-                    "selected_end_time": "2024-04-10T18:02:00Z",
-                },
+                "workout": workout,
             }
         )
         + "\n",
