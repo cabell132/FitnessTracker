@@ -423,25 +423,11 @@ class TrueCoachToHevyReviewService:
         parsed_block: ParsedCircuitBlock,
     ) -> list[PlannedBlock]:
         blocks: list[PlannedBlock] = []
-        block_kind: PlannedBlockKind = (
-            "amrap_movement" if parsed_block.kind == "amrap" else "circuit_movement"
-        )
+        block_kind = _circuit_block_kind(parsed_block)
         for index, movement in enumerate(parsed_block.movements, start=1):
             template = _selected_template_for_movement(uow, movement)
             proposed_sets = _sets_for_circuit_movement(movement)
             proposed_sets, set_provenance = _enrich_sets_from_history(uow, template, proposed_sets)
-            warnings: list[str] = []
-            blockers: list[str] = []
-            if template is None:
-                warnings.append(NO_LINKED_TEMPLATE_WARNING)
-                blockers.append(f"Missing required Hevy exercise mapping: {movement.name}")
-            if parsed_block.requires_agent_decision:
-                blockers.append(
-                    "Circuit block requires Agent decision: "
-                    f"{parsed_block.agent_decision_reason or 'unspecified'}"
-                )
-            if movement.target and not proposed_sets:
-                warnings.append(NO_DETERMINISTIC_SET_PARSER_WARNING)
             blocks.append(
                 PlannedBlock(
                     source_id=item.id,
@@ -457,8 +443,16 @@ class TrueCoachToHevyReviewService:
                     required_hevy_templates=[],
                     proposed_sets=proposed_sets,
                     set_provenance=set_provenance,
-                    warnings=warnings,
-                    blockers=blockers,
+                    warnings=_circuit_movement_warnings(
+                        template=template,
+                        movement=movement,
+                        proposed_sets=proposed_sets,
+                    ),
+                    blockers=_circuit_movement_blockers(
+                        template=template,
+                        movement=movement,
+                        parsed_block=parsed_block,
+                    ),
                 )
             )
         return blocks
@@ -501,12 +495,10 @@ class TrueCoachToHevyReviewService:
                 _required_template_to_dict(required_template)
                 for required_template in item.required_hevy_templates
             ],
-            "proposed_sets": [
-                _set_to_dict(proposed_set) | _provenance_to_dict(provenance)
-                for proposed_set, provenance in zip(
-                    item.proposed_sets, item.set_provenance, strict=True
-                )
-            ],
+            "proposed_sets": _sets_with_provenance_to_dict(
+                item.proposed_sets,
+                item.set_provenance,
+            ),
             "planned_blocks": [_planned_block_to_dict(block) for block in item.planned_blocks],
             "parsed_circuit_block": _parsed_circuit_block_to_dict(item.parsed_circuit_block),
             "warnings": item.warnings,
@@ -950,6 +942,43 @@ def _selected_template_for_movement(
     return None
 
 
+def _circuit_block_kind(parsed_block: ParsedCircuitBlock) -> PlannedBlockKind:
+    if parsed_block.kind == "amrap":
+        return "amrap_movement"
+    return "circuit_movement"
+
+
+def _circuit_movement_warnings(
+    *,
+    template: HevyAppExercise | None,
+    movement: ParsedCircuitMovement,
+    proposed_sets: list[PostRoutinesRequestSet],
+) -> list[str]:
+    warnings: list[str] = []
+    if template is None:
+        warnings.append(NO_LINKED_TEMPLATE_WARNING)
+    if movement.target and not proposed_sets:
+        warnings.append(NO_DETERMINISTIC_SET_PARSER_WARNING)
+    return warnings
+
+
+def _circuit_movement_blockers(
+    *,
+    template: HevyAppExercise | None,
+    movement: ParsedCircuitMovement,
+    parsed_block: ParsedCircuitBlock,
+) -> list[str]:
+    blockers: list[str] = []
+    if template is None:
+        blockers.append(f"Missing required Hevy exercise mapping: {movement.name}")
+    if parsed_block.requires_agent_decision:
+        blockers.append(
+            "Circuit block requires Agent decision: "
+            f"{parsed_block.agent_decision_reason or 'unspecified'}"
+        )
+    return blockers
+
+
 def _sets_for_circuit_movement(
     movement: ParsedCircuitMovement,
 ) -> list[PostRoutinesRequestSet]:
@@ -1175,12 +1204,10 @@ def _planned_block_to_dict(block: PlannedBlock) -> dict[str, Any]:
             _required_template_to_dict(required_template)
             for required_template in block.required_hevy_templates
         ],
-        "proposed_sets": [
-            _set_to_dict(proposed_set) | _provenance_to_dict(provenance)
-            for proposed_set, provenance in zip(
-                block.proposed_sets, block.set_provenance, strict=True
-            )
-        ],
+        "proposed_sets": _sets_with_provenance_to_dict(
+            block.proposed_sets,
+            block.set_provenance,
+        ),
         "warnings": block.warnings,
         "blockers": block.blockers,
     }
@@ -1261,6 +1288,16 @@ def _set_to_dict(value: PostRoutinesRequestSet) -> dict[str, int | float | str]:
     if hasattr(value, "model_dump"):
         return value.model_dump(exclude_none=True)
     return value.dict(exclude_none=True)
+
+
+def _sets_with_provenance_to_dict(
+    sets: list[PostRoutinesRequestSet],
+    set_provenance: list[SetProvenance],
+) -> list[dict[str, Any]]:
+    return [
+        _set_to_dict(proposed_set) | _provenance_to_dict(provenance)
+        for proposed_set, provenance in zip(sets, set_provenance, strict=True)
+    ]
 
 
 def _provenance_to_dict(provenance: SetProvenance) -> dict[str, SetProvenance]:
