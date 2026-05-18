@@ -1482,22 +1482,57 @@ def _build_hevy_workout_request(
     due = workout.get("due")
     due_date = due[:10] if isinstance(due, str) and len(due) >= 10 else "undated"
     workout_decisions = decisions.get("workout", {}) if decisions is not None else {}
+    superset_allocator = _WorkoutRequestSupersetAllocator(plan["items"])
     return PostWorkoutsRequestBody.build(
         title=f"{due_date} {workout.get('title') or 'Untitled'}",
         description=f"Backfill from True Coach Workout {workout['id']}",
         start_time=workout_decisions.get("selected_start_time"),
         end_time=workout_decisions.get("selected_end_time"),
         exercises=[
-            _request_exercise(item, decisions)
+            _request_exercise(
+                item,
+                decisions,
+                superset_id=superset_allocator.superset_id_for_item(item),
+            )
             for item in plan["items"]
             if _request_exercise_template_id(item, decisions) is not None and item["sets"]
         ],
     )
 
 
+class _WorkoutRequestSupersetAllocator:
+    def __init__(self, items: list[dict[str, Any]]) -> None:
+        superset_ids = (
+            item["superset_id"] for item in items if item.get("superset_id") is not None
+        )
+        self._next_id = max(superset_ids, default=-1) + 1
+        self._circuit_superset_ids: dict[tuple[int | None, int], int] = {}
+
+    def superset_id_for_item(self, item: dict[str, Any]) -> int | None:
+        if item.get("superset_id") is not None:
+            return int(item["superset_id"])
+        if not _is_split_circuit_movement_item(item):
+            return None
+        key = (item.get("source_id"), int(item["tracker_workout_item_id"]))
+        if key not in self._circuit_superset_ids:
+            self._circuit_superset_ids[key] = self._next_id
+            self._next_id += 1
+        return self._circuit_superset_ids[key]
+
+
+def _is_split_circuit_movement_item(item: dict[str, Any]) -> bool:
+    return (
+        "movement_target" in item
+        and "original_prescription_text" in item
+        and "completed_round_count" in item
+    )
+
+
 def _request_exercise(
     item: dict[str, Any],
     decisions: dict[str, Any] | None,
+    *,
+    superset_id: int | None,
 ) -> PostWorkoutsRequestExercise:
     template_id = _request_exercise_template_id(item, decisions)
     if template_id is None:
@@ -1505,7 +1540,7 @@ def _request_exercise(
         raise WorkoutBackfillReviewError(msg)
     return PostWorkoutsRequestExercise(
         exercise_template_id=template_id,
-        superset_id=item.get("superset_id"),
+        superset_id=superset_id,
         notes=item["notes"] or None,
         sets=[PostWorkoutsRequestSet(**set_row) for set_row in item["sets"]],
     )

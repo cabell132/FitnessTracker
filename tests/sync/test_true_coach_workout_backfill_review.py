@@ -870,6 +870,44 @@ def test_workout_backfill_circuit_item_expands_performed_movements(  # noqa: PLR
     assert "WARNING: Athlete comment omits Circuit movement: W/o Bike" in report
 
 
+def test_workout_backfill_amrap_item_generates_request_exercises_with_shared_superset(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    _add_choice_templates(store, [("hevy-bike", "Bike"), ("hevy-burpees", "Burpees")])
+    _add_circuit_backfill_item(
+        store,
+        name="12' AMRAP",
+        info="20 Bike\n10 Burpees",
+        comment="2 min 10 sec\n2 min 15 sec",
+    )
+
+    bundle_dir = _write_backfill_review(db_path, tmp_path)
+    request = json.loads((bundle_dir / "hevy-workout-request.json").read_text(encoding="utf-8"))
+
+    exercises = request["workout"]["exercises"]
+    assert [exercise["exercise_template_id"] for exercise in exercises] == [
+        "hevy-bench",
+        "hevy-row",
+        "hevy-bike",
+        "hevy-burpees",
+    ]
+    assert [exercise["superset_id"] for exercise in exercises] == [0, 0, 1, 1]
+    assert [(set_row["type"], set_row["reps"]) for set_row in exercises[2]["sets"]] == [
+        ("normal", 20),
+        ("normal", 20),
+    ]
+    assert [(set_row["type"], set_row["reps"]) for set_row in exercises[3]["sets"]] == [
+        ("normal", 10),
+        ("normal", 10),
+    ]
+    assert "AMRAP time cap seconds: 720" in exercises[2]["notes"]
+    assert "Completed round times: 2 min 10 sec; 2 min 15 sec" in exercises[2]["notes"]
+
+
 def test_workout_backfill_missed_amrap_item_does_not_expand_performed_work(
     tmp_path: Path,
 ) -> None:
