@@ -349,6 +349,31 @@ def test_sync_review_agent_next_actions_report_clean_plan(tmp_path: Path) -> Non
     assert plan["items"][0]["blockers"] == []
 
 
+def test_sync_review_plan_includes_parsed_circuit_block_context(tmp_path: Path) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_circuit_block_workout(store)
+
+    _, plan = _write_sync_review(tmp_path, db_path, workout_id=51)
+
+    item = plan["items"][0]
+    assert item["parsed_circuit_block"] == {
+        "kind": "amrap",
+        "round_count": None,
+        "amrap_time_cap_seconds": 600,
+        "movements": [
+            {"name": "Bike", "target": "20 cal", "source_text": "20 cal Bike"},
+            {"name": "Burpees", "target": "10", "source_text": "10 Burpees"},
+        ],
+        "rests": [{"source_text": "60s rest", "durations_seconds": [60]}],
+        "metadata_lines": [],
+        "requires_agent_decision": False,
+        "agent_decision_reason": None,
+    }
+    assert item["planned_blocks"] == []
+
+
 def test_sync_apply_dry_run_writes_hevy_request_for_clean_plan(tmp_path: Path) -> None:
     db_path = tmp_path / "tracker.sqlite"
     store = Store(create_engine(f"sqlite:///{db_path}"))
@@ -767,6 +792,50 @@ def _seed_workout(store: Store) -> None:
                 state="pending",
                 position=1,
                 exercise_id=501,
+                assessment_id=None,
+            )
+        )
+
+
+def _seed_circuit_block_workout(store: Store) -> None:
+    now = datetime(2026, 5, 17, tzinfo=UTC)
+    with store.unit_of_work() as uow:
+        uow.session.add(
+            TrueCoachWorkout(
+                id=51,
+                title="Conditioning",
+                due=now,
+                short_description='<p class="name-and-info">A) 10\' AMRAP</p>',
+                state="pending",
+                rest_day=False,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        uow.session.add(TrueCoachExercise(id=511, name="10' AMRAP", default=False))
+        uow.session.add(
+            HevyAppExercise(
+                id="hevy-conditioning",
+                name="Conditioning",
+                type="duration",
+                equipment="none",
+                default=True,
+            )
+        )
+        uow.session.add(
+            TrackerExercise(name="10' AMRAP", hevy_app_id="hevy-conditioning", true_coach_id=511)
+        )
+        uow.session.add(
+            TrueCoachWorkoutItem(
+                id=1011,
+                workout_id=51,
+                name="10' AMRAP",
+                info="1. 20 cal Bike\n2. 10 Burpees\n3. 60s rest",
+                comment="",
+                is_circuit=True,
+                state="pending",
+                position=1,
+                exercise_id=511,
                 assessment_id=None,
             )
         )

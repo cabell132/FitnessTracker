@@ -1612,10 +1612,7 @@ def _seed_backfill_review_workout(store: Store) -> None:  # noqa: PLR0915
                 title="Upper",
                 due=due,
                 short_description=(
-                    '<p class="name-and-info">'
-                    "A1) Bench Press<br/>"
-                    "A2) Chest Supported Row"
-                    "</p>"
+                    '<p class="name-and-info">A1) Bench Press<br/>A2) Chest Supported Row</p>'
                 ),
                 state="completed",
                 rest_day=False,

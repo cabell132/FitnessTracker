@@ -369,6 +369,9 @@ class TrueCoachWorkoutBackfillReviewService:
 
         Returns:
             WorkoutBackfillApplyResult: Validated request and repair action.
+
+        Raises:
+            WorkoutBackfillApplyError: If no linked or marked remote Hevy Workout exists.
         """
         result = self.write_apply_request(workout_id, decisions_path=decisions_path)
         plan = _load_json_file(result.review_bundle.plan_path) if result.review_bundle else {}
@@ -379,7 +382,9 @@ class TrueCoachWorkoutBackfillReviewService:
         if remote is None:
             remote = _find_remote_backfill(workout_writer, workout_id)
         if remote is None:
-            msg = f"No linked or marked remote Hevy Workout found for True Coach Workout {workout_id}"
+            msg = (
+                f"No linked or marked remote Hevy Workout found for True Coach Workout {workout_id}"
+            )
             raise WorkoutBackfillApplyError(msg)
         unlinked = self._sync_and_link_created_workout(
             BackfillLinkContext(
@@ -557,7 +562,7 @@ def _review_items(
     return items
 
 
-def _review_item(
+def _review_item(  # noqa: PLR0915
     item: Any,
     templates: list[HevyAppExercise],
     superset_ids_by_position: dict[int, int],
@@ -721,16 +726,17 @@ def _duration_performance(
 def _duration_performance_notes(comment: str, duration_segment: str) -> str:
     note_segments = []
     for segment in _comment_segments(comment):
+        note_segment = segment
         if segment == duration_segment:
-            segment = re.sub(
+            note_segment = re.sub(
                 r"\b\d+(?:\.\d+)?\s*(?:mins?|minutes?)\b",
                 "",
                 segment,
                 count=1,
                 flags=re.IGNORECASE,
             ).strip(" /,-")
-        if segment:
-            note_segments.append(segment)
+        if note_segment:
+            note_segments.append(note_segment)
     return f"Athlete comment: {'; '.join(note_segments)}" if note_segments else ""
 
 

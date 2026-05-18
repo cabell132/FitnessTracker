@@ -325,7 +325,9 @@ def _add_sync_apply_parser(  # noqa: PLR0915
 
     workout_backfill_repair = sync_apply_subparsers.add_parser("truecoach-workout-backfill-repair")
     workout_backfill_repair.add_argument("--workout-id", type=int, required=True)
-    workout_backfill_repair.add_argument("--db", help="SQLite database path. Prefer --database-url.")
+    workout_backfill_repair.add_argument(
+        "--db", help="SQLite database path. Prefer --database-url."
+    )
     workout_backfill_repair.add_argument(
         "--database-url", help="SQLAlchemy database URL. Defaults to DATABASE_URL."
     )
@@ -971,7 +973,9 @@ def _read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _linked_hevy_workout_snapshot(engine: Engine, true_coach_workout_id: int) -> dict[str, Any] | None:
+def _linked_hevy_workout_snapshot(
+    engine: Engine, true_coach_workout_id: int
+) -> dict[str, Any] | None:
     with engine.connect() as conn:
         workout = (
             conn.execute(
@@ -1063,7 +1067,11 @@ def _workout_request_local_differences(
             continue
         local_exercise = local_exercises[index]
         comparisons = (
-            ("template", request_exercise.get("exercise_template_id"), local_exercise.get("exercise_template_id")),
+            (
+                "template",
+                request_exercise.get("exercise_template_id"),
+                local_exercise.get("exercise_template_id"),
+            ),
             ("superset", request_exercise.get("superset_id"), local_exercise.get("superset_id")),
             ("notes", request_exercise.get("notes") or "", local_exercise.get("notes") or ""),
         )

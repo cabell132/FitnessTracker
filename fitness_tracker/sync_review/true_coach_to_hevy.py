@@ -21,6 +21,10 @@ from fitness_tracker.database.models import HevyAppExercise, TrueCoachExercise
 from fitness_tracker.database.models.hevy_app import HevyAppSets, HevyAppWorkout, HevyAppWorkoutItem
 from fitness_tracker.database.models.true_coach import TrueCoachWorkout, TrueCoachWorkoutItem
 from fitness_tracker.database.tx import Tx
+from fitness_tracker.sync._circuit_block_parser import (
+    ParsedCircuitBlock,
+    parse_circuit_block,
+)
 from fitness_tracker.sync._true_coach_html import (
     build_superset_index,
     parse_prescribed_sets,
@@ -80,6 +84,7 @@ class ReviewItem:
     proposed_sets: list[PostRoutinesRequestSet]
     set_provenance: list[SetProvenance]
     planned_blocks: list[PlannedBlock]
+    parsed_circuit_block: ParsedCircuitBlock | None
     warnings: list[str]
     blockers: list[str]
 
@@ -270,6 +275,7 @@ class TrueCoachToHevyReviewService:
     ) -> ReviewItem:
         template = self._selected_template(uow, item)
         required_templates = self._required_templates(uow, item, template)
+        parsed_circuit_block = _parse_circuit_block_context(item)
         planned_blocks = self._planned_blocks(uow, item, template, superset_id)
         if planned_blocks:
             proposed_sets: list[PostRoutinesRequestSet] = []
@@ -298,6 +304,7 @@ class TrueCoachToHevyReviewService:
             proposed_sets=proposed_sets,
             set_provenance=set_provenance,
             planned_blocks=planned_blocks,
+            parsed_circuit_block=parsed_circuit_block,
             warnings=warnings,
             blockers=_required_template_blockers(
                 _required_templates_for_blockers(required_templates, planned_blocks)
@@ -433,6 +440,7 @@ class TrueCoachToHevyReviewService:
                 )
             ],
             "planned_blocks": [_planned_block_to_dict(block) for block in item.planned_blocks],
+            "parsed_circuit_block": _parsed_circuit_block_to_dict(item.parsed_circuit_block),
             "warnings": item.warnings,
             "blockers": item.blockers,
         }
@@ -538,6 +546,17 @@ def _is_unsplit_required_mixed_mode_item(item: dict[str, Any]) -> bool:
         and ISO_PHASE_PATTERN.search(info) is not None
         and re.search(r"\b(?:then|followed by)\b", info, re.IGNORECASE) is not None
     )
+
+
+def _parse_circuit_block_context(item: TrueCoachWorkoutItem) -> ParsedCircuitBlock | None:
+    name = item.name or ""
+    info = item.info or ""
+    if not (
+        bool(item.is_circuit)
+        or re.search(r"\b(?:amrap|circuit|\d+\s*rounds?)\b", f"{name}\n{info}", re.IGNORECASE)
+    ):
+        return None
+    return parse_circuit_block(name=name, text=info)
 
 
 def _routine_title(workout: dict[str, Any]) -> str:
@@ -1024,6 +1043,36 @@ def _planned_block_to_dict(block: PlannedBlock) -> dict[str, Any]:
                 block.proposed_sets, block.set_provenance, strict=True
             )
         ],
+    }
+
+
+def _parsed_circuit_block_to_dict(block: ParsedCircuitBlock | None) -> dict[str, Any] | None:
+    if block is None:
+        return None
+    return {
+        "kind": block.kind,
+        "round_count": block.round_count,
+        "amrap_time_cap_seconds": block.amrap_time_cap_seconds,
+        "movements": [
+            {
+                "name": movement.name,
+                "target": movement.target,
+                "source_text": movement.source_text,
+            }
+            for movement in block.movements
+        ],
+        "rests": [
+            {
+                "source_text": rest.source_text,
+                "durations_seconds": rest.durations_seconds,
+            }
+            for rest in block.rests
+        ],
+        "metadata_lines": [
+            {"source_text": metadata_line.source_text} for metadata_line in block.metadata_lines
+        ],
+        "requires_agent_decision": block.requires_agent_decision,
+        "agent_decision_reason": block.agent_decision_reason,
     }
 
 
