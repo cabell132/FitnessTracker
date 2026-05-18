@@ -22,6 +22,7 @@ from fitness_tracker.database.models.hevy_app import HevyAppSets, HevyAppWorkout
 from fitness_tracker.database.models.true_coach import TrueCoachWorkout, TrueCoachWorkoutItem
 from fitness_tracker.database.tx import Tx
 from fitness_tracker.sync._circuit_block_parser import (
+    ParsedCircuitMovement,
     ParsedCircuitBlock,
     parse_circuit_block,
 )
@@ -40,6 +41,7 @@ NO_MATCHING_HISTORY_LOAD_WARNING = "No matching Athlete history load found."
 CIRCUIT_BLOCK_CONTEXT_PATTERN = re.compile(r"\b(?:amrap|circuit|\d+\s*rounds?)\b", re.IGNORECASE)
 RequiredTemplateStatus = Literal["existing", "missing", "ambiguous"]
 PhaseKind = Literal["isometric_hold", "dynamic_reps"]
+PlannedBlockKind = Literal["isometric_hold", "dynamic_reps", "circuit_movement", "amrap_movement"]
 WeightProvenance = Literal["athlete_history", "calculated_dropset"]
 type SetSignature = tuple[str, str, int]
 type SetProvenance = dict[str, WeightProvenance]
@@ -131,18 +133,23 @@ class RequiredHevyTemplate:
 
 @dataclass(frozen=True)
 class PlannedBlock:
-    """One Hevy Routine exercise block planned from a True Coach Workout Item phase."""
+    """One Hevy Routine exercise block planned from part of a True Coach Workout Item."""
 
     source_id: int
     superset_id: int | None
-    phase_index: int
-    phase_kind: PhaseKind
+    block_index: int
+    block_kind: PlannedBlockKind
     source_text: str
+    original_source_text: str
     notes: str
+    movement_name: str | None
+    movement_target: str | None
     selected_hevy_template: HevyAppExercise | None
     required_hevy_templates: list[RequiredHevyTemplate]
     proposed_sets: list[PostRoutinesRequestSet]
     set_provenance: list[SetProvenance]
+    warnings: list[str]
+    blockers: list[str]
 
 
 @dataclass(frozen=True)
@@ -277,7 +284,9 @@ class TrueCoachToHevyReviewService:
         template = self._selected_template(uow, item)
         required_templates = self._required_templates(uow, item, template)
         parsed_circuit_block = _parse_circuit_block_context(item)
-        planned_blocks = self._planned_blocks(uow, item, template, superset_id)
+        planned_blocks = self._planned_blocks(
+            uow, item, template, superset_id, parsed_circuit_block
+        )
         if planned_blocks:
             proposed_sets: list[PostRoutinesRequestSet] = []
             set_provenance: list[SetProvenance] = []
@@ -309,7 +318,8 @@ class TrueCoachToHevyReviewService:
             warnings=warnings,
             blockers=_required_template_blockers(
                 _required_templates_for_blockers(required_templates, planned_blocks)
-            ),
+            )
+            + _block_blockers(planned_blocks),
         )
 
     def _selected_template(
@@ -350,7 +360,11 @@ class TrueCoachToHevyReviewService:
         item: TrueCoachWorkoutItem,
         selected_template: HevyAppExercise | None,
         superset_id: int | None,
+        parsed_circuit_block: ParsedCircuitBlock | None,
     ) -> list[PlannedBlock]:
+        if parsed_circuit_block is not None:
+            return self._planned_circuit_blocks(uow, item, superset_id, parsed_circuit_block)
+
         phases = _parse_mixed_mode_phases(item.info or "")
         if not phases:
             return []
@@ -384,14 +398,67 @@ class TrueCoachToHevyReviewService:
                 PlannedBlock(
                     source_id=item.id,
                     superset_id=superset_id,
-                    phase_index=index,
-                    phase_kind=phase.kind,
+                    block_index=index,
+                    block_kind=phase.kind,
                     source_text=phase.source_text,
+                    original_source_text=item.info or "",
                     notes=f"{phase.source_text}\nSource: {item.info or ''}",
+                    movement_name=None,
+                    movement_target=None,
                     selected_hevy_template=phase_template,
                     required_hevy_templates=required_templates,
                     proposed_sets=proposed_sets,
                     set_provenance=set_provenance,
+                    warnings=[],
+                    blockers=[],
+                )
+            )
+        return blocks
+
+    def _planned_circuit_blocks(  # noqa: PLR0913
+        self,
+        uow: Tx,
+        item: TrueCoachWorkoutItem,
+        superset_id: int | None,
+        parsed_block: ParsedCircuitBlock,
+    ) -> list[PlannedBlock]:
+        blocks: list[PlannedBlock] = []
+        block_kind: PlannedBlockKind = (
+            "amrap_movement" if parsed_block.kind == "amrap" else "circuit_movement"
+        )
+        for index, movement in enumerate(parsed_block.movements, start=1):
+            template = _selected_template_for_movement(uow, movement)
+            proposed_sets = _sets_for_circuit_movement(movement)
+            proposed_sets, set_provenance = _enrich_sets_from_history(uow, template, proposed_sets)
+            warnings: list[str] = []
+            blockers: list[str] = []
+            if template is None:
+                warnings.append(NO_LINKED_TEMPLATE_WARNING)
+                blockers.append(f"Missing required Hevy exercise mapping: {movement.name}")
+            if parsed_block.requires_agent_decision:
+                blockers.append(
+                    "Circuit block requires Agent decision: "
+                    f"{parsed_block.agent_decision_reason or 'unspecified'}"
+                )
+            if movement.target and not proposed_sets:
+                warnings.append(NO_DETERMINISTIC_SET_PARSER_WARNING)
+            blocks.append(
+                PlannedBlock(
+                    source_id=item.id,
+                    superset_id=superset_id,
+                    block_index=index,
+                    block_kind=block_kind,
+                    source_text=movement.source_text,
+                    original_source_text=item.info or "",
+                    notes=_circuit_movement_notes(item, movement, parsed_block),
+                    movement_name=movement.name,
+                    movement_target=movement.target,
+                    selected_hevy_template=template,
+                    required_hevy_templates=[],
+                    proposed_sets=proposed_sets,
+                    set_provenance=set_provenance,
+                    warnings=warnings,
+                    blockers=blockers,
                 )
             )
         return blocks
@@ -798,6 +865,10 @@ def _required_templates_for_blockers(
     ]
 
 
+def _block_blockers(planned_blocks: list[PlannedBlock]) -> list[str]:
+    return [blocker for block in planned_blocks for blocker in block.blockers]
+
+
 def _parse_mixed_mode_phases(description: str) -> list[ParsedPhase]:
     parts = _mixed_mode_phase_parts(description)
     if len(parts) < 2:
@@ -860,6 +931,72 @@ def _selected_template_for_phase(
     if required_template.status != "existing" or len(required_template.matching_template_ids) != 1:
         return None
     return uow.session.get(HevyAppExercise, id=required_template.matching_template_ids[0])
+
+
+def _selected_template_for_movement(
+    uow: Tx,
+    movement: ParsedCircuitMovement,
+) -> HevyAppExercise | None:
+    tracker_exercise = uow.tracker.get_exercise(name=movement.name)
+    if tracker_exercise and isinstance(tracker_exercise.hevy_app, HevyAppExercise):
+        return tracker_exercise.hevy_app
+    matching_templates = [
+        template
+        for template in uow.session.get_all(HevyAppExercise)
+        if template.name.casefold() == movement.name.casefold()
+    ]
+    if len(matching_templates) == 1:
+        return matching_templates[0]
+    return None
+
+
+def _sets_for_circuit_movement(
+    movement: ParsedCircuitMovement,
+) -> list[PostRoutinesRequestSet]:
+    target = movement.target.strip()
+    if not target:
+        return []
+    if match := re.fullmatch(r"(?P<reps>\d+)(?:\s+(?:each side|es))?", target, re.IGNORECASE):
+        return [PostRoutinesRequestSet(type="normal", reps=int(match.group("reps")))]
+    if match := re.fullmatch(r"(?P<distance>\d+)\s*(?:m|meters?)", target, re.IGNORECASE):
+        return [PostRoutinesRequestSet(type="normal", distance_meters=int(match.group("distance")))]
+    if match := re.fullmatch(
+        r"(?P<seconds>\d+)\s*(?:s|sec|secs|second|seconds)", target, re.IGNORECASE
+    ):
+        return [PostRoutinesRequestSet(type="normal", duration_seconds=int(match.group("seconds")))]
+    if match := re.fullmatch(
+        r"(?P<minutes>\d+)\s*(?:min|mins|minute|minutes)(?:\s+\w+)?",
+        target,
+        re.IGNORECASE,
+    ):
+        return [
+            PostRoutinesRequestSet(type="normal", duration_seconds=int(match.group("minutes")) * 60)
+        ]
+    return []
+
+
+def _circuit_movement_notes(
+    item: TrueCoachWorkoutItem,
+    movement: ParsedCircuitMovement,
+    parsed_block: ParsedCircuitBlock,
+) -> str:
+    parts = [
+        movement.source_text,
+        f"Movement: {movement.name}",
+        f"Movement target: {movement.target or 'none'}",
+    ]
+    if parsed_block.round_count is not None:
+        parts.append(f"Rounds: {parsed_block.round_count}")
+    if parsed_block.amrap_time_cap_seconds is not None:
+        parts.append(f"AMRAP time cap seconds: {parsed_block.amrap_time_cap_seconds}")
+    if parsed_block.rests:
+        parts.append("Rest lines: " + "; ".join(rest.source_text for rest in parsed_block.rests))
+    if parsed_block.metadata_lines:
+        parts.append(
+            "Metadata lines: " + "; ".join(line.source_text for line in parsed_block.metadata_lines)
+        )
+    parts.append(f"Source: {item.info or ''}")
+    return "\n".join(parts)
 
 
 def _enrich_sets_from_history(
@@ -1026,10 +1163,13 @@ def _planned_block_to_dict(block: PlannedBlock) -> dict[str, Any]:
     return {
         "source_id": block.source_id,
         "superset_id": block.superset_id,
-        "phase_index": block.phase_index,
-        "phase_kind": block.phase_kind,
+        "block_index": block.block_index,
+        "block_kind": block.block_kind,
         "source_text": block.source_text,
+        "original_source_text": block.original_source_text,
         "notes": block.notes,
+        "movement_name": block.movement_name,
+        "movement_target": block.movement_target,
         "selected_hevy_template": _template_to_dict(block.selected_hevy_template),
         "required_hevy_templates": [
             _required_template_to_dict(required_template)
@@ -1041,6 +1181,8 @@ def _planned_block_to_dict(block: PlannedBlock) -> dict[str, Any]:
                 block.proposed_sets, block.set_provenance, strict=True
             )
         ],
+        "warnings": block.warnings,
+        "blockers": block.blockers,
     }
 
 
@@ -1072,13 +1214,22 @@ def _format_required_template(required_template: RequiredHevyTemplate) -> str:
 
 def _format_planned_block(block: PlannedBlock) -> list[str]:
     lines = [
-        f"- Block {block.phase_index}: {_format_phase_kind(block.phase_kind)}",
+        f"- Block {block.block_index}: {_format_block_kind(block.block_kind)}",
         f"  Source ID: {block.source_id}",
         f"  Source text: {block.source_text}",
-        f"  Notes: {block.notes}",
-        f"  {_format_template(block.selected_hevy_template)}",
-        "  Proposed sets:",
+        f"  Original source text: {block.original_source_text}",
     ]
+    if block.movement_name is not None:
+        lines.append(f"  Movement: {block.movement_name}")
+    if block.movement_target is not None:
+        lines.append(f"  Movement target: {block.movement_target}")
+    lines.extend(
+        [
+            f"  Notes: {block.notes}",
+            f"  {_format_template(block.selected_hevy_template)}",
+            "  Proposed sets:",
+        ]
+    )
     if block.proposed_sets:
         lines.extend(f"  - {_format_set(proposed_set)}" for proposed_set in block.proposed_sets)
     else:
@@ -1089,13 +1240,21 @@ def _format_planned_block(block: PlannedBlock) -> list[str]:
             f"  - {_format_required_template(required_template)}"
             for required_template in block.required_hevy_templates
         )
+    if block.warnings:
+        lines.extend(f"  WARNING: {warning}" for warning in block.warnings)
+    if block.blockers:
+        lines.extend(f"  BLOCKER: {blocker}" for blocker in block.blockers)
     return lines
 
 
-def _format_phase_kind(phase_kind: PhaseKind) -> str:
-    if phase_kind == "isometric_hold":
+def _format_block_kind(block_kind: PlannedBlockKind) -> str:
+    if block_kind == "isometric_hold":
         return "Isometric hold"
-    return "Dynamic reps"
+    if block_kind == "dynamic_reps":
+        return "Dynamic reps"
+    if block_kind == "amrap_movement":
+        return "AMRAP movement"
+    return "Circuit movement"
 
 
 def _set_to_dict(value: PostRoutinesRequestSet) -> dict[str, int | float | str]:

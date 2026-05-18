@@ -363,7 +363,7 @@ def test_sync_review_plan_includes_parsed_circuit_block_context(tmp_path: Path) 
         "round_count": None,
         "amrap_time_cap_seconds": 600,
         "movements": [
-            {"name": "Bike", "target": "20 cal", "source_text": "20 cal Bike"},
+            {"name": "Bike", "target": "500m", "source_text": "Bike 500m"},
             {"name": "Burpees", "target": "10", "source_text": "10 Burpees"},
         ],
         "rests": [{"source_text": "60s rest", "durations_seconds": [60]}],
@@ -371,7 +371,72 @@ def test_sync_review_plan_includes_parsed_circuit_block_context(tmp_path: Path) 
         "requires_agent_decision": False,
         "agent_decision_reason": None,
     }
-    assert item["planned_blocks"] == []
+    assert [block["block_kind"] for block in item["planned_blocks"]] == [
+        "amrap_movement",
+        "amrap_movement",
+    ]
+    assert [block["selected_hevy_template"] for block in item["planned_blocks"]] == [None, None]
+    assert item["blockers"] == [
+        "Missing required Hevy exercise mapping: Bike",
+        "Missing required Hevy exercise mapping: Burpees",
+    ]
+
+
+def test_sync_review_splits_resolved_amrap_movements_into_planned_blocks(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_circuit_block_workout(store)
+    _seed_circuit_movement_templates(store)
+
+    report, plan = _write_sync_review(tmp_path, db_path, workout_id=51)
+
+    assert report.index("Block 1: AMRAP movement") < report.index("Block 2: AMRAP movement")
+    assert "Movement: Bike" in report
+    assert "Movement target: 500m" in report
+    assert "Movement: Burpees" in report
+    assert "Blockers: none" in report
+
+    item = plan["items"][0]
+    _assert_resolved_amrap_movement_blocks(item)
+
+
+def test_sync_review_blocks_circuit_ladder_planned_blocks_for_agent_decision(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_round_ladder_circuit_workout(store)
+
+    report, plan = _write_sync_review(tmp_path, db_path, workout_id=53)
+
+    assert "Block 1: Circuit movement" in report
+    assert "Movement: Goblet Squat" in report
+    assert "BLOCKER: Circuit block requires Agent decision: round_specific_rep_ladder" in report
+
+    item = plan["items"][0]
+    assert [block["block_kind"] for block in item["planned_blocks"]] == [
+        "circuit_movement",
+        "circuit_movement",
+    ]
+    assert item["blockers"] == [
+        "Circuit block requires Agent decision: round_specific_rep_ladder",
+        "Circuit block requires Agent decision: round_specific_rep_ladder",
+    ]
+    assert [block["blockers"] for block in item["planned_blocks"]] == [
+        ["Circuit block requires Agent decision: round_specific_rep_ladder"],
+        ["Circuit block requires Agent decision: round_specific_rep_ladder"],
+    ]
+
+    service = TrueCoachToHevyReviewService(store=store, output_root=tmp_path / "reports")
+    with pytest.raises(
+        SyncApplyError,
+        match="Circuit block requires Agent decision: round_specific_rep_ladder",
+    ):
+        service.write_apply_request(53)
 
 
 def test_sync_apply_dry_run_writes_hevy_request_for_clean_plan(tmp_path: Path) -> None:
@@ -642,9 +707,12 @@ class _RecordingRoutineWriter:
 def _assert_mixed_knee_extension_blocks(item: dict) -> None:
     blocks = item["planned_blocks"]
     assert [block["source_id"] for block in blocks] == [1005, 1005]
-    assert [block["phase_kind"] for block in blocks] == ["isometric_hold", "dynamic_reps"]
+    assert [block["block_kind"] for block in blocks] == ["isometric_hold", "dynamic_reps"]
     assert blocks[0]["source_text"] == "2 x 30s iso hold"
+    assert blocks[0]["original_source_text"] == "Single Leg\n2 x 30s iso hold\n3 x 10-12"
     assert blocks[0]["notes"] == "2 x 30s iso hold\nSource: Single Leg\n2 x 30s iso hold\n3 x 10-12"
+    assert blocks[0]["movement_name"] is None
+    assert blocks[0]["movement_target"] is None
     assert blocks[0]["selected_hevy_template"] is None
     assert blocks[0]["required_hevy_templates"] == [
         {
@@ -662,6 +730,8 @@ def _assert_mixed_knee_extension_blocks(item: dict) -> None:
         {"type": "normal", "duration_seconds": 30},
         {"type": "normal", "duration_seconds": 30},
     ]
+    assert blocks[0]["warnings"] == []
+    assert blocks[0]["blockers"] == []
     assert blocks[1]["source_text"] == "3 x 10-12"
     assert blocks[1]["selected_hevy_template"]["id"] == "hevy-knee-extension"
     assert blocks[1]["required_hevy_templates"] == []
@@ -670,6 +740,40 @@ def _assert_mixed_knee_extension_blocks(item: dict) -> None:
         {"type": "normal", "reps": 12},
         {"type": "normal", "reps": 12},
     ]
+    assert blocks[1]["warnings"] == []
+    assert blocks[1]["blockers"] == []
+
+
+def _assert_resolved_amrap_movement_blocks(item: dict) -> None:
+    blocks = item["planned_blocks"]
+    assert item["source_id"] == 1011
+    assert item["proposed_sets"] == []
+    assert [block["block_kind"] for block in blocks] == [
+        "amrap_movement",
+        "amrap_movement",
+    ]
+    assert [
+        (block["movement_name"], block["movement_target"], block["source_text"]) for block in blocks
+    ] == [
+        ("Bike", "500m", "Bike 500m"),
+        ("Burpees", "10", "10 Burpees"),
+    ]
+    assert [block["original_source_text"] for block in blocks] == [
+        "1. Bike 500m\n2. 10 Burpees\n3. 60s rest",
+        "1. Bike 500m\n2. 10 Burpees\n3. 60s rest",
+    ]
+    assert [block["selected_hevy_template"]["id"] for block in blocks] == [
+        "hevy-bike",
+        "hevy-burpees",
+    ]
+    assert [block["proposed_sets"] for block in blocks] == [
+        [{"type": "normal", "distance_meters": 500}],
+        [{"type": "normal", "reps": 10}],
+    ]
+    assert [block["warnings"] for block in blocks] == [[], []]
+    assert [block["blockers"] for block in blocks] == [[], []]
+    assert item["warnings"] == []
+    assert item["blockers"] == []
 
 
 def _write_sync_review(
@@ -830,12 +934,118 @@ def _seed_circuit_block_workout(store: Store) -> None:
                 id=1011,
                 workout_id=51,
                 name="10' AMRAP",
-                info="1. 20 cal Bike\n2. 10 Burpees\n3. 60s rest",
+                info="1. Bike 500m\n2. 10 Burpees\n3. 60s rest",
                 comment="",
                 is_circuit=True,
                 state="pending",
                 position=1,
                 exercise_id=511,
+                assessment_id=None,
+            )
+        )
+
+
+def _seed_circuit_movement_templates(store: Store) -> None:
+    with store.unit_of_work() as uow:
+        uow.session.add(TrueCoachExercise(id=512, name="Bike", default=False))
+        uow.session.add(TrueCoachExercise(id=513, name="Burpees", default=False))
+        uow.session.add(
+            HevyAppExercise(
+                id="hevy-bike",
+                name="Bike",
+                type="short_distance",
+                equipment="machine",
+                default=True,
+            )
+        )
+        uow.session.add(
+            HevyAppExercise(
+                id="hevy-burpees",
+                name="Burpees",
+                type="reps_only",
+                equipment="bodyweight",
+                default=True,
+            )
+        )
+        uow.session.add(TrackerExercise(name="Bike", hevy_app_id="hevy-bike", true_coach_id=512))
+        uow.session.add(
+            TrackerExercise(name="Burpees", hevy_app_id="hevy-burpees", true_coach_id=513)
+        )
+
+
+def _seed_round_ladder_circuit_workout(store: Store) -> None:
+    now = datetime(2026, 5, 17, tzinfo=UTC)
+    with store.unit_of_work() as uow:
+        uow.session.add(
+            TrueCoachWorkout(
+                id=53,
+                title="Circuit Ladder",
+                due=now,
+                short_description='<p class="name-and-info">A) 3 Round Circuit</p>',
+                state="pending",
+                rest_day=False,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        uow.session.add(TrueCoachExercise(id=514, name="3 Round Circuit", default=False))
+        uow.session.add(TrueCoachExercise(id=515, name="Goblet Squat", default=False))
+        uow.session.add(TrueCoachExercise(id=516, name="Push Up", default=False))
+        uow.session.add(
+            HevyAppExercise(
+                id="hevy-circuit",
+                name="Circuit",
+                type="reps_only",
+                equipment="bodyweight",
+                default=True,
+            )
+        )
+        uow.session.add(
+            HevyAppExercise(
+                id="hevy-goblet-squat",
+                name="Goblet Squat",
+                type="reps_only",
+                equipment="dumbbell",
+                default=True,
+            )
+        )
+        uow.session.add(
+            HevyAppExercise(
+                id="hevy-push-up",
+                name="Push Up",
+                type="reps_only",
+                equipment="bodyweight",
+                default=True,
+            )
+        )
+        uow.session.add(
+            TrackerExercise(
+                name="3 Round Circuit",
+                hevy_app_id="hevy-circuit",
+                true_coach_id=514,
+            )
+        )
+        uow.session.add(
+            TrackerExercise(
+                name="Goblet Squat",
+                hevy_app_id="hevy-goblet-squat",
+                true_coach_id=515,
+            )
+        )
+        uow.session.add(
+            TrackerExercise(name="Push Up", hevy_app_id="hevy-push-up", true_coach_id=516)
+        )
+        uow.session.add(
+            TrueCoachWorkoutItem(
+                id=1012,
+                workout_id=53,
+                name="3 Round Circuit",
+                info="Goblet Squat\nPush Up\nRound 1: 12 reps\nRound 2: 10 reps\nRound 3: 8 reps",
+                comment="",
+                is_circuit=True,
+                state="pending",
+                position=1,
+                exercise_id=514,
                 assessment_id=None,
             )
         )
