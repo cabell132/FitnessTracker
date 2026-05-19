@@ -217,22 +217,23 @@ Platform primitive command conventions:
   `exercise-templates find`.
 - Hevy exercise template commands live under
   `fitness-tracker hevy exercise-templates ...`.
-- Read commands should support stable JSON output for Agent use.
-- Platform `inspect`, `list`, and `find` commands should read remote API truth
-  by default. Local tracker reads should be explicit through `cached` command
-  variants.
+- For commands that expose `--json`, the --json stdout is machine-only: it must
+  be a single strict JSON document. Human-facing warnings and progress messages go to stderr so Agents can parse stdout without filtering.
+- Platform inspection is remote-first: `inspect`, `list`, and `find` commands
+  read remote API truth by default. Local tracker reads must use explicit `cached` commands.
 - Create and update commands should make mutation obvious in the command name,
   accept structured request input where practical, and write response artifacts
   when requested.
 - Destructive commands should require an explicit confirmation flag such as
   `--yes`.
-- Existing commands may remain as backward-compatible aliases when they are
-  moved into resource-first groups.
+- Nuanced cross-platform judgement belongs in `sync-review` and `sync-apply`, not in
+  platform primitive commands.
+- Removed legacy command groups should not be used in Agent docs or command
+  recipes.
 
-### Intended platform primitive surface
+### Implemented platform primitive surface
 
-This is the target command shape for platform primitives. Until implementation
-is complete, check `fitness-tracker --help` for currently available commands.
+These commands are implemented and should be preferred in Agent workflows.
 
 True Coach Workouts:
 
@@ -310,8 +311,17 @@ Exercise Links:
 ```bash
 fitness-tracker exercise-links set \
   --truecoach-exercise-id TRUECOACH_EXERCISE_ID \
-  --hevy-template-id HEVY_TEMPLATE_ID \
-  --json
+  --hevy-template-id HEVY_TEMPLATE_ID
+```
+
+### Future intended platform primitive surface
+
+These command shapes are intended but not implemented yet. Do not use them in
+Agent command recipes until `fitness-tracker --help` shows them.
+
+Exercise Links:
+
+```bash
 fitness-tracker exercise-links inspect --truecoach-exercise-id TRUECOACH_EXERCISE_ID --json
 fitness-tracker exercise-links find-unlinked --json
 ```
