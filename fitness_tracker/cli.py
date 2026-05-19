@@ -41,7 +41,13 @@ from fitness_tracker.config import Config
 from fitness_tracker.database import Store
 from fitness_tracker.database.config import create_database_engine
 from fitness_tracker.database.models import Exercise as TrackerExercise
-from fitness_tracker.database.models.hevy_app import HevyAppExercise
+from fitness_tracker.database.models.hevy_app import (
+    HevyAppExercise,
+    HevyAppSets,
+    HevyAppWorkout,
+    HevyAppWorkoutItem,
+)
+from fitness_tracker.database.models.true_coach import TrueCoachWorkout, TrueCoachWorkoutItem
 from fitness_tracker.maintenance.hevy_exercise_migration import (
     HevyExerciseTemplateMigrationService,
     MigrationError,
@@ -228,6 +234,14 @@ def _add_hevy_parser(subparsers: Any) -> None:  # noqa: PLR0915
     workout_inspect.add_argument("--raw", action="store_true")
     _add_json_output_argument(workout_inspect)
 
+    workout_cached = workout_subparsers.add_parser("cached")
+    workout_cached.add_argument("workout_id")
+    workout_cached.add_argument("--db", help="SQLite database path. Prefer --database-url.")
+    workout_cached.add_argument(
+        "--database-url", help="SQLAlchemy database URL. Defaults to DATABASE_URL."
+    )
+    _add_json_output_argument(workout_cached)
+
     folders = hevy_subparsers.add_parser("routine-folders")
     folder_subparsers = folders.add_subparsers(dest="routine_folder_command")
 
@@ -316,7 +330,7 @@ def _hevy_exercise_template_command_handler(
     return handlers.get(command)
 
 
-def _add_truecoach_parser(subparsers: Any) -> None:
+def _add_truecoach_parser(subparsers: Any) -> None:  # noqa: PLR0915
     truecoach = subparsers.add_parser("truecoach")
     truecoach_subparsers = truecoach.add_subparsers(dest="truecoach_command")
 
@@ -344,6 +358,14 @@ def _add_truecoach_parser(subparsers: Any) -> None:
     workout_inspect.add_argument("--workout-id", type=int, required=True)
     workout_inspect.add_argument("--raw", action="store_true")
     _add_json_output_argument(workout_inspect)
+
+    workout_cached = workout_subparsers.add_parser("cached")
+    workout_cached.add_argument("--workout-id", type=int, required=True)
+    workout_cached.add_argument("--db", help="SQLite database path. Prefer --database-url.")
+    workout_cached.add_argument(
+        "--database-url", help="SQLAlchemy database URL. Defaults to DATABASE_URL."
+    )
+    _add_json_output_argument(workout_cached)
 
     _add_truecoach_due_parser(workout_subparsers.add_parser("due"))
 
@@ -797,6 +819,8 @@ def _truecoach_workouts(args: argparse.Namespace) -> int:
         return _truecoach_workouts_list(args)
     if args.truecoach_workout_command == "inspect":
         return _truecoach_workouts_inspect(args)
+    if args.truecoach_workout_command == "cached":
+        return _truecoach_workouts_cached(args)
     if args.truecoach_workout_command == "due":
         return _truecoach_due(args)
     if args.truecoach_workout_command == "import-recent":
@@ -844,6 +868,34 @@ def _truecoach_workouts_inspect(args: argparse.Namespace) -> int:
     _emit(
         f"{workout['id']} | {workout['due']} | {workout['state']} | "
         f"{workout['title']} | rest_day={workout['rest_day']}"
+    )
+    for item in payload["workout_items"]:
+        _emit(f"{item['id']} | {item['position']} | {item['state']} | {item['name']}")
+    return 0
+
+
+def _truecoach_workouts_cached(args: argparse.Namespace) -> int:
+    with Store(_engine_from_args(args)).unit_of_work() as uow:
+        workout = uow.session.query(TrueCoachWorkout).filter_by(id=args.workout_id).one_or_none()
+        if workout is None:
+            return _emit_error(
+                args,
+                f"True Coach Workout not found in local tracker cache: {args.workout_id}",
+                exit_code=2,
+            )
+        workout_items = (
+            uow.session.query(TrueCoachWorkoutItem)
+            .filter_by(workout_id=args.workout_id)
+            .order_by(TrueCoachWorkoutItem.position, TrueCoachWorkoutItem.id)
+            .all()
+        )
+        payload = _truecoach_cached_workout_payload(workout, workout_items)
+    if args.json:
+        return _emit_json_result(payload)
+    cached_workout = payload["workout"]
+    _emit(
+        f"{cached_workout['id']} | {cached_workout['due']} | {cached_workout['state']} | "
+        f"{cached_workout['title']} | source=local_tracker_cache"
     )
     for item in payload["workout_items"]:
         _emit(f"{item['id']} | {item['position']} | {item['state']} | {item['name']}")
@@ -1112,6 +1164,49 @@ def _truecoach_workout_payload(workout: Workout) -> dict[str, Any]:
     }
 
 
+def _truecoach_cached_workout_payload(
+    workout: TrueCoachWorkout,
+    workout_items: list[TrueCoachWorkoutItem],
+) -> dict[str, Any]:
+    return {
+        "ok": True,
+        "source": "local_tracker_cache",
+        "workout": {
+            "id": workout.id,
+            "due": str(workout.due) if workout.due is not None else None,
+            "title": workout.title,
+            "state": workout.state,
+            "rest_day": workout.rest_day,
+            "program_name": None,
+            "workout_item_ids": [item.id for item in workout_items],
+        },
+        "workout_items": [_truecoach_cached_workout_item_payload(item) for item in workout_items],
+        "comments": [],
+        "meta": None,
+        "warnings": ["source=local_tracker_cache; data may be stale"],
+    }
+
+
+def _truecoach_cached_workout_item_payload(item: TrueCoachWorkoutItem) -> dict[str, Any]:
+    return {
+        "id": item.id,
+        "workout_id": item.workout_id,
+        "name": item.name,
+        "info": item.info,
+        "result": item.comment,
+        "is_circuit": item.is_circuit,
+        "state": item.state,
+        "selected_exercises": [],
+        "linked": False,
+        "position": item.position,
+        "assessment_id": item.assessment_id,
+        "created_at": None,
+        "attachments": [],
+        "exercise_id": item.exercise_id,
+        "request_video": False,
+    }
+
+
 def _hevy_routines(args: argparse.Namespace) -> int:  # noqa: PLR0911
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     try:
@@ -1137,6 +1232,8 @@ def _hevy_workouts(args: argparse.Namespace) -> int:
     try:
         if args.workout_command == "inspect":
             return _inspect_hevy_workout(args)
+        if args.workout_command == "cached":
+            return _cached_hevy_workout(args)
     except HevyAppAPIError as exc:
         return _emit_error(args, str(exc))
     return _emit_error(args, "missing hevy workouts subcommand")
@@ -1251,6 +1348,43 @@ def _inspect_hevy_workout(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cached_hevy_workout(args: argparse.Namespace) -> int:
+    with Store(_engine_from_args(args)).unit_of_work() as uow:
+        workout = uow.session.query(HevyAppWorkout).filter_by(id=args.workout_id).one_or_none()
+        if workout is None:
+            return _emit_error(
+                args,
+                f"Hevy Workout not found in local tracker cache: {args.workout_id}",
+                exit_code=2,
+            )
+        workout_items = (
+            uow.session.query(HevyAppWorkoutItem)
+            .filter_by(workout_id=args.workout_id)
+            .order_by(HevyAppWorkoutItem.index, HevyAppWorkoutItem.id)
+            .all()
+        )
+        sets_by_item_id = {
+            item.id: (
+                uow.session.query(HevyAppSets)
+                .filter_by(workout_item_id=item.id)
+                .order_by(HevyAppSets.index, HevyAppSets.id)
+                .all()
+            )
+            for item in workout_items
+        }
+        payload = _hevy_cached_workout_payload(workout, workout_items, sets_by_item_id)
+    if args.json:
+        return _emit_json_result(payload)
+    cached_workout = payload["workout"]
+    _emit(f"id: {cached_workout['id']}")
+    _emit(f"title: {cached_workout['title']}")
+    _emit(f"source: {payload['source']}")
+    _emit(f"exercises: {cached_workout['exercise_count']}")
+    _emit(f"superset_ids: {cached_workout['superset_ids']}")
+    _emit(f"empty_set_blocks: {cached_workout['empty_set_blocks']}")
+    return 0
+
+
 def _workout_inspect_payload(workout_data: dict[str, Any]) -> dict[str, Any]:
     exercises = workout_data.get("exercises", [])
     return {
@@ -1272,6 +1406,35 @@ def _workout_inspect_payload(workout_data: dict[str, Any]) -> dict[str, Any]:
             }
             for index, exercise in enumerate(exercises, start=1)
         ],
+    }
+
+
+def _hevy_cached_workout_payload(
+    workout: HevyAppWorkout,
+    workout_items: list[HevyAppWorkoutItem],
+    sets_by_item_id: dict[int, list[HevyAppSets]],
+) -> dict[str, Any]:
+    workout_data = {
+        "id": workout.id,
+        "title": workout.title,
+        "start_time": str(workout.start_time),
+        "end_time": str(workout.end_time),
+        "exercises": [
+            {
+                "superset_id": item.superset_id,
+                "exercise_template_id": item.exercise_id,
+                "name": item.name,
+                "notes": item.notes,
+                "sets": sets_by_item_id[item.id],
+            }
+            for item in workout_items
+        ],
+    }
+    return {
+        "ok": True,
+        "source": "local_tracker_cache",
+        "workout": _workout_inspect_payload(workout_data),
+        "warnings": ["source=local_tracker_cache; data may be stale"],
     }
 
 

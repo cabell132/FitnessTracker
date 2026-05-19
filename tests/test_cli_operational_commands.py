@@ -21,8 +21,13 @@ from fitness_tracker.apis.true_coach.types import (
 )
 from fitness_tracker.database import Store
 from fitness_tracker.database.models import Exercise as TrackerExercise
-from fitness_tracker.database.models.hevy_app import HevyAppExercise
-from fitness_tracker.database.models.true_coach import TrueCoachWorkout
+from fitness_tracker.database.models.hevy_app import (
+    HevyAppExercise,
+    HevyAppSets,
+    HevyAppWorkout,
+    HevyAppWorkoutItem,
+)
+from fitness_tracker.database.models.true_coach import TrueCoachWorkout, TrueCoachWorkoutItem
 
 
 def _truecoach_api_workout() -> Workout:
@@ -271,6 +276,136 @@ def test_truecoach_workouts_inspect_raw_json_returns_vendor_payload(
     assert exit_code == 0
     assert calls == [599821297]
     assert json.loads(captured.out) == {"ok": True, "raw": raw_response, "warnings": []}
+    assert captured.err == ""
+
+
+def test_truecoach_workouts_cached_json_reads_local_tracker_cache(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    db_url = f"sqlite:///{db_path}"
+    store = Store(create_engine(db_url))
+    store.init_db()
+    with store.unit_of_work() as uow:
+        uow.session.add(
+            TrueCoachWorkout(
+                id=599821297,
+                title="Mobility",
+                due=datetime(2026, 5, 18, tzinfo=UTC),
+                short_description="",
+                state="pending",
+                rest_day=False,
+            )
+        )
+        uow.session.add(
+            TrueCoachWorkoutItem(
+                id=-1393788898,
+                workout_id=599821297,
+                name="Hip Adductor Med Ball Squeeze",
+                info="2 x 2 with an 8s squeeze",
+                comment=None,
+                is_circuit=False,
+                state="pending",
+                position=8,
+                exercise_id=None,
+                assessment_id=None,
+            )
+        )
+
+    monkeypatch.setattr(
+        cli,
+        "_truecoach_client_from_config",
+        lambda: pytest.fail("cached command must not fetch True Coach"),
+    )
+
+    exit_code = cli.main(
+        [
+            "truecoach",
+            "workouts",
+            "cached",
+            "--workout-id",
+            "599821297",
+            "--database-url",
+            db_url,
+            "--json",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert json.loads(captured.out) == {
+        "ok": True,
+        "source": "local_tracker_cache",
+        "workout": {
+            "id": 599821297,
+            "due": "2026-05-18 00:00:00",
+            "title": "Mobility",
+            "state": "pending",
+            "rest_day": False,
+            "program_name": None,
+            "workout_item_ids": [-1393788898],
+        },
+        "workout_items": [
+            {
+                "id": -1393788898,
+                "workout_id": 599821297,
+                "name": "Hip Adductor Med Ball Squeeze",
+                "info": "2 x 2 with an 8s squeeze",
+                "result": None,
+                "is_circuit": False,
+                "state": "pending",
+                "selected_exercises": [],
+                "linked": False,
+                "position": 8,
+                "assessment_id": None,
+                "created_at": None,
+                "attachments": [],
+                "exercise_id": None,
+                "request_video": False,
+            }
+        ],
+        "comments": [],
+        "meta": None,
+        "warnings": ["source=local_tracker_cache; data may be stale"],
+    }
+    assert captured.err == ""
+
+
+def test_truecoach_workouts_cached_json_reports_missing_local_row_without_remote_fetch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    db_url = f"sqlite:///{db_path}"
+    Store(create_engine(db_url)).init_db()
+    monkeypatch.setattr(
+        cli,
+        "_truecoach_client_from_config",
+        lambda: pytest.fail("cached command must not fetch True Coach"),
+    )
+
+    exit_code = cli.main(
+        [
+            "truecoach",
+            "workouts",
+            "cached",
+            "--workout-id",
+            "599821297",
+            "--database-url",
+            db_url,
+            "--json",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert json.loads(captured.out) == {
+        "ok": False,
+        "error": "True Coach Workout not found in local tracker cache: 599821297",
+    }
     assert captured.err == ""
 
 
@@ -921,6 +1056,136 @@ def test_hevy_workouts_inspect_json_raw_returns_vendor_payload(
             }
         },
         "warnings": [],
+    }
+    assert captured.err == ""
+
+
+def test_hevy_workouts_cached_json_reads_local_tracker_cache(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    db_url = f"sqlite:///{db_path}"
+    store = Store(create_engine(db_url))
+    store.init_db()
+    with store.unit_of_work() as uow:
+        uow.session.add(
+            HevyAppExercise(
+                id="template-a",
+                name="Row",
+                type="distance_duration",
+                equipment="machine",
+            )
+        )
+        uow.session.add(
+            HevyAppWorkout(
+                id="workout-1",
+                title="2024-04-10 Upper",
+                description="",
+                start_time=datetime(2024, 4, 10, 6, 43, tzinfo=UTC),
+                end_time=datetime(2024, 4, 10, 8, 30, tzinfo=UTC),
+            )
+        )
+        uow.session.add(
+            HevyAppWorkoutItem(
+                id=101,
+                workout_id="workout-1",
+                index=0,
+                name="Row",
+                notes="",
+                superset_id=0,
+                exercise_id="template-a",
+            )
+        )
+        uow.session.add(
+            HevyAppSets(
+                id=1001,
+                workout_item_id=101,
+                index=0,
+                type="normal",
+                distance_meters=500,
+            )
+        )
+
+    monkeypatch.setattr(
+        cli,
+        "_hevy_api_json",
+        lambda *args, **kwargs: pytest.fail("cached command must not fetch Hevy"),
+    )
+
+    exit_code = cli.main(
+        [
+            "hevy",
+            "workouts",
+            "cached",
+            "workout-1",
+            "--database-url",
+            db_url,
+            "--json",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert json.loads(captured.out) == {
+        "ok": True,
+        "source": "local_tracker_cache",
+        "workout": {
+            "id": "workout-1",
+            "title": "2024-04-10 Upper",
+            "start_time": "2024-04-10 06:43:00",
+            "end_time": "2024-04-10 08:30:00",
+            "exercise_count": 1,
+            "superset_ids": [0],
+            "empty_set_blocks": [],
+            "exercises": [
+                {
+                    "position": 1,
+                    "superset_id": 0,
+                    "exercise_template_id": "template-a",
+                    "name": "Row",
+                    "notes": "",
+                    "set_count": 1,
+                }
+            ],
+        },
+        "warnings": ["source=local_tracker_cache; data may be stale"],
+    }
+    assert captured.err == ""
+
+
+def test_hevy_workouts_cached_json_reports_missing_local_row_without_remote_fetch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    db_url = f"sqlite:///{db_path}"
+    Store(create_engine(db_url)).init_db()
+    monkeypatch.setattr(
+        cli,
+        "_hevy_api_json",
+        lambda *args, **kwargs: pytest.fail("cached command must not fetch Hevy"),
+    )
+
+    exit_code = cli.main(
+        [
+            "hevy",
+            "workouts",
+            "cached",
+            "workout-1",
+            "--database-url",
+            db_url,
+            "--json",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert json.loads(captured.out) == {
+        "ok": False,
+        "error": "Hevy Workout not found in local tracker cache: workout-1",
     }
     assert captured.err == ""
 
