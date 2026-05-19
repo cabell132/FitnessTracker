@@ -486,7 +486,7 @@ class TrueCoachToHevyReviewService:
                         SplitCircuitExerciseNoteContext(
                             exercise=exercise,
                             plan=split_plan,
-                            source_text=item.info or "",
+                            original_source_text=item.info or "",
                             include_metadata_lines=True,
                         )
                     ),

@@ -241,7 +241,7 @@ def test_split_circuit_core_renders_generated_exercise_notes() -> None:
         SplitCircuitExerciseNoteContext(
             exercise=plan.exercises[0],
             plan=plan,
-            source_text=plan.original_source_text,
+            original_source_text=plan.original_source_text,
             round_count_label="Prescribed rounds",
             extra_lines=("Completed round times: 2 min 10 sec; 2 min 15 sec",),
         )

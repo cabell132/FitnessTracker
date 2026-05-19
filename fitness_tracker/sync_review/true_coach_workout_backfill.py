@@ -876,19 +876,11 @@ def _circuit_review_items(context: CircuitReviewContext) -> list[BackfillReviewI
                     SplitCircuitExerciseNoteContext(
                         exercise=exercise,
                         plan=split_plan,
-                        source_text=context.info,
+                        original_source_text=context.info,
                         round_count_label="Prescribed rounds",
-                        extra_lines=tuple(
-                            line
-                            for line in (
-                                (
-                                    f"Completed round times: {'; '.join(round_time_lines)}"
-                                    if round_time_lines
-                                    else None
-                                ),
-                                f"Athlete comment: {context.comment}" if context.comment else None,
-                            )
-                            if line is not None
+                        extra_lines=_circuit_note_extra_lines(
+                            round_time_lines=round_time_lines,
+                            comment=context.comment,
                         ),
                     )
                 ),
@@ -1109,6 +1101,19 @@ def _repeat_sets(
     count: int,
 ) -> list[PostWorkoutsRequestSet]:
     return [set_row for _ in range(count) for set_row in sets]
+
+
+def _circuit_note_extra_lines(
+    *,
+    round_time_lines: list[str],
+    comment: str,
+) -> tuple[str, ...]:
+    lines: list[str] = []
+    if round_time_lines:
+        lines.append(f"Completed round times: {'; '.join(round_time_lines)}")
+    if comment:
+        lines.append(f"Athlete comment: {comment}")
+    return tuple(lines)
 
 
 def _choice_review_items(context: ChoiceReviewContext) -> list[BackfillReviewItem]:

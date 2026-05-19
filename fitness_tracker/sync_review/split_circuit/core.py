@@ -114,7 +114,7 @@ class SplitCircuitExerciseNoteContext:
 
     exercise: SplitCircuitExercisePlan
     plan: SplitCircuitPlan
-    source_text: str
+    original_source_text: str
     round_count_label: str = "Rounds"
     extra_lines: tuple[str, ...] = ()
     include_metadata_lines: bool = False
@@ -237,7 +237,7 @@ def render_split_circuit_exercise_notes(context: SplitCircuitExerciseNoteContext
         parts.append("Rest lines: " + "; ".join(rest.source_text for rest in plan.rests))
     if context.include_metadata_lines and plan.metadata_lines:
         parts.append("Metadata lines: " + "; ".join(plan.metadata_lines))
-    parts.append(f"Source: {context.source_text}")
+    parts.append(f"Source: {context.original_source_text}")
     return "\n".join(parts)
 
 
