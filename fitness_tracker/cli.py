@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast, get_args
@@ -88,14 +89,9 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0911, PLR0912,
     if args.command == "hevy" and args.hevy_command == "routine-folders":
         return _hevy_routine_folders(args)
     if args.command == "hevy" and args.hevy_command == "exercise-templates":
-        if args.exercise_templates_command == "ensure-from-plan":
-            return _ensure_hevy_templates_from_plan(args)
-        if args.exercise_templates_command == "create":
-            return _create_hevy_template(args)
-        if args.exercise_templates_command == "find":
-            return _find_hevy_templates(args)
-        if args.exercise_templates_command == "fuzzy-find":
-            return _fuzzy_find_hevy_templates(args)
+        handler = _hevy_exercise_template_command_handler(args.exercise_templates_command)
+        if handler is not None:
+            return handler(args)
     if args.command == "truecoach" and args.truecoach_command == "due":
         return _truecoach_due(args)
     if args.command == "truecoach" and args.truecoach_command == "import-recent":
@@ -236,9 +232,11 @@ def _add_json_output_argument(parser: argparse.ArgumentParser) -> None:
 
 def _add_hevy_exercise_templates_parser(subparsers: Any) -> None:  # noqa: PLR0915
     exercise_templates = subparsers.add_parser("exercise-templates")
-    hevy_template_subparsers = exercise_templates.add_subparsers(dest="exercise_templates_command")
+    exercise_template_subparsers = exercise_templates.add_subparsers(
+        dest="exercise_templates_command"
+    )
 
-    ensure = hevy_template_subparsers.add_parser("ensure-from-plan")
+    ensure = exercise_template_subparsers.add_parser("ensure-from-plan")
     ensure.add_argument("plan_path")
     ensure.add_argument("--db", help="SQLite database path. Prefer --database-url.")
     ensure.add_argument("--database-url", help="SQLAlchemy database URL. Defaults to DATABASE_URL.")
@@ -246,7 +244,7 @@ def _add_hevy_exercise_templates_parser(subparsers: Any) -> None:  # noqa: PLR09
     mode.add_argument("--dry-run", action="store_true")
     mode.add_argument("--yes", action="store_true")
 
-    create = hevy_template_subparsers.add_parser("create")
+    create = exercise_template_subparsers.add_parser("create")
     create.add_argument("--title", required=True)
     create.add_argument(
         "--type", dest="expected_type", required=True, choices=get_args(CUSTOM_EXERCISE_TYPES)
@@ -275,13 +273,27 @@ def _add_hevy_exercise_templates_parser(subparsers: Any) -> None:  # noqa: PLR09
     create_mode.add_argument("--dry-run", action="store_true")
     create_mode.add_argument("--yes", action="store_true")
 
-    find = hevy_template_subparsers.add_parser("find")
+    find = exercise_template_subparsers.add_parser("find")
     find.add_argument("--title", required=True)
 
-    fuzzy_find = hevy_template_subparsers.add_parser("fuzzy-find")
+    fuzzy_find = exercise_template_subparsers.add_parser("fuzzy-find")
     fuzzy_find.add_argument("--title", required=True)
     fuzzy_find.add_argument("--limit", type=int, default=10)
     fuzzy_find.add_argument("--min-score", type=float, default=55.0)
+
+
+def _hevy_exercise_template_command_handler(
+    command: str | None,
+) -> Callable[[argparse.Namespace], int] | None:
+    if command is None:
+        return None
+    handlers: dict[str, Callable[[argparse.Namespace], int]] = {
+        "ensure-from-plan": _ensure_hevy_templates_from_plan,
+        "create": _create_hevy_template,
+        "find": _find_hevy_templates,
+        "fuzzy-find": _fuzzy_find_hevy_templates,
+    }
+    return handlers.get(command)
 
 
 def _add_truecoach_parser(subparsers: Any) -> None:
