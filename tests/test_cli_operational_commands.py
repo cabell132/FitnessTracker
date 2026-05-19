@@ -12,10 +12,60 @@ from sqlalchemy import create_engine
 
 from fitness_tracker import cli
 from fitness_tracker.apis.hevy_app.exceptions import HevyAppAPIError
+from fitness_tracker.apis.true_coach.types import Meta, Workout, WorkoutItem, WorkoutResponse
 from fitness_tracker.database import Store
 from fitness_tracker.database.models import Exercise as TrackerExercise
 from fitness_tracker.database.models.hevy_app import HevyAppExercise
 from fitness_tracker.database.models.true_coach import TrueCoachWorkout
+
+
+def _truecoach_api_workout() -> Workout:
+    return Workout(
+        id=599821297,
+        due="2026-05-18",
+        short_description="",
+        created_at="2026-05-18T00:00:00.000000Z",
+        updated_at="2026-05-18T00:10:00.000000Z",
+        title="Mobility",
+        state="pending",
+        rest_day=False,
+        rest_day_instructions="",
+        warmup=None,
+        warmup_selected_exercises=[],
+        cooldown_selected_exercises=[],
+        cooldown=None,
+        position=None,
+        order=1,
+        uuid="uuid-599821297",
+        program_name=None,
+        hidden=False,
+        edit_client_workout=True,
+        client_id=2876143,
+        comment_ids=[],
+        note_id=None,
+        program_id=None,
+        workout_item_ids=[-1393788898],
+    )
+
+
+def _truecoach_api_workout_item() -> WorkoutItem:
+    return WorkoutItem(
+        id=-1393788898,
+        workout_id=599821297,
+        name="Hip Adductor Med Ball Squeeze",
+        info="2 x 2 with an 8s squeeze",
+        result="",
+        is_circuit=False,
+        state="pending",
+        selected_exercises=[],
+        linked=False,
+        position=8,
+        assessment_id=None,
+        created_at="2026-05-18T00:00:00.000000Z",
+        attachments=[],
+        exercise_id=16369167,
+        request_video=False,
+    )
 
 
 def test_truecoach_due_reads_configured_database(
@@ -43,6 +93,280 @@ def test_truecoach_due_reads_configured_database(
     output = capsys.readouterr().out
     assert "id | title | due | state | rest_day" in output
     assert "123 | Lower Body | 2026-05-18" in output
+
+
+def test_truecoach_workouts_due_json_reads_configured_database(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    db_url = f"sqlite:///{db_path}"
+    store = Store(create_engine(db_url))
+    store.init_db()
+    with store.unit_of_work() as uow:
+        uow.session.add(
+            TrueCoachWorkout(
+                id=123,
+                title="Lower Body",
+                due=datetime(2026, 5, 18, tzinfo=UTC),
+                state="pending",
+                rest_day=False,
+            )
+        )
+
+    exit_code = cli.main(
+        [
+            "truecoach",
+            "workouts",
+            "due",
+            "--date",
+            "2026-05-18",
+            "--database-url",
+            db_url,
+            "--json",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert json.loads(captured.out) == {
+        "ok": True,
+        "date": "2026-05-18",
+        "workouts": [
+            {
+                "id": 123,
+                "title": "Lower Body",
+                "due": "2026-05-18 00:00:00.000000",
+                "state": "pending",
+                "rest_day": False,
+            }
+        ],
+        "warnings": [],
+    }
+    assert captured.err == ""
+
+
+def test_truecoach_workouts_list_json_fetches_remote_workouts(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    calls: list[dict[str, Any]] = []
+
+    class FakeWorkouts:
+        def get(self, **kwargs: Any) -> WorkoutResponse:
+            calls.append(kwargs)
+            return WorkoutResponse(
+                workouts=[_truecoach_api_workout()],
+                workout_items=[],
+                comments=[],
+                meta=Meta(page=1, total_pages=1, per_page=20, total_count=1),
+            )
+
+    class FakeClient:
+        workouts = FakeWorkouts()
+
+    monkeypatch.setattr(cli, "_truecoach_client_from_config", lambda: FakeClient())
+
+    exit_code = cli.main(
+        ["truecoach", "workouts", "list", "--state", "pending", "--limit", "20", "--json"]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert calls == [{"order": "asc", "page": 1, "per_page": 20, "states": "pending"}]
+    assert json.loads(captured.out) == {
+        "ok": True,
+        "workouts": [
+            {
+                "id": 599821297,
+                "due": "2026-05-18",
+                "title": "Mobility",
+                "state": "pending",
+                "rest_day": False,
+                "program_name": None,
+                "workout_item_ids": [-1393788898],
+            }
+        ],
+        "workout_items": [],
+        "comments": [],
+        "meta": {"page": 1, "per_page": 20, "total_count": 1, "total_pages": 1},
+        "warnings": [],
+    }
+    assert captured.err == ""
+
+
+def test_truecoach_workouts_inspect_json_fetches_remote_workout(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    calls: list[int] = []
+
+    class FakeWorkouts:
+        def inspect(self, workout_id: int) -> WorkoutResponse:
+            calls.append(workout_id)
+            return WorkoutResponse(
+                workouts=[_truecoach_api_workout()],
+                workout_items=[_truecoach_api_workout_item()],
+                comments=[],
+                meta=Meta(page=1, total_pages=1, per_page=1, total_count=1),
+            )
+
+    class FakeClient:
+        workouts = FakeWorkouts()
+
+    monkeypatch.setattr(cli, "_truecoach_client_from_config", lambda: FakeClient())
+
+    exit_code = cli.main(
+        ["truecoach", "workouts", "inspect", "--workout-id", "599821297", "--json"]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert calls == [599821297]
+    payload = json.loads(captured.out)
+    assert payload["ok"] is True
+    assert payload["workout"]["id"] == 599821297
+    assert payload["workout"]["title"] == "Mobility"
+    assert payload["workout_items"][0]["id"] == -1393788898
+    assert payload["warnings"] == []
+    assert captured.err == ""
+
+
+def test_truecoach_workouts_inspect_raw_json_returns_vendor_payload(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    calls: list[int] = []
+    raw_response = {"workouts": [{"id": 599821297, "vendorOnly": True}], "workout_items": []}
+
+    class FakeWorkouts:
+        def inspect_raw(self, workout_id: int) -> dict[str, Any]:
+            calls.append(workout_id)
+            return raw_response
+
+    class FakeClient:
+        workouts = FakeWorkouts()
+
+    monkeypatch.setattr(cli, "_truecoach_client_from_config", lambda: FakeClient())
+
+    exit_code = cli.main(
+        [
+            "truecoach",
+            "workouts",
+            "inspect",
+            "--workout-id",
+            "599821297",
+            "--json",
+            "--raw",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert calls == [599821297]
+    assert json.loads(captured.out) == {"ok": True, "raw": raw_response, "warnings": []}
+    assert captured.err == ""
+
+
+def test_truecoach_workouts_import_recent_json_preserves_import_behavior(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    db_url = f"sqlite:///{db_path}"
+    Store(create_engine(db_url)).init_db()
+    calls: list[dict[str, Any]] = []
+
+    class FakeWorkouts:
+        def get(self, **kwargs: Any) -> WorkoutResponse:
+            calls.append(kwargs)
+            return WorkoutResponse(
+                workouts=[_truecoach_api_workout()],
+                workout_items=[_truecoach_api_workout_item()],
+                comments=[],
+                meta=Meta(page=1, total_pages=1, per_page=20, total_count=1),
+            )
+
+    class FakeClient:
+        workouts = FakeWorkouts()
+
+    monkeypatch.setattr(cli, "_truecoach_client_from_config", lambda: FakeClient())
+
+    exit_code = cli.main(
+        [
+            "truecoach",
+            "workouts",
+            "import-recent",
+            "--pages",
+            "2",
+            "--database-url",
+            db_url,
+            "--json",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert calls == [
+        {
+            "order": "desc",
+            "page": 1,
+            "per_page": 20,
+            "states": ["pending", "completed", "missed"],
+        }
+    ]
+    assert json.loads(captured.out) == {
+        "ok": True,
+        "imported_pages": 1,
+        "imported_workouts": 1,
+        "imported_items": 1,
+        "warnings": [],
+    }
+    assert captured.err == ""
+
+
+def test_truecoach_import_recent_legacy_command_remains_available(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    db_url = f"sqlite:///{db_path}"
+    Store(create_engine(db_url)).init_db()
+    calls: list[dict[str, Any]] = []
+
+    class FakeWorkouts:
+        def get(self, **kwargs: Any) -> WorkoutResponse:
+            calls.append(kwargs)
+            return WorkoutResponse(
+                workouts=[_truecoach_api_workout()],
+                workout_items=[],
+                comments=[],
+                meta=Meta(page=1, total_pages=1, per_page=20, total_count=1),
+            )
+
+    class FakeClient:
+        workouts = FakeWorkouts()
+
+    monkeypatch.setattr(cli, "_truecoach_client_from_config", lambda: FakeClient())
+
+    exit_code = cli.main(
+        ["truecoach", "import-recent", "--pages", "1", "--database-url", db_url, "--json"]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert calls == [
+        {
+            "order": "desc",
+            "page": 1,
+            "per_page": 20,
+            "states": ["pending", "completed", "missed"],
+        }
+    ]
+    assert json.loads(captured.out)["imported_workouts"] == 1
+    assert captured.err == ""
 
 
 def test_hevy_routines_inspect_prints_compact_summary(

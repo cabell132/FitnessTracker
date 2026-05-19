@@ -50,6 +50,30 @@ class TrueCoachWorkouts:
         data = self._session.make_request(method="GET", endpoint=self.endpoint, json=params)
         return parse_response(data, WorkoutResponse)
 
+    def inspect(self, workout_id: int) -> WorkoutResponse | None:
+        """Fetch a single workout with related vendor resources.
+
+        Args:
+            workout_id (int): True Coach workout id.
+
+        Returns:
+            WorkoutResponse | None: Workout payload, or ``None`` when empty.
+        """
+        data = self.inspect_raw(workout_id)
+        return parse_response(data, WorkoutResponse)
+
+    def inspect_raw(self, workout_id: int) -> dict[str, Any] | None:
+        """Fetch a single workout and return the raw vendor payload.
+
+        Args:
+            workout_id (int): True Coach workout id.
+
+        Returns:
+            dict[str, Any] | None: Parsed vendor JSON body when present.
+        """
+        endpoint = f"{self.endpoint}/{workout_id}"
+        return self._session.make_request(method="GET", endpoint=endpoint)
+
     def update_workout_item(
         self, workout_item_id: int, workout_item: PutWorkoutItemRequest
     ) -> PutWorkoutItemResponse | None:
