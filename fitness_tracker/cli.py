@@ -777,13 +777,9 @@ def _inspect_hevy_routine(args: argparse.Namespace) -> int:
     routine = _hevy_api_json("GET", f"/routines/{args.routine_id}")
     routine_data = _unwrap_routine(routine)
     exercises = routine_data.get("exercises", [])
-    empty_set_blocks = [
-        index for index, exercise in enumerate(exercises, start=1) if not exercise.get("sets")
-    ]
+    empty_set_blocks = _empty_set_block_positions(exercises)
     if args.json:
-        warnings = []
-        if empty_set_blocks:
-            warnings.append(f"Routine has empty set blocks: {empty_set_blocks}")
+        warnings = _empty_set_block_warnings("Routine", empty_set_blocks)
         return _emit_json_result(
             {
                 "ok": True,
@@ -813,9 +809,7 @@ def _routine_inspect_payload(routine_data: dict[str, Any]) -> dict[str, Any]:
         "title": routine_data.get("title"),
         "exercise_count": len(exercises),
         "superset_ids": [exercise.get("superset_id") for exercise in exercises],
-        "empty_set_blocks": [
-            index for index, exercise in enumerate(exercises, start=1) if not exercise.get("sets")
-        ],
+        "empty_set_blocks": _empty_set_block_positions(exercises),
         "exercises": [
             {
                 "position": index,
@@ -833,13 +827,9 @@ def _inspect_hevy_workout(args: argparse.Namespace) -> int:
     workout = _hevy_api_json("GET", f"/workouts/{args.workout_id}")
     workout_data = _unwrap_workout(workout)
     exercises = workout_data.get("exercises", [])
-    empty_set_blocks = [
-        index for index, exercise in enumerate(exercises, start=1) if not exercise.get("sets")
-    ]
+    empty_set_blocks = _empty_set_block_positions(exercises)
     if args.json:
-        warnings = []
-        if empty_set_blocks:
-            warnings.append(f"Workout has empty set blocks: {empty_set_blocks}")
+        warnings = _empty_set_block_warnings("Workout", empty_set_blocks)
         return _emit_json_result(
             {
                 "ok": True,
@@ -875,9 +865,7 @@ def _workout_inspect_payload(workout_data: dict[str, Any]) -> dict[str, Any]:
         "end_time": workout_data.get("end_time"),
         "exercise_count": len(exercises),
         "superset_ids": [exercise.get("superset_id") for exercise in exercises],
-        "empty_set_blocks": [
-            index for index, exercise in enumerate(exercises, start=1) if not exercise.get("sets")
-        ],
+        "empty_set_blocks": _empty_set_block_positions(exercises),
         "exercises": [
             {
                 "position": index,
@@ -890,6 +878,16 @@ def _workout_inspect_payload(workout_data: dict[str, Any]) -> dict[str, Any]:
             for index, exercise in enumerate(exercises, start=1)
         ],
     }
+
+
+def _empty_set_block_positions(exercises: list[dict[str, Any]]) -> list[int]:
+    return [index for index, exercise in enumerate(exercises, start=1) if not exercise.get("sets")]
+
+
+def _empty_set_block_warnings(label: str, empty_set_blocks: list[int]) -> list[str]:
+    if not empty_set_blocks:
+        return []
+    return [f"{label} has empty set blocks: {empty_set_blocks}"]
 
 
 def _delete_hevy_routine(args: argparse.Namespace) -> int:
@@ -920,7 +918,7 @@ def _create_hevy_routine_from_json(args: argparse.Namespace) -> int:
                 "ok": True,
                 "action": "created",
                 "routine_id": routine.get("id"),
-                "response_path": str(response_path) if response_path is not None else None,
+                "response_path": _json_response_path(response_path),
                 "response": response,
                 "warnings": [],
             },
@@ -952,7 +950,7 @@ def _update_hevy_routine_from_json(args: argparse.Namespace) -> int:
                 "ok": True,
                 "action": "updated",
                 "routine_id": routine.get("id", args.routine_id),
-                "response_path": str(response_path) if response_path is not None else None,
+                "response_path": _json_response_path(response_path),
                 "response": response,
                 "warnings": [],
             },
@@ -961,6 +959,12 @@ def _update_hevy_routine_from_json(args: argparse.Namespace) -> int:
     if response_path is not None:
         _emit(f"Wrote Hevy response: {response_path}")
     return 0
+
+
+def _json_response_path(response_path: Path | None) -> str | None:
+    if response_path is None:
+        return None
+    return str(response_path)
 
 
 def _diff_hevy_routine_from_json(args: argparse.Namespace) -> int:
