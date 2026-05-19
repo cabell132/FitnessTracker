@@ -83,6 +83,8 @@ from fitness_tracker.sync_review import (
 from fitness_tracker.sync_review.true_coach_to_hevy import ApplyResult, _build_hevy_routine_request
 
 TRUECOACH_OPERATIONAL_STATES: tuple[WorkoutState, ...] = ("pending", "completed", "missed")
+LOCAL_TRACKER_CACHE_SOURCE = "local_tracker_cache"
+LOCAL_TRACKER_CACHE_WARNING = f"source={LOCAL_TRACKER_CACHE_SOURCE}; data may be stale"
 
 
 def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0911, PLR0912, PLR0915
@@ -1170,20 +1172,27 @@ def _truecoach_cached_workout_payload(
 ) -> dict[str, Any]:
     return {
         "ok": True,
-        "source": "local_tracker_cache",
-        "workout": {
-            "id": workout.id,
-            "due": str(workout.due) if workout.due is not None else None,
-            "title": workout.title,
-            "state": workout.state,
-            "rest_day": workout.rest_day,
-            "program_name": None,
-            "workout_item_ids": [item.id for item in workout_items],
-        },
+        "source": LOCAL_TRACKER_CACHE_SOURCE,
+        "workout": _truecoach_cached_workout_summary_payload(workout, workout_items),
         "workout_items": [_truecoach_cached_workout_item_payload(item) for item in workout_items],
         "comments": [],
         "meta": None,
-        "warnings": ["source=local_tracker_cache; data may be stale"],
+        "warnings": [LOCAL_TRACKER_CACHE_WARNING],
+    }
+
+
+def _truecoach_cached_workout_summary_payload(
+    workout: TrueCoachWorkout,
+    workout_items: list[TrueCoachWorkoutItem],
+) -> dict[str, Any]:
+    return {
+        "id": workout.id,
+        "due": str(workout.due) if workout.due is not None else None,
+        "title": workout.title,
+        "state": workout.state,
+        "rest_day": workout.rest_day,
+        "program_name": None,
+        "workout_item_ids": [item.id for item in workout_items],
     }
 
 
@@ -1363,15 +1372,19 @@ def _cached_hevy_workout(args: argparse.Namespace) -> int:
             .order_by(HevyAppWorkoutItem.index, HevyAppWorkoutItem.id)
             .all()
         )
-        sets_by_item_id = {
-            item.id: (
+        workout_item_ids = [item.id for item in workout_items]
+        sets_by_item_id: dict[int, list[HevyAppSets]] = {
+            item_id: [] for item_id in workout_item_ids
+        }
+        if workout_item_ids:
+            workout_sets = (
                 uow.session.query(HevyAppSets)
-                .filter_by(workout_item_id=item.id)
-                .order_by(HevyAppSets.index, HevyAppSets.id)
+                .filter(HevyAppSets.workout_item_id.in_(workout_item_ids))
+                .order_by(HevyAppSets.workout_item_id, HevyAppSets.index, HevyAppSets.id)
                 .all()
             )
-            for item in workout_items
-        }
+            for workout_set in workout_sets:
+                sets_by_item_id[workout_set.workout_item_id].append(workout_set)
         payload = _hevy_cached_workout_payload(workout, workout_items, sets_by_item_id)
     if args.json:
         return _emit_json_result(payload)
@@ -1414,27 +1427,43 @@ def _hevy_cached_workout_payload(
     workout_items: list[HevyAppWorkoutItem],
     sets_by_item_id: dict[int, list[HevyAppSets]],
 ) -> dict[str, Any]:
-    workout_data = {
+    return {
+        "ok": True,
+        "source": LOCAL_TRACKER_CACHE_SOURCE,
+        "workout": _workout_inspect_payload(
+            _hevy_cached_workout_data(workout, workout_items, sets_by_item_id)
+        ),
+        "warnings": [LOCAL_TRACKER_CACHE_WARNING],
+    }
+
+
+def _hevy_cached_workout_data(
+    workout: HevyAppWorkout,
+    workout_items: list[HevyAppWorkoutItem],
+    sets_by_item_id: dict[int, list[HevyAppSets]],
+) -> dict[str, Any]:
+    return {
         "id": workout.id,
         "title": workout.title,
         "start_time": str(workout.start_time),
         "end_time": str(workout.end_time),
         "exercises": [
-            {
-                "superset_id": item.superset_id,
-                "exercise_template_id": item.exercise_id,
-                "name": item.name,
-                "notes": item.notes,
-                "sets": sets_by_item_id[item.id],
-            }
+            _hevy_cached_workout_exercise_payload(item, sets_by_item_id[item.id])
             for item in workout_items
         ],
     }
+
+
+def _hevy_cached_workout_exercise_payload(
+    item: HevyAppWorkoutItem,
+    sets: list[HevyAppSets],
+) -> dict[str, Any]:
     return {
-        "ok": True,
-        "source": "local_tracker_cache",
-        "workout": _workout_inspect_payload(workout_data),
-        "warnings": ["source=local_tracker_cache; data may be stale"],
+        "superset_id": item.superset_id,
+        "exercise_template_id": item.exercise_id,
+        "name": item.name,
+        "notes": item.notes,
+        "sets": sets,
     }
 
 
