@@ -479,12 +479,14 @@ def _sync_decision_blockers(
     decision: dict[str, Any],
     state: DecisionValidationState,
 ) -> list[str]:
-    blockers = [blocker for blocker in item["blockers"] if not _is_target_mapping_blocker(blocker)]
+    item_blockers = item["blockers"]
+    blockers = [blocker for blocker in item_blockers if not _is_target_mapping_blocker(blocker)]
+    target_mapping_blockers = [
+        blocker for blocker in item_blockers if _is_target_mapping_blocker(blocker)
+    ]
     target_id = _effective_target_id(item, decision)
     if target_id is None:
-        return blockers + [
-            blocker for blocker in item["blockers"] if _is_target_mapping_blocker(blocker)
-        ]
+        return blockers + target_mapping_blockers
     if target_id not in state.target_items:
         return [
             *blockers,
@@ -517,24 +519,18 @@ def _record_mapping_blockers(
 
 
 def _decision_items_by_hevy_id(decisions: dict[str, Any]) -> dict[int, dict[str, Any]]:
-    items = decisions.get("items", [])
-    if not isinstance(items, list):
-        return {}
-    return {
-        int(item["hevy_workout_item_id"]): item
-        for item in items
-        if isinstance(item, dict) and item.get("hevy_workout_item_id") is not None
-    }
+    indexed_items: dict[int, dict[str, Any]] = {}
+    for item in _decision_item_rows(decisions):
+        if item.get("hevy_workout_item_id") is not None:
+            indexed_items[int(item["hevy_workout_item_id"])] = item
+    return indexed_items
 
 
 def _duplicate_decision_mapping_blockers(decisions: dict[str, Any]) -> list[str]:
     blockers: list[str] = []
-    items = decisions.get("items", [])
-    if not isinstance(items, list):
-        return blockers
     seen: dict[int, int | None] = {}
-    for item in items:
-        if not isinstance(item, dict) or item.get("hevy_workout_item_id") is None:
+    for item in _decision_item_rows(decisions):
+        if item.get("hevy_workout_item_id") is None:
             continue
         hevy_item_id = int(item["hevy_workout_item_id"])
         target_id = item.get("override_true_coach_workout_item_id")
@@ -546,6 +542,13 @@ def _duplicate_decision_mapping_blockers(decisions: dict[str, Any]) -> list[str]
             )
         seen[hevy_item_id] = target_id
     return blockers
+
+
+def _decision_item_rows(decisions: dict[str, Any]) -> list[dict[str, Any]]:
+    items = decisions.get("items", [])
+    if not isinstance(items, list):
+        return []
+    return [item for item in items if isinstance(item, dict)]
 
 
 def _effective_target_id(item: dict[str, Any], decision: dict[str, Any]) -> int | None:
@@ -639,13 +642,13 @@ def _target_items_to_dict(
 ) -> list[dict[str, Any]]:
     if true_coach_workout is None:
         return []
-    return [
-        target
-        for target in (
-            _target_to_dict(item) for item in _sort_targets(list(true_coach_workout.workout_items))
-        )
-        if target is not None
-    ]
+    sorted_items = _sort_targets(list(true_coach_workout.workout_items))
+    targets: list[dict[str, Any]] = []
+    for item in sorted_items:
+        target = _target_to_dict(item)
+        if target is not None:
+            targets.append(target)
+    return targets
 
 
 def _set_to_dict(set_: HevyAppSets) -> dict[str, Any]:
