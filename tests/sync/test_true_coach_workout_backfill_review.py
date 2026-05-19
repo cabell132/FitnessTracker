@@ -33,6 +33,7 @@ from fitness_tracker.database.models.true_coach import TrueCoachWorkout, TrueCoa
 from fitness_tracker.sync_review.true_coach_workout_backfill import (
     WorkoutBackfillApplyError,
     TrueCoachWorkoutBackfillReviewService,
+    _omitted_movement_names,
 )
 
 
@@ -1556,6 +1557,21 @@ def test_workout_backfill_apply_persists_synthetic_tracker_items_for_split_circu
             for item in tracker_items
             for set_row in sorted(item.sets, key=lambda row: row.index)
         ] == [1, 2, 3, 4, 5, 6, 7, 8, 9]
+
+
+@pytest.mark.parametrize(
+    ("comment", "expected"),
+    [
+        ("W/o Bike", {"bike": "W/o Bike"}),
+        ("2 Rounds w/o Bike", {"bike": "w/o Bike"}),
+        ("2 Rounds\nwithout Bike", {"bike": "without Bike"}),
+    ],
+)
+def test_omitted_movement_names_extracts_comment_suffixes(
+    comment: str,
+    expected: dict[str, str],
+) -> None:
+    assert _omitted_movement_names(comment) == expected
 
 
 def test_workout_backfill_apply_does_not_create_synthetic_tracker_item_for_inline_omission(

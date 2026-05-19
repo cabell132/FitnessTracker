@@ -66,6 +66,10 @@ _REPLACEMENT_MOVEMENT_PATTERNS = (
     r"(?P<replacement>.+)",
     r"(?:w/o|without|no)\s+(?P<omitted>.+?),?\s+(?P<replacement>.+?)\s+instead",
 )
+_OMITTED_MOVEMENT_PATTERN = re.compile(
+    r"(?P<source>(?:w/o|without|no)\s+(?P<name>.+))$",
+    flags=re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -1006,11 +1010,7 @@ def _round_time_seconds(segment: str) -> int | None:
 def _omitted_movement_names(comment: str) -> dict[str, str]:
     omitted: dict[str, str] = {}
     for segment in _comment_segments(comment):
-        match = re.search(
-            r"(?P<source>(?:w/o|without|no)\s+(?P<name>.+))$",
-            segment,
-            re.IGNORECASE,
-        )
+        match = _OMITTED_MOVEMENT_PATTERN.search(segment)
         if match is None:
             continue
         name = match.group("name").strip()
