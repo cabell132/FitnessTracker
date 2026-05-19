@@ -122,8 +122,8 @@ Review artifacts should separate deterministic evidence from judgement:
 The first Agentic implementation should target one explicit Hevy Workout id:
 
 ```bash
-uv run fitness-tracker sync-review hevy-to-truecoach --hevy-workout-id HEVY_ID
-uv run fitness-tracker sync-apply hevy-to-truecoach --hevy-workout-id HEVY_ID --decisions reports/sync-review/hevy-to-truecoach/HEVY_ID/result-decisions.json
+uv run fitness-tracker sync-review hevy-to-truecoach-results --workout-id HEVY_ID
+uv run fitness-tracker sync-apply hevy-to-truecoach-results --workout-id HEVY_ID --decisions reports/sync-review/hevy-to-truecoach-results/HEVY_ID/result-decisions.json
 ```
 
 Candidate discovery can be added later after the single-Workout review and
