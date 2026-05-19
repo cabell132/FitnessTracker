@@ -22,8 +22,8 @@ from fitness_tracker.database.models.hevy_app import HevyAppSets, HevyAppWorkout
 from fitness_tracker.database.models.true_coach import TrueCoachWorkout, TrueCoachWorkoutItem
 from fitness_tracker.database.tx import Tx
 from fitness_tracker.sync._circuit_block_parser import (
-    ParsedCircuitMovement,
     ParsedCircuitBlock,
+    ParsedCircuitMovement,
     parse_circuit_block,
 )
 from fitness_tracker.sync._true_coach_html import (
@@ -33,11 +33,12 @@ from fitness_tracker.sync._true_coach_html import (
 )
 from fitness_tracker.sync.ports import HevyRoutineWriter
 from fitness_tracker.sync_review.split_circuit.core import (
+    SetRow,
     SplitCircuitExercisePlan,
     SplitCircuitPrescription,
     SplitCircuitTemplateRef,
     SplitCircuitTemplateRequirement,
-    plan_prescription_split_circuit,
+    plan_parsed_split_circuit,
 )
 
 SET_DISPLAY_KEYS = ("type", "weight_kg", "reps", "distance_meters", "duration_seconds")
@@ -447,7 +448,8 @@ class TrueCoachToHevyReviewService:
                 [_split_requirement(required_template) for required_template in required_templates],
             )
 
-        split_plan = plan_prescription_split_circuit(
+        split_plan = plan_parsed_split_circuit(
+            parsed_block=parsed_block,
             prescription=SplitCircuitPrescription(
                 name=item.name or "",
                 text=item.info or "",
@@ -455,16 +457,15 @@ class TrueCoachToHevyReviewService:
             ),
             resolve_template=resolve_template,
         )
-        if split_plan is None:
-            return []
 
         blocks: list[PlannedBlock] = []
         block_kind = _circuit_block_kind(parsed_block)
-        movements_by_source_text = {
-            movement.source_text: movement for movement in parsed_block.movements
-        }
         for index, exercise in enumerate(split_plan.exercises, start=1):
-            movement = movements_by_source_text[exercise.source_text]
+            movement = ParsedCircuitMovement(
+                name=exercise.name,
+                target=exercise.target,
+                source_text=exercise.source_text,
+            )
             template = _hevy_template_for_split_exercise(uow, exercise)
             required_templates = [
                 _required_template_from_split(requirement, source_workout_item_id=item.id)
@@ -1244,8 +1245,14 @@ def _hevy_template_for_split_exercise(
     return None
 
 
-def _post_routine_set_from_split_row(row: dict[str, int | float | str]) -> PostRoutinesRequestSet:
-    return PostRoutinesRequestSet(**cast(Any, row))
+def _post_routine_set_from_split_row(row: SetRow) -> PostRoutinesRequestSet:
+    return PostRoutinesRequestSet(
+        type=cast(Literal["normal", "warmup", "failure", "dropset"], row.get("type", "normal")),
+        weight_kg=cast(float | None, row.get("weight_kg")),
+        reps=cast(int | None, row.get("reps")),
+        distance_meters=cast(int | None, row.get("distance_meters")),
+        duration_seconds=cast(int | None, row.get("duration_seconds")),
+    )
 
 
 def _is_placeholder_template(template: HevyAppExercise) -> bool:

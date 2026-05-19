@@ -130,6 +130,30 @@ def plan_prescription_split_circuit(
     if parsed_block is None:
         return None
 
+    return plan_parsed_split_circuit(
+        parsed_block=parsed_block,
+        prescription=prescription,
+        resolve_template=resolve_template,
+    )
+
+
+def plan_parsed_split_circuit(
+    *,
+    parsed_block: ParsedCircuitBlock,
+    prescription: SplitCircuitPrescription,
+    resolve_template: TemplateResolver,
+) -> SplitCircuitPlan:
+    """Generate a Split Circuit plan from an already parsed block.
+
+    Args:
+        parsed_block (ParsedCircuitBlock): Structured Circuit or AMRAP parse result.
+        prescription (SplitCircuitPrescription): Original prescription metadata.
+        resolve_template (TemplateResolver): Callback that resolves each generated
+            exercise name to plain template evidence.
+
+    Returns:
+        SplitCircuitPlan: Split plan for the parsed multi-exercise block.
+    """
     exercises = tuple(
         _exercise_plan(
             parsed_block=parsed_block,
