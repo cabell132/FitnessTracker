@@ -9,7 +9,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from functools import cache
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, Literal
 
 from fitness_tracker.apis.hevy_app.types import (
     PostRoutinesRequestBody,
@@ -1247,11 +1247,11 @@ def _hevy_template_for_split_exercise(
 
 def _post_routine_set_from_split_row(row: SetRow) -> PostRoutinesRequestSet:
     return PostRoutinesRequestSet(
-        type=cast(Literal["normal", "warmup", "failure", "dropset"], row.get("type", "normal")),
-        weight_kg=cast(float | None, row.get("weight_kg")),
-        reps=cast(int | None, row.get("reps")),
-        distance_meters=cast(int | None, row.get("distance_meters")),
-        duration_seconds=cast(int | None, row.get("duration_seconds")),
+        type=row.get("type", "normal"),
+        weight_kg=row.get("weight_kg"),
+        reps=row.get("reps"),
+        distance_meters=row.get("distance_meters"),
+        duration_seconds=row.get("duration_seconds"),
     )
 
 

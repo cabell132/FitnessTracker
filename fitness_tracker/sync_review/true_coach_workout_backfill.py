@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any
 
 from sqlalchemy import select
 
@@ -38,6 +38,7 @@ from fitness_tracker.sync._circuit_block_parser import (
 from fitness_tracker.sync._true_coach_html import build_superset_index, parse_workout_order
 from fitness_tracker.sync.ports import HevyWorkoutWriter
 from fitness_tracker.sync_review.split_circuit.core import (
+    AGENT_DECISION_BLOCKER_PREFIX,
     SetRow,
     SplitCircuitExercisePlan,
     SplitCircuitPlan,
@@ -878,9 +879,8 @@ def _circuit_review_items(context: CircuitReviewContext) -> list[BackfillReviewI
 def _split_circuit_plan(context: CircuitReviewContext) -> SplitCircuitPlan:
     def resolve_template(
         movement_name: str,
-        source_text: str,
+        _source_text: str,
     ) -> tuple[SplitCircuitTemplateRef | None, list[SplitCircuitTemplateRequirement]]:
-        del source_text
         matches = _matching_choice_templates(movement_name, context.templates)
         template = matches[0] if len(matches) == 1 else None
         return _split_template_ref(template), []
@@ -923,7 +923,7 @@ def _agent_decision_blockers(exercise: SplitCircuitExercisePlan) -> list[str]:
     return [
         blocker
         for blocker in exercise.blockers
-        if blocker.startswith("Circuit block requires Agent decision: ")
+        if blocker.startswith(AGENT_DECISION_BLOCKER_PREFIX)
     ]
 
 
@@ -1007,11 +1007,11 @@ def _matching_omission_comment(
 
 def _workout_set_from_split_row(row: SetRow) -> PostWorkoutsRequestSet:
     return PostWorkoutsRequestSet(
-        type=cast(Literal["normal", "warmup", "failure", "dropset"], row.get("type", "normal")),
-        weight_kg=cast(float | None, row.get("weight_kg")),
-        reps=cast(int | None, row.get("reps")),
-        distance_meters=cast(int | None, row.get("distance_meters")),
-        duration_seconds=cast(int | None, row.get("duration_seconds")),
+        type=row.get("type", "normal"),
+        weight_kg=row.get("weight_kg"),
+        reps=row.get("reps"),
+        distance_meters=row.get("distance_meters"),
+        duration_seconds=row.get("duration_seconds"),
     )
 
 
@@ -1757,7 +1757,7 @@ def _validate_apply_request(context: ApplyRequestValidationContext) -> None:
         for item in context.plan.get("items", [])
         for blocker in item.get("blockers", [])
         if _request_exercise_template_id(item, context.decisions) is None
-        or blocker.startswith("Circuit block requires Agent decision: ")
+        or blocker.startswith(AGENT_DECISION_BLOCKER_PREFIX)
     ]
     blockers.extend(context.decision_validation.get("blockers", []))
     workout = context.request_body.workout

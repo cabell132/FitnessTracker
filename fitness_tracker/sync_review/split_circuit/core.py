@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, TypedDict
 
 from fitness_tracker.sync._circuit_block_parser import (
     ParsedCircuitBlock,
@@ -15,7 +15,18 @@ from fitness_tracker.sync._circuit_block_parser import (
 
 SplitCircuitKind = Literal["circuit", "amrap"]
 TemplateRequirementStatus = Literal["existing", "missing", "ambiguous"]
-SetRow = dict[str, int | float | str]
+SetRowType = Literal["normal", "warmup", "failure", "dropset"]
+AGENT_DECISION_BLOCKER_PREFIX = "Circuit block requires Agent decision: "
+
+
+class SetRow(TypedDict, total=False):
+    """Plain set row produced by Split Circuit planning."""
+
+    type: SetRowType
+    weight_kg: float
+    reps: int
+    distance_meters: int
+    duration_seconds: int
 
 
 @dataclass(frozen=True)
@@ -252,8 +263,7 @@ def _blockers(context: _BlockerContext) -> tuple[str, ...]:
     )
     if context.agent_decision_reason is not None:
         blockers.append(
-            "Circuit block requires Agent decision: "
-            f"{context.agent_decision_reason or 'unspecified'}"
+            f"{AGENT_DECISION_BLOCKER_PREFIX}{context.agent_decision_reason or 'unspecified'}"
         )
     return tuple(blockers)
 
