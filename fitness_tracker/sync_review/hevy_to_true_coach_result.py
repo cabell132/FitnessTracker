@@ -69,16 +69,6 @@ class DecisionValidationState:
     used_target_ids: dict[int, int]
 
 
-@dataclass(frozen=True)
-class RequestableSyncContext:
-    """Inputs for deciding whether one reviewed item should be in the request."""
-
-    item: dict[str, Any]
-    decision: dict[str, Any]
-    targets: dict[int, dict[str, Any]]
-    allow_partial: bool
-
-
 class HevyToTrueCoachResultReviewService:
     """Create review artifacts for one performed Hevy Workout."""
 
@@ -497,45 +487,43 @@ def _build_true_coach_update_request(
 ) -> dict[str, Any]:
     decision_items = _decision_items_by_hevy_id(decisions)
     targets = _target_items_by_id(plan)
-    updates = [
-        _true_coach_update_operation(
-            item,
-            decision_items.get(item["hevy_workout_item_id"], {}),
-            targets,
-        )
-        for item in plan["items"]
-        if _is_requestable_sync_item(
-            RequestableSyncContext(
-                item=item,
-                decision=decision_items.get(item["hevy_workout_item_id"], {}),
-                targets=targets,
-                allow_partial=bool(decisions.get("allow_partial_apply")),
+    allow_partial = bool(decisions.get("allow_partial_apply"))
+    updates = []
+    for item in plan["items"]:
+        decision = decision_items.get(item["hevy_workout_item_id"], {})
+        if not _is_sync_item_with_result(item, decision):
+            continue
+        if allow_partial and not _is_safe_partial_sync_item(item, decision, targets):
+            continue
+        updates.append(
+            _true_coach_update_operation(
+                item,
+                decision,
+                targets,
             )
         )
-    ]
     return {
         "workout_id": plan["workout"]["true_coach_workout_id"],
         "hevy_workout_id": plan["workout"]["hevy_workout_id"],
-        "mark_workout_completed": bool(
-            decisions.get("approve_completion") and not decisions.get("allow_partial_apply")
-        ),
+        "mark_workout_completed": bool(decisions.get("approve_completion") and not allow_partial),
         "update_workout_items": updates,
     }
 
 
-def _is_requestable_sync_item(context: RequestableSyncContext) -> bool:
-    if (
-        context.decision.get("action", "sync") != "sync"
-        or context.item.get("proposed_result_text") is None
-    ):
-        return False
-    if not context.allow_partial:
-        return True
-    target_id = _effective_target_id(context.item, context.decision)
+def _is_sync_item_with_result(item: dict[str, Any], decision: dict[str, Any]) -> bool:
+    return decision.get("action", "sync") == "sync" and item.get("proposed_result_text") is not None
+
+
+def _is_safe_partial_sync_item(
+    item: dict[str, Any],
+    decision: dict[str, Any],
+    targets: dict[int, dict[str, Any]],
+) -> bool:
+    target_id = _effective_target_id(item, decision)
     unresolved_item_blockers = [
-        blocker for blocker in context.item["blockers"] if not _is_target_mapping_blocker(blocker)
+        blocker for blocker in item["blockers"] if not _is_target_mapping_blocker(blocker)
     ]
-    return target_id in context.targets and not unresolved_item_blockers
+    return target_id in targets and not unresolved_item_blockers
 
 
 def _true_coach_update_operation(
