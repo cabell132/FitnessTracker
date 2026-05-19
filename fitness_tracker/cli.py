@@ -309,7 +309,7 @@ def _hevy_exercise_template_command_handler(
     return handlers.get(command)
 
 
-def _add_truecoach_parser(subparsers: Any) -> None:  # noqa: PLR0915
+def _add_truecoach_parser(subparsers: Any) -> None:
     truecoach = subparsers.add_parser("truecoach")
     truecoach_subparsers = truecoach.add_subparsers(dest="truecoach_command")
 
@@ -342,7 +342,10 @@ def _add_truecoach_parser(subparsers: Any) -> None:  # noqa: PLR0915
 
     _add_truecoach_import_recent_parser(workout_subparsers.add_parser("import-recent"))
 
-    workout_items = truecoach_subparsers.add_parser("workout-items")
+    _add_truecoach_workout_items_parser(truecoach_subparsers.add_parser("workout-items"))
+
+
+def _add_truecoach_workout_items_parser(workout_items: argparse.ArgumentParser) -> None:
     workout_item_subparsers = workout_items.add_subparsers(dest="truecoach_workout_item_command")
 
     item_inspect = workout_item_subparsers.add_parser("inspect")
@@ -848,16 +851,17 @@ def _truecoach_workout_items_inspect(args: argparse.Namespace) -> int:
     item = client.workouts.inspect_workout_item(args.item_id)
     if item is None:
         return _emit_error(args, f"True Coach Workout Item not found: {args.item_id}", exit_code=2)
+    item_payload = _truecoach_workout_item_payload(item)
     payload = {
         "ok": True,
-        "workout_item": _truecoach_workout_item_payload(item),
+        "workout_item": item_payload,
         "warnings": [],
     }
     if args.json:
         return _emit_json_result(payload)
     _emit(
-        f"{payload['workout_item']['id']} | {payload['workout_item']['position']} | "
-        f"{payload['workout_item']['state']} | {payload['workout_item']['name']}"
+        f"{item_payload['id']} | {item_payload['position']} | "
+        f"{item_payload['state']} | {item_payload['name']}"
     )
     return 0
 
@@ -877,10 +881,11 @@ def _truecoach_workout_items_update_result(args: argparse.Namespace) -> int:
         response = response_model.model_dump() if response_model is not None else {}
         action = "updated"
     response_path = _write_response_artifact(args.response_path, response or {})
+    response_info = (response_path, response)
     payload = _truecoach_workout_item_update_summary(
         request,
         action=action,
-        response_info=(response_path, response),
+        response_info=response_info,
     )
     if args.json:
         return _emit_json_result(payload)
