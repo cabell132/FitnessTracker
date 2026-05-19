@@ -948,11 +948,12 @@ def _sync_review_hevy_to_truecoach_results(args: argparse.Namespace) -> int:
 def _sync_apply_hevy_to_truecoach_results(args: argparse.Namespace) -> int:
     store = Store(_engine_from_args(args))
     service = HevyToTrueCoachResultReviewService(store=store, output_root=Path(args.output_dir))
+    decisions_path = Path(args.decisions) if args.decisions else None
     try:
         if args.dry_run:
             result = service.write_apply_request(
                 args.workout_id,
-                decisions_path=Path(args.decisions) if args.decisions else None,
+                decisions_path=decisions_path,
             )
         else:
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -965,7 +966,7 @@ def _sync_apply_hevy_to_truecoach_results(args: argparse.Namespace) -> int:
                         password=cfg.truecoach_password.get_secret_value(),
                     )
                 ),
-                decisions_path=Path(args.decisions) if args.decisions else None,
+                decisions_path=decisions_path,
             )
     except (HevyToTrueCoachResultReviewError, HevyToTrueCoachResultApplyError) as exc:
         _emit(f"Error: {exc}")

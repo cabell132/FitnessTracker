@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, cast
 
@@ -21,6 +21,14 @@ from fitness_tracker.database.models.tracker import Workout as TrackerWorkout
 from fitness_tracker.database.models.true_coach import TrueCoachWorkout, TrueCoachWorkoutItem
 from fitness_tracker.sync.hevy_true_coach.utils import mapping as result_formatters
 from fitness_tracker.sync.ports.true_coach_workout_item_writer import TrueCoachWorkoutItemWriter
+
+PARTIAL_APPLY_BLOCKER_PREFIXES = (
+    "Unsupported Hevy exercise type for True Coach result formatting",
+    "Missing Hevy exercise template for performed Hevy item",
+    "Missing True Coach Workout Item link for performed Hevy item",
+    "Ambiguous True Coach target for unlinked performed Hevy item",
+    "Completion approval is unsafe while result mapping blockers remain",
+)
 
 
 class HevyToTrueCoachResultReviewError(Exception):
@@ -158,7 +166,8 @@ class HevyToTrueCoachResultReviewService:
         validation = _load_json_file(bundle.decision_validation_path)
         _validate_apply_request(validation, decisions)
         request = _build_true_coach_update_request(plan, decisions)
-        _add_apply_report(request, plan, decisions)
+        report = _apply_report(plan, decisions, request)
+        request.update(report)
         request_path = bundle.directory / "truecoach-update-request.json"
         _write_json(request_path, request)
         return HevyToTrueCoachResultApplyResult(
@@ -166,9 +175,9 @@ class HevyToTrueCoachResultReviewService:
             request_path=request_path,
             request=request,
             action="dry_run",
-            updated_true_coach_workout_item_ids=_updated_true_coach_item_ids(request),
-            omitted_hevy_workout_item_ids=_omitted_hevy_item_ids(plan, decisions),
-            unresolved_hevy_workout_item_ids=_unresolved_hevy_item_ids(plan, decisions, request),
+            updated_true_coach_workout_item_ids=report["updated_true_coach_workout_item_ids"],
+            omitted_hevy_workout_item_ids=report["omitted_hevy_workout_item_ids"],
+            unresolved_hevy_workout_item_ids=report["unresolved_hevy_workout_item_ids"],
         )
 
     def apply(
@@ -197,15 +206,7 @@ class HevyToTrueCoachResultReviewService:
             )
         if result.request["mark_workout_completed"]:
             workout_item_writer.mark_workout_completed(int(result.request["workout_id"]))
-        return HevyToTrueCoachResultApplyResult(
-            review_bundle=result.review_bundle,
-            request_path=result.request_path,
-            request=result.request,
-            action="applied",
-            updated_true_coach_workout_item_ids=result.updated_true_coach_workout_item_ids,
-            omitted_hevy_workout_item_ids=result.omitted_hevy_workout_item_ids,
-            unresolved_hevy_workout_item_ids=result.unresolved_hevy_workout_item_ids,
-        )
+        return replace(result, action="applied")
 
 
 def _write_bundle(
@@ -534,15 +535,7 @@ def _validate_apply_request(validation: dict[str, Any], decisions: dict[str, Any
 
 
 def _is_partial_apply_blocker(blocker: str) -> bool:
-    return blocker.startswith(
-        (
-            "Unsupported Hevy exercise type for True Coach result formatting",
-            "Missing Hevy exercise template for performed Hevy item",
-            "Missing True Coach Workout Item link for performed Hevy item",
-            "Ambiguous True Coach target for unlinked performed Hevy item",
-            "Completion approval is unsafe while result mapping blockers remain",
-        )
-    )
+    return blocker.startswith(PARTIAL_APPLY_BLOCKER_PREFIXES)
 
 
 def _build_true_coach_update_request(
@@ -583,18 +576,20 @@ def _updated_true_coach_item_ids(request: dict[str, Any]) -> list[int]:
     ]
 
 
-def _add_apply_report(
-    request: dict[str, Any],
+def _apply_report(
     plan: dict[str, Any],
     decisions: dict[str, Any],
-) -> None:
-    request["updated_true_coach_workout_item_ids"] = _updated_true_coach_item_ids(request)
-    request["omitted_hevy_workout_item_ids"] = _omitted_hevy_item_ids(plan, decisions)
-    request["unresolved_hevy_workout_item_ids"] = _unresolved_hevy_item_ids(
-        plan,
-        decisions,
-        request,
-    )
+    request: dict[str, Any],
+) -> dict[str, list[int]]:
+    return {
+        "updated_true_coach_workout_item_ids": _updated_true_coach_item_ids(request),
+        "omitted_hevy_workout_item_ids": _omitted_hevy_item_ids(plan, decisions),
+        "unresolved_hevy_workout_item_ids": _unresolved_hevy_item_ids(
+            plan,
+            decisions,
+            request,
+        ),
+    }
 
 
 def _omitted_hevy_item_ids(plan: dict[str, Any], decisions: dict[str, Any]) -> list[int]:
