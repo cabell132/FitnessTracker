@@ -59,7 +59,7 @@ Also accept natural day arguments such as `today`, `tomorrow`, or `yesterday`, b
    For each missing mapping or likely template gap, fuzzy-search remote Hevy first:
 
    ```bash
-   uv run fitness-tracker hevy-templates fuzzy-find --title "Template Title" --limit 10
+   uv run fitness-tracker hevy exercise-templates fuzzy-find --title "Template Title" --limit 10
    ```
 
    If a suitable Hevy template already exists, persist the True Coach to Hevy exercise
@@ -83,19 +83,19 @@ Also accept natural day arguments such as `today`, `tomorrow`, or `yesterday`, b
    First dry-run:
 
    ```bash
-   uv run fitness-tracker hevy-templates ensure-from-plan reports/sync-review/truecoach-to-hevy/WORKOUT_ID/plan.json --dry-run
+   uv run fitness-tracker hevy exercise-templates ensure-from-plan reports/sync-review/truecoach-to-hevy/WORKOUT_ID/plan.json --dry-run
    ```
 
    If the dry-run is clean and templates need creating, run:
 
    ```bash
-   uv run fitness-tracker hevy-templates ensure-from-plan reports/sync-review/truecoach-to-hevy/WORKOUT_ID/plan.json --yes
+   uv run fitness-tracker hevy exercise-templates ensure-from-plan reports/sync-review/truecoach-to-hevy/WORKOUT_ID/plan.json --yes
    ```
 
    If a Hevy template create returns HTTP 200/201 but local response parsing fails, do not retry the POST immediately. Verify remotely whether the template was created:
 
    ```bash
-   uv run fitness-tracker hevy-templates fuzzy-find --title "Template Title" --limit 10
+   uv run fitness-tracker hevy exercise-templates fuzzy-find --title "Template Title" --limit 10
    ```
 
    If it exists remotely, persist the discovered template ID locally with

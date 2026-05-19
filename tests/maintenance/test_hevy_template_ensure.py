@@ -39,7 +39,8 @@ def test_ensure_from_plan_dry_run_reports_missing_templates_without_writes(
 
     exit_code = cli.main(
         [
-            "hevy-templates",
+            "hevy",
+            "exercise-templates",
             "ensure-from-plan",
             str(plan_path),
             "--database-url",
@@ -67,7 +68,8 @@ def test_ensure_from_plan_yes_creates_and_persists_missing_template(
 
     exit_code = cli.main(
         [
-            "hevy-templates",
+            "hevy",
+            "exercise-templates",
             "ensure-from-plan",
             str(plan_path),
             "--database-url",
@@ -102,7 +104,8 @@ def test_ensure_from_plan_skips_existing_template(
 
     exit_code = cli.main(
         [
-            "hevy-templates",
+            "hevy",
+            "exercise-templates",
             "ensure-from-plan",
             str(plan_path),
             "--database-url",
@@ -130,7 +133,8 @@ def test_ensure_from_plan_refuses_ambiguous_templates_without_writes(
 
     exit_code = cli.main(
         [
-            "hevy-templates",
+            "hevy",
+            "exercise-templates",
             "ensure-from-plan",
             str(plan_path),
             "--database-url",

@@ -215,10 +215,8 @@ Platform primitive command conventions:
 - Resource-first command groups are preferred, such as `workouts inspect`,
   `workout-items update-result`, `routines inspect`, and
   `exercise-templates find`.
-- Hevy exercise template commands should live under
-  `fitness-tracker hevy exercise-templates ...`. The older standalone
-  `fitness-tracker hevy-templates ...` namespace should be removed as a hard
-  break rather than kept as a compatibility alias.
+- Hevy exercise template commands live under
+  `fitness-tracker hevy exercise-templates ...`.
 - Read commands should support stable JSON output for Agent use.
 - Platform `inspect`, `list`, and `find` commands should read remote API truth
   by default. Local tracker reads should be explicit through `cached` command

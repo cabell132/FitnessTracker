@@ -483,7 +483,7 @@ def test_hevy_routines_diff_json_hides_low_signal_differences_by_default(
     assert "No normalized differences found." in capsys.readouterr().out
 
 
-def test_hevy_templates_fuzzy_find_prints_ranked_matches(
+def test_hevy_exercise_templates_fuzzy_find_prints_ranked_matches(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -510,7 +510,8 @@ def test_hevy_templates_fuzzy_find_prints_ranked_matches(
 
     exit_code = cli.main(
         [
-            "hevy-templates",
+            "hevy",
+            "exercise-templates",
             "fuzzy-find",
             "--title",
             "Dumbbell Cuban Press",
@@ -522,6 +523,79 @@ def test_hevy_templates_fuzzy_find_prints_ranked_matches(
     assert exit_code == 0
     output = capsys.readouterr().out
     assert "old | Cuban Press (Dumbbell)" in output
+
+
+def test_hevy_exercise_templates_find_prints_exact_matches(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        cli,
+        "_find_remote_hevy_templates",
+        lambda title: [
+            {
+                "id": "template-1",
+                "title": title,
+                "type": "weight_reps",
+                "equipment": "dumbbell",
+                "primary_muscle_group": "shoulders",
+            }
+        ],
+    )
+
+    exit_code = cli.main(["hevy", "exercise-templates", "find", "--title", "Dumbbell Cuban Press"])
+
+    assert exit_code == 0
+    assert (
+        "template-1 | Dumbbell Cuban Press | weight_reps | dumbbell | shoulders"
+        in capsys.readouterr().out
+    )
+
+
+def test_hevy_exercise_templates_create_dry_run_reports_template(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    db_url = f"sqlite:///{db_path}"
+    Store(create_engine(db_url)).init_db()
+
+    exit_code = cli.main(
+        [
+            "hevy",
+            "exercise-templates",
+            "create",
+            "--title",
+            "Dumbbell Cuban Press",
+            "--type",
+            "weight_reps",
+            "--equipment",
+            "dumbbell",
+            "--muscle-group",
+            "shoulders",
+            "--database-url",
+            db_url,
+            "--dry-run",
+        ]
+    )
+
+    assert exit_code == 0
+    assert "Would create Hevy template: Dumbbell Cuban Press" in capsys.readouterr().out
+
+
+def test_hevy_templates_namespace_is_not_available(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit) as help_exit:
+        cli.main(["--help"])
+
+    assert help_exit.value.code == 0
+    assert "hevy-templates" not in capsys.readouterr().out
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main(["hevy-templates", "fuzzy-find", "--title", "Dumbbell Cuban Press"])
+
+    assert exc_info.value.code == 2
 
 
 def test_hevy_routine_folders_ensure_reuses_existing_folder(

@@ -87,14 +87,15 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0911, PLR0912,
         return _hevy_workouts(args)
     if args.command == "hevy" and args.hevy_command == "routine-folders":
         return _hevy_routine_folders(args)
-    if args.command == "hevy-templates" and args.hevy_templates_command == "ensure-from-plan":
-        return _ensure_hevy_templates_from_plan(args)
-    if args.command == "hevy-templates" and args.hevy_templates_command == "create":
-        return _create_hevy_template(args)
-    if args.command == "hevy-templates" and args.hevy_templates_command == "find":
-        return _find_hevy_templates(args)
-    if args.command == "hevy-templates" and args.hevy_templates_command == "fuzzy-find":
-        return _fuzzy_find_hevy_templates(args)
+    if args.command == "hevy" and args.hevy_command == "exercise-templates":
+        if args.exercise_templates_command == "ensure-from-plan":
+            return _ensure_hevy_templates_from_plan(args)
+        if args.exercise_templates_command == "create":
+            return _create_hevy_template(args)
+        if args.exercise_templates_command == "find":
+            return _find_hevy_templates(args)
+        if args.exercise_templates_command == "fuzzy-find":
+            return _fuzzy_find_hevy_templates(args)
     if args.command == "truecoach" and args.truecoach_command == "due":
         return _truecoach_due(args)
     if args.command == "truecoach" and args.truecoach_command == "import-recent":
@@ -146,7 +147,6 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="fitness-tracker")
     subparsers = parser.add_subparsers(dest="command")
     _add_hevy_parser(subparsers)
-    _add_hevy_templates_parser(subparsers)
     _add_truecoach_parser(subparsers)
     _add_exercise_links_parser(subparsers)
     _add_sync_review_parser(subparsers)
@@ -223,6 +223,8 @@ def _add_hevy_parser(subparsers: Any) -> None:  # noqa: PLR0915
     ensure.add_argument("--title", required=True)
     _add_json_output_argument(ensure)
 
+    _add_hevy_exercise_templates_parser(hevy_subparsers)
+
 
 def _add_json_output_argument(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
@@ -232,9 +234,9 @@ def _add_json_output_argument(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _add_hevy_templates_parser(subparsers: Any) -> None:  # noqa: PLR0915
-    hevy_templates = subparsers.add_parser("hevy-templates")
-    hevy_template_subparsers = hevy_templates.add_subparsers(dest="hevy_templates_command")
+def _add_hevy_exercise_templates_parser(subparsers: Any) -> None:  # noqa: PLR0915
+    exercise_templates = subparsers.add_parser("exercise-templates")
+    hevy_template_subparsers = exercise_templates.add_subparsers(dest="exercise_templates_command")
 
     ensure = hevy_template_subparsers.add_parser("ensure-from-plan")
     ensure.add_argument("plan_path")
