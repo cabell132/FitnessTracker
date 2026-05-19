@@ -197,3 +197,123 @@ asked to make a nuanced Hevy write, use the command recipes instead:
 
 Those workflows generate review artifacts, expose blockers, and keep heuristic
 judgement explicit before applying remote writes.
+
+## Platform primitive commands
+
+A platform primitive command performs one explicit operation against a single
+third-party platform or the local cache, without cross-platform judgement.
+
+Use platform primitive commands for focused inspection, discovery, and explicit
+single-platform writes. Keep nuanced cross-platform behaviour in `sync-review`
+and `sync-apply`, where review artifacts can separate deterministic evidence
+from Agent judgement.
+
+Platform primitive command conventions:
+
+- Commands live under the `fitness-tracker truecoach ...` and
+  `fitness-tracker hevy ...` namespaces.
+- Resource-first command groups are preferred, such as `workouts inspect`,
+  `workout-items update-result`, `routines inspect`, and
+  `exercise-templates find`.
+- Hevy exercise template commands should live under
+  `fitness-tracker hevy exercise-templates ...`. The older standalone
+  `fitness-tracker hevy-templates ...` namespace should be removed as a hard
+  break rather than kept as a compatibility alias.
+- Read commands should support stable JSON output for Agent use.
+- Platform `inspect`, `list`, and `find` commands should read remote API truth
+  by default. Local tracker reads should be explicit through `cached` command
+  variants.
+- Create and update commands should make mutation obvious in the command name,
+  accept structured request input where practical, and write response artifacts
+  when requested.
+- Destructive commands should require an explicit confirmation flag such as
+  `--yes`.
+- Existing commands may remain as backward-compatible aliases when they are
+  moved into resource-first groups.
+
+### Intended platform primitive surface
+
+This is the target command shape for platform primitives. Until implementation
+is complete, check `fitness-tracker --help` for currently available commands.
+
+True Coach Workouts:
+
+```bash
+fitness-tracker truecoach workouts list --state pending --limit 20 --json
+fitness-tracker truecoach workouts inspect --workout-id WORKOUT_ID --json
+fitness-tracker truecoach workouts inspect --workout-id WORKOUT_ID --json --raw
+fitness-tracker truecoach workouts cached --workout-id WORKOUT_ID --json
+fitness-tracker truecoach workouts due --date YYYY-MM-DD --json
+fitness-tracker truecoach workouts import-recent --pages 2 --json
+```
+
+True Coach Workout Items:
+
+```bash
+fitness-tracker truecoach workout-items inspect --item-id ITEM_ID --json
+fitness-tracker truecoach workout-items inspect --item-id ITEM_ID --json --raw
+fitness-tracker truecoach workout-items update-result --request REQUEST.json --dry-run --json
+fitness-tracker truecoach workout-items update-result --request REQUEST.json --yes --json
+fitness-tracker truecoach workout-items update-result --item-id ITEM_ID --text-file result.txt --dry-run --json
+fitness-tracker truecoach workout-items update-result --item-id ITEM_ID --text-file result.txt --yes --json
+```
+
+Hevy Workouts:
+
+```bash
+fitness-tracker hevy workouts inspect WORKOUT_ID --json
+fitness-tracker hevy workouts inspect WORKOUT_ID --json --raw
+fitness-tracker hevy workouts cached WORKOUT_ID --json
+```
+
+Hevy Routines:
+
+```bash
+fitness-tracker hevy routines find --title "Routine Title" --json
+fitness-tracker hevy routines inspect ROUTINE_ID --json
+fitness-tracker hevy routines inspect ROUTINE_ID --json --raw
+fitness-tracker hevy routines create-from-json request.json --response-path response.json --json
+fitness-tracker hevy routines update-from-json ROUTINE_ID request.json --response-path response.json --json
+fitness-tracker hevy routines delete ROUTINE_ID --yes --json
+fitness-tracker hevy routines diff-json ROUTINE_ID request.json --output-path diff.md
+```
+
+Hevy Routine Folders:
+
+```bash
+fitness-tracker hevy routine-folders ensure --title "True Coach" --json
+```
+
+Hevy Exercise Templates:
+
+```bash
+fitness-tracker hevy exercise-templates find --title "Template Title" --json
+fitness-tracker hevy exercise-templates fuzzy-find --title "Template Title" --limit 10 --json
+fitness-tracker hevy exercise-templates create \
+  --title "Template Title" \
+  --type weight_reps \
+  --equipment other \
+  --muscle-group full_body \
+  --dry-run \
+  --json
+fitness-tracker hevy exercise-templates create \
+  --title "Template Title" \
+  --type weight_reps \
+  --equipment other \
+  --muscle-group full_body \
+  --yes \
+  --json
+fitness-tracker hevy exercise-templates ensure-from-plan PLAN.json --dry-run --json
+fitness-tracker hevy exercise-templates ensure-from-plan PLAN.json --yes --json
+```
+
+Exercise Links:
+
+```bash
+fitness-tracker exercise-links set \
+  --truecoach-exercise-id TRUECOACH_EXERCISE_ID \
+  --hevy-template-id HEVY_TEMPLATE_ID \
+  --json
+fitness-tracker exercise-links inspect --truecoach-exercise-id TRUECOACH_EXERCISE_ID --json
+fitness-tracker exercise-links find-unlinked --json
+```
