@@ -29,6 +29,10 @@ LENGTH_SETS_PATTERN = re.compile(
     r"(?P<count>\d+)\s*[xX]\s*(?P<lengths>\d+)\s*L\b",
     re.IGNORECASE,
 )
+DISTANCE_SETS_PATTERN = re.compile(
+    r"(?P<count>\d+)\s*[xX]\s*(?P<distance>\d+)\s*(?:m|meters?)\b",
+    re.IGNORECASE,
+)
 DROPSET_REP_SEPARATOR_PATTERN = re.compile(r"\s*[+>]\s*")
 LOAD_PATTERN = re.compile(
     r"@\s*(?P<load>\d+(?:\.\d+)?)(?:\s*kg\b|(?!\s*[A-Za-z]))",
@@ -157,6 +161,7 @@ def parse_prescribed_sets(description: str) -> list[PostRoutinesRequestSet]:
     """
     duration_match = DURATION_SETS_PATTERN.search(description)
     length_match = LENGTH_SETS_PATTERN.search(description)
+    distance_match = DISTANCE_SETS_PATTERN.search(description)
     rep_match = PRESCRIBED_SETS_PATTERN.search(description)
     if duration_match and (rep_match is None or duration_match.start() <= rep_match.start()):
         return [
@@ -166,6 +171,8 @@ def parse_prescribed_sets(description: str) -> list[PostRoutinesRequestSet]:
         ]
     if length_match and (rep_match is None or length_match.start() <= rep_match.start()):
         return _length_sets(length_match)
+    if distance_match and (rep_match is None or distance_match.start() <= rep_match.start()):
+        return _distance_sets(distance_match)
 
     match = rep_match
     if not match:
@@ -197,6 +204,15 @@ def _duration_sets(match: re.Match[str]) -> list[PostRoutinesRequestSet]:
 def _length_sets(match: re.Match[str]) -> list[PostRoutinesRequestSet]:
     set_count = int(match.group("count"))
     distance_meters = int(match.group("lengths")) * 10
+    return [
+        PostRoutinesRequestSet(type="normal", distance_meters=distance_meters)
+        for _ in range(set_count)
+    ]
+
+
+def _distance_sets(match: re.Match[str]) -> list[PostRoutinesRequestSet]:
+    set_count = int(match.group("count"))
+    distance_meters = int(match.group("distance"))
     return [
         PostRoutinesRequestSet(type="normal", distance_meters=distance_meters)
         for _ in range(set_count)

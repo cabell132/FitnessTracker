@@ -10,12 +10,18 @@ from typing import Any, get_args
 
 import requests
 import urllib3
+from rapidfuzz import fuzz, process
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
-from fitness_tracker.apis import HevyAppClient
+from fitness_tracker.apis import HevyAppClient, TrueCoachClient
 from fitness_tracker.apis.hevy_app.exceptions import HevyAppAPIError
-from fitness_tracker.apis.hevy_app.types import PostRoutinesRequestBody
+from fitness_tracker.apis.hevy_app.types import (
+    PostRoutineFolderRequest,
+    PostRoutineFolderRequestBody,
+    PostRoutinesRequestBody,
+    PutRoutinesRequestBody,
+)
 from fitness_tracker.apis.hevy_app.types.common import (
     CUSTOM_EXERCISE_TYPES,
     EQUIPMENT_CATEGORIES,
@@ -24,6 +30,8 @@ from fitness_tracker.apis.hevy_app.types.common import (
 from fitness_tracker.config import Config
 from fitness_tracker.database import Store
 from fitness_tracker.database.config import create_database_engine
+from fitness_tracker.database.models import Exercise as TrackerExercise
+from fitness_tracker.database.models.hevy_app import HevyAppExercise
 from fitness_tracker.maintenance.hevy_exercise_migration import (
     HevyExerciseTemplateMigrationService,
     MigrationError,
@@ -36,6 +44,7 @@ from fitness_tracker.maintenance.hevy_template_ensure import (
     TemplateEnsureResult,
 )
 from fitness_tracker.sync.adapters import HevyRoutineWriterAdapter, HevyWorkoutWriterAdapter
+from fitness_tracker.sync.true_coach_tracker.sync import TrueCoachToFitnessTrackerSyncronizer
 from fitness_tracker.sync_review import (
     SyncApplyError,
     SyncReviewError,
@@ -45,9 +54,10 @@ from fitness_tracker.sync_review import (
     WorkoutBackfillApplyError,
     WorkoutBackfillReviewError,
 )
+from fitness_tracker.sync_review.true_coach_to_hevy import ApplyResult, _build_hevy_routine_request
 
 
-def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0911, PLR0912
+def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0911, PLR0912, PLR0915
     """Run the CLI.
 
     Args:
@@ -64,14 +74,22 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0911, PLR0912
         return _hevy_routines(args)
     if args.command == "hevy" and args.hevy_command == "workouts":
         return _hevy_workouts(args)
+    if args.command == "hevy" and args.hevy_command == "routine-folders":
+        return _hevy_routine_folders(args)
     if args.command == "hevy-templates" and args.hevy_templates_command == "ensure-from-plan":
         return _ensure_hevy_templates_from_plan(args)
     if args.command == "hevy-templates" and args.hevy_templates_command == "create":
         return _create_hevy_template(args)
     if args.command == "hevy-templates" and args.hevy_templates_command == "find":
         return _find_hevy_templates(args)
+    if args.command == "hevy-templates" and args.hevy_templates_command == "fuzzy-find":
+        return _fuzzy_find_hevy_templates(args)
     if args.command == "truecoach" and args.truecoach_command == "due":
         return _truecoach_due(args)
+    if args.command == "truecoach" and args.truecoach_command == "import-recent":
+        return _truecoach_import_recent(args)
+    if args.command == "exercise-links" and args.exercise_links_command == "set":
+        return _set_exercise_link(args)
     if args.command == "sync-review" and args.sync_review_command == "truecoach-to-hevy":
         return _sync_review_truecoach_to_hevy(args)
     if (
@@ -115,6 +133,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_hevy_parser(subparsers)
     _add_hevy_templates_parser(subparsers)
     _add_truecoach_parser(subparsers)
+    _add_exercise_links_parser(subparsers)
     _add_sync_review_parser(subparsers)
     _add_sync_apply_parser(subparsers)
     return parser
@@ -154,11 +173,27 @@ def _add_hevy_parser(subparsers: Any) -> None:  # noqa: PLR0915
     create.add_argument("request_path")
     create.add_argument("--response-path")
 
+    update = routine_subparsers.add_parser("update-from-json")
+    update.add_argument("routine_id")
+    update.add_argument("request_path")
+    update.add_argument("--response-path")
+    update.add_argument(
+        "--notes-if-empty",
+        default="Updated from JSON.",
+        help="Routine notes to use when the JSON has an empty notes field.",
+    )
+
     workouts = hevy_subparsers.add_parser("workouts")
     workout_subparsers = workouts.add_subparsers(dest="workout_command")
 
     workout_inspect = workout_subparsers.add_parser("inspect")
     workout_inspect.add_argument("workout_id")
+
+    folders = hevy_subparsers.add_parser("routine-folders")
+    folder_subparsers = folders.add_subparsers(dest="routine_folder_command")
+
+    ensure = folder_subparsers.add_parser("ensure")
+    ensure.add_argument("--title", required=True)
 
 
 def _add_hevy_templates_parser(subparsers: Any) -> None:  # noqa: PLR0915
@@ -205,6 +240,11 @@ def _add_hevy_templates_parser(subparsers: Any) -> None:  # noqa: PLR0915
     find = hevy_template_subparsers.add_parser("find")
     find.add_argument("--title", required=True)
 
+    fuzzy_find = hevy_template_subparsers.add_parser("fuzzy-find")
+    fuzzy_find.add_argument("--title", required=True)
+    fuzzy_find.add_argument("--limit", type=int, default=10)
+    fuzzy_find.add_argument("--min-score", type=float, default=55.0)
+
 
 def _add_truecoach_parser(subparsers: Any) -> None:
     truecoach = subparsers.add_parser("truecoach")
@@ -214,6 +254,36 @@ def _add_truecoach_parser(subparsers: Any) -> None:
     due.add_argument("--date", required=True)
     due.add_argument("--db", help="SQLite database path. Prefer --database-url.")
     due.add_argument("--database-url", help="SQLAlchemy database URL. Defaults to DATABASE_URL.")
+
+    import_recent = truecoach_subparsers.add_parser("import-recent")
+    import_recent.add_argument("--pages", type=int, default=1)
+    import_recent.add_argument("--per-page", type=int, default=20)
+    import_recent.add_argument("--order", choices=("asc", "desc"), default="desc")
+    import_recent.add_argument(
+        "--state",
+        dest="states",
+        action="append",
+        choices=("pending", "completed", "missed"),
+        help="State to import. May be repeated. Defaults to all operational states.",
+    )
+    import_recent.add_argument("--db", help="SQLite database path. Prefer --database-url.")
+    import_recent.add_argument(
+        "--database-url", help="SQLAlchemy database URL. Defaults to DATABASE_URL."
+    )
+
+
+def _add_exercise_links_parser(subparsers: Any) -> None:
+    exercise_links = subparsers.add_parser("exercise-links")
+    exercise_links_subparsers = exercise_links.add_subparsers(dest="exercise_links_command")
+
+    set_link = exercise_links_subparsers.add_parser("set")
+    set_link.add_argument("--truecoach-exercise-id", type=int, required=True)
+    set_link.add_argument("--hevy-template-id", required=True)
+    set_link.add_argument("--name")
+    set_link.add_argument("--db", help="SQLite database path. Prefer --database-url.")
+    set_link.add_argument(
+        "--database-url", help="SQLAlchemy database URL. Defaults to DATABASE_URL."
+    )
 
 
 def _add_sync_review_parser(  # noqa: PLR0915
@@ -304,6 +374,15 @@ def _add_sync_apply_parser(  # noqa: PLR0915
     truecoach_to_hevy.add_argument("--dry-run", action="store_true")
     truecoach_to_hevy.add_argument("--manual-request")
     truecoach_to_hevy.add_argument("--response-path")
+    truecoach_to_hevy.add_argument(
+        "--down-regulate-duration",
+        type=int,
+        help="Patch empty Down Regulate items with this duration in seconds.",
+    )
+    truecoach_to_hevy.add_argument(
+        "--folder-id",
+        help="Routine folder id to include when creating or writing the Hevy request.",
+    )
 
     workout_backfill = sync_apply_subparsers.add_parser("truecoach-workout-backfill")
     workout_backfill.add_argument("--workout-id", type=int, required=True)
@@ -437,6 +516,74 @@ def _find_hevy_templates(args: argparse.Namespace) -> int:
     return 0
 
 
+def _fuzzy_find_hevy_templates(args: argparse.Namespace) -> int:
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    try:
+        templates = _hevy_api_pages("/exercise_templates", "exercise_templates", page_size=100)
+    except HevyAppAPIError as exc:
+        _emit(f"Error: {exc}")
+        return 2
+    by_title = {str(template.get("title", "")): template for template in templates}
+    matches = process.extract(args.title, by_title.keys(), scorer=fuzz.WRatio, limit=args.limit)
+    emitted = False
+    for title, score, _ in matches:
+        if float(score) < args.min_score:
+            continue
+        template = by_title[title]
+        _emit(
+            f"{float(score):.1f} | {template.get('id')} | {title} | "
+            f"{template.get('type')} | {template.get('equipment')} | "
+            f"{template.get('primary_muscle_group')}"
+        )
+        emitted = True
+    if not emitted:
+        _emit("No fuzzy Hevy template matches.")
+    return 0
+
+
+def _set_exercise_link(args: argparse.Namespace) -> int:
+    cfg = Config.from_env()
+    hevy = HevyAppClient(
+        api_key=cfg.hevy_api_key.get_secret_value(),
+        web_api_key=cfg.hevy_web_api_key.get_secret_value(),
+    )
+    store = Store(_engine_from_args(args), hevy_client=hevy)
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    with store.unit_of_work() as uow:
+        template = (
+            uow.session.query(HevyAppExercise).filter_by(id=args.hevy_template_id).one_or_none()
+        )
+        if template is None:
+            remote = hevy.exercises.get_template(args.hevy_template_id)
+            if remote is None:
+                _emit(f"Error: Hevy template not found: {args.hevy_template_id}")
+                return 2
+            uow.hevy.add_exercise(remote)
+            uow.flush()
+            template = (
+                uow.session.query(HevyAppExercise).filter_by(id=args.hevy_template_id).one_or_none()
+            )
+        tracker = (
+            uow.session.query(TrackerExercise)
+            .filter_by(true_coach_id=args.truecoach_exercise_id)
+            .one_or_none()
+        )
+        if tracker is None:
+            tracker = TrackerExercise(
+                name=args.name
+                or (template.name if template is not None else args.hevy_template_id),
+                true_coach_id=args.truecoach_exercise_id,
+            )
+            uow.session.add(tracker)
+            uow.flush()
+        tracker.hevy_app_id = args.hevy_template_id
+        _emit(
+            f"Linked TrueCoach exercise {args.truecoach_exercise_id} "
+            f"to Hevy template {args.hevy_template_id}"
+        )
+    return 0
+
+
 def _truecoach_due(args: argparse.Namespace) -> int:
     engine = _engine_from_args(args)
     with engine.connect() as conn:
@@ -460,7 +607,47 @@ def _truecoach_due(args: argparse.Namespace) -> int:
     return 0
 
 
-def _hevy_routines(args: argparse.Namespace) -> int:
+def _truecoach_import_recent(args: argparse.Namespace) -> int:  # noqa: PLR0915
+    cfg = Config.from_env()
+    client = TrueCoachClient(
+        email=cfg.email,
+        password=cfg.truecoach_password.get_secret_value(),
+    )
+    store = Store(_engine_from_args(args))
+    syncer = TrueCoachToFitnessTrackerSyncronizer(store=store, source=client)
+    states = args.states or ["pending", "completed", "missed"]
+    imported_workouts = 0
+    imported_items = 0
+    imported_pages = 0
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    for page in range(1, args.pages + 1):
+        response = client.workouts.get(
+            order=args.order,
+            page=page,
+            per_page=args.per_page,
+            states=states,
+        )
+        if response is None:
+            _emit(f"page {page}: empty response")
+            break
+        syncer.sync_workouts(response)
+        imported_pages += 1
+        imported_workouts += len(response.workouts)
+        imported_items += len(response.workout_items)
+        _emit(
+            f"page {page}/{response.meta.total_pages}: "
+            f"workouts={len(response.workouts)} items={len(response.workout_items)}"
+        )
+        if page >= response.meta.total_pages:
+            break
+    _emit(
+        f"imported_pages={imported_pages} "
+        f"imported_workouts={imported_workouts} imported_items={imported_items}"
+    )
+    return 0
+
+
+def _hevy_routines(args: argparse.Namespace) -> int:  # noqa: PLR0911
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     try:
         if args.routine_command == "find":
@@ -471,6 +658,8 @@ def _hevy_routines(args: argparse.Namespace) -> int:
             return _delete_hevy_routine(args)
         if args.routine_command == "create-from-json":
             return _create_hevy_routine_from_json(args)
+        if args.routine_command == "update-from-json":
+            return _update_hevy_routine_from_json(args)
     except HevyAppAPIError as exc:
         _emit(f"Error: {exc}")
         return 2
@@ -487,6 +676,18 @@ def _hevy_workouts(args: argparse.Namespace) -> int:
         _emit(f"Error: {exc}")
         return 2
     _emit("Error: missing hevy workouts subcommand")
+    return 2
+
+
+def _hevy_routine_folders(args: argparse.Namespace) -> int:
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    try:
+        if args.routine_folder_command == "ensure":
+            return _ensure_hevy_routine_folder(args)
+    except HevyAppAPIError as exc:
+        _emit(f"Error: {exc}")
+        return 2
+    _emit("Error: missing hevy routine-folders subcommand")
     return 2
 
 
@@ -564,6 +765,43 @@ def _create_hevy_routine_from_json(args: argparse.Namespace) -> int:
     routine = _unwrap_routine(response)
     _emit(f"Created Hevy routine: {routine.get('id')}")
     _emit(f"Wrote Hevy response: {response_path}")
+    return 0
+
+
+def _update_hevy_routine_from_json(args: argparse.Namespace) -> int:
+    request_path = Path(args.request_path)
+    payload = json.loads(request_path.read_text(encoding="utf-8"))
+    routine_payload = payload.setdefault("routine", {})
+    routine_payload.pop("folder_id", None)
+    if not routine_payload.get("notes"):
+        routine_payload["notes"] = args.notes_if_empty
+    body = PutRoutinesRequestBody(**payload)
+    response = _hevy_api_json(
+        "PUT",
+        f"/routines/{args.routine_id}",
+        json_body=body.model_dump(exclude_none=True),
+    )
+    response_path = _routine_response_path(args.response_path, request_path)
+    response_path.write_text(
+        json.dumps(response, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    routine = _unwrap_routine(response)
+    _emit(f"Updated Hevy routine: {routine.get('id', args.routine_id)}")
+    _emit(f"Wrote Hevy response: {response_path}")
+    return 0
+
+
+def _ensure_hevy_routine_folder(args: argparse.Namespace) -> int:
+    existing = _find_remote_hevy_routine_folder(args.title)
+    if existing is not None:
+        _emit(f"{existing.get('id')} | {existing.get('title')}")
+        return 0
+    payload = PostRoutineFolderRequestBody(
+        routine_folder=PostRoutineFolderRequest(title=args.title)
+    ).model_dump()
+    response = _hevy_api_json("POST", "/routine_folders", json_body=payload)
+    folder = _unwrap_routine_folder(response)
+    _emit(f"{folder.get('id')} | {folder.get('title')}")
     return 0
 
 
@@ -757,7 +995,14 @@ def _sync_apply_truecoach_to_hevy(args: argparse.Namespace) -> int:  # noqa: PLR
     store = Store(_engine_from_args(args))
     service = TrueCoachToHevyReviewService(store=store, output_root=Path(args.output_dir))
     try:
-        if args.dry_run:
+        if args.down_regulate_duration is not None or args.folder_id is not None:
+            result = _write_patched_truecoach_to_hevy_request(args, service)
+            if not args.dry_run:
+                urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+                HevyRoutineWriterAdapter(_hevy_client_from_config()).create_routine(
+                    result.request_body
+                )
+        elif args.dry_run:
             result = service.write_apply_request(args.workout_id)
         else:
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -773,6 +1018,38 @@ def _sync_apply_truecoach_to_hevy(args: argparse.Namespace) -> int:  # noqa: PLR
     else:
         _emit(f"Created Hevy Routine from request: {result.request_path}")
     return 0
+
+
+def _write_patched_truecoach_to_hevy_request(
+    args: argparse.Namespace,
+    service: TrueCoachToHevyReviewService,
+) -> ApplyResult:
+    bundle = service.write_review(args.workout_id)
+    plan = _read_json(bundle.plan_path)
+    if args.down_regulate_duration is not None:
+        _patch_down_regulate_sets(plan, duration_seconds=args.down_regulate_duration)
+    request_body = _build_hevy_routine_request(plan)
+    if args.folder_id is not None:
+        request_body.routine.folder_id = args.folder_id
+    request_path = bundle.directory / "hevy-request.json"
+    request_path.write_text(
+        json.dumps(request_body.model_dump(exclude_none=True), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return ApplyResult(
+        review_bundle=bundle,
+        request_path=request_path,
+        request_body=request_body,
+    )
+
+
+def _patch_down_regulate_sets(plan: dict[str, Any], *, duration_seconds: int) -> None:
+    for item in plan.get("items", []):
+        if str(item.get("name", "")).casefold().strip() != "down regulate":
+            continue
+        if item.get("planned_blocks") or item.get("proposed_sets"):
+            continue
+        item["proposed_sets"] = [{"type": "normal", "duration_seconds": duration_seconds}]
 
 
 def _sync_apply_truecoach_workout_backfill(args: argparse.Namespace) -> int:  # noqa: PLR0915
@@ -873,6 +1150,14 @@ def _find_remote_hevy_templates(title: str) -> list[dict[str, Any]]:
     ]
 
 
+def _find_remote_hevy_routine_folder(title: str) -> dict[str, Any] | None:
+    normalized_title = title.casefold().strip()
+    for folder in _hevy_api_pages("/routine_folders", "routine_folders", page_size=10):
+        if str(folder.get("title", "")).casefold().strip() == normalized_title:
+            return folder
+    return None
+
+
 def _hevy_api_pages(endpoint: str, collection_key: str, *, page_size: int) -> list[dict[str, Any]]:
     page = 1
     results: list[dict[str, Any]] = []
@@ -880,7 +1165,7 @@ def _hevy_api_pages(endpoint: str, collection_key: str, *, page_size: int) -> li
         data = _hevy_api_json(
             endpoint=endpoint, method="GET", params={"page": page, "pageSize": page_size}
         )
-        results.extend(data.get(collection_key, []))
+        results.extend(data.get(collection_key, data.get("routines", [])))
         if page >= int(data.get("page_count", page)):
             return results
         page += 1
@@ -960,6 +1245,15 @@ def _unwrap_workout(response: dict[str, Any]) -> dict[str, Any]:
         return workout[0] if workout else {}
     if isinstance(workout, dict):
         return workout
+    return {}
+
+
+def _unwrap_routine_folder(response: dict[str, Any]) -> dict[str, Any]:
+    folder = response.get("routine_folder", response)
+    if isinstance(folder, list):
+        return folder[0] if folder else {}
+    if isinstance(folder, dict):
+        return folder
     return {}
 
 

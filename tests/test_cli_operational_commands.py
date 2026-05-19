@@ -12,6 +12,8 @@ from sqlalchemy import create_engine
 
 from fitness_tracker import cli
 from fitness_tracker.database import Store
+from fitness_tracker.database.models import Exercise as TrackerExercise
+from fitness_tracker.database.models.hevy_app import HevyAppExercise
 from fitness_tracker.database.models.true_coach import TrueCoachWorkout
 
 
@@ -184,3 +186,151 @@ def test_hevy_routines_create_from_json_validates_and_writes_response(
         "routine": [{"id": "routine-2"}]
     }
     assert "Created Hevy routine: routine-2" in capsys.readouterr().out
+
+
+def test_hevy_routines_update_from_json_strips_folder_and_nulls(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def fake_hevy_api_json(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        calls.append({"args": args, "kwargs": kwargs})
+        return {"routine": {"id": "routine-3"}}
+
+    request_path = tmp_path / "hevy-request.json"
+    request_path.write_text(
+        json.dumps(
+            {
+                "routine": {
+                    "title": "Routine",
+                    "folder_id": "folder-1",
+                    "notes": "",
+                    "exercises": [
+                        {
+                            "exercise_template_id": "row",
+                            "notes": "5 x 400m",
+                            "sets": [{"type": "normal", "distance_meters": 400}],
+                        }
+                    ],
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cli, "_hevy_api_json", fake_hevy_api_json)
+
+    exit_code = cli.main(["hevy", "routines", "update-from-json", "routine-3", str(request_path)])
+
+    assert exit_code == 0
+    assert calls[0]["args"] == ("PUT", "/routines/routine-3")
+    sent = calls[0]["kwargs"]["json_body"]
+    assert sent["routine"]["notes"] == "Updated from JSON."
+    assert "folder_id" not in sent["routine"]
+    assert "rep_range" not in sent["routine"]["exercises"][0]["sets"][0]
+    assert "Updated Hevy routine: routine-3" in capsys.readouterr().out
+
+
+def test_hevy_templates_fuzzy_find_prints_ranked_matches(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        cli,
+        "_hevy_api_pages",
+        lambda *args, **kwargs: [
+            {
+                "id": "old",
+                "title": "Cuban Press (Dumbbell)",
+                "type": "weight_reps",
+                "equipment": "dumbbell",
+                "primary_muscle_group": "shoulders",
+            },
+            {
+                "id": "other",
+                "title": "Lat Pulldown",
+                "type": "weight_reps",
+                "equipment": "machine",
+                "primary_muscle_group": "lats",
+            },
+        ],
+    )
+
+    exit_code = cli.main(
+        [
+            "hevy-templates",
+            "fuzzy-find",
+            "--title",
+            "Dumbbell Cuban Press",
+            "--limit",
+            "1",
+        ]
+    )
+
+    assert exit_code == 0
+    output = capsys.readouterr().out
+    assert "old | Cuban Press (Dumbbell)" in output
+
+
+def test_hevy_routine_folders_ensure_reuses_existing_folder(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        cli,
+        "_hevy_api_pages",
+        lambda *args, **kwargs: [{"id": 10, "title": "True Coach"}],
+    )
+
+    exit_code = cli.main(["hevy", "routine-folders", "ensure", "--title", "True Coach"])
+
+    assert exit_code == 0
+    assert "10 | True Coach" in capsys.readouterr().out
+
+
+def test_exercise_links_set_updates_join_table(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    db_url = f"sqlite:///{db_path}"
+    store = Store(create_engine(db_url))
+    store.init_db()
+    with store.unit_of_work() as uow:
+        uow.session.add(
+            HevyAppExercise(
+                id="hevy-row",
+                name="Rowing Machine",
+                type="distance_duration",
+                equipment="machine",
+            )
+        )
+        uow.session.add(TrackerExercise(name="Row", true_coach_id=123))
+
+    class DummyConfig:
+        email = "test@example.com"
+        hevy_api_key = type("Secret", (), {"get_secret_value": lambda self: "key"})()
+        hevy_web_api_key = type("Secret", (), {"get_secret_value": lambda self: "web"})()
+
+    monkeypatch.setattr(cli.Config, "from_env", lambda: DummyConfig())
+
+    exit_code = cli.main(
+        [
+            "exercise-links",
+            "set",
+            "--truecoach-exercise-id",
+            "123",
+            "--hevy-template-id",
+            "hevy-row",
+            "--database-url",
+            db_url,
+        ]
+    )
+
+    assert exit_code == 0
+    with store.unit_of_work() as uow:
+        row = uow.session.query(TrackerExercise).filter_by(true_coach_id=123).one()
+        assert row.hevy_app_id == "hevy-row"
+    assert "Linked TrueCoach exercise 123 to Hevy template hevy-row" in capsys.readouterr().out

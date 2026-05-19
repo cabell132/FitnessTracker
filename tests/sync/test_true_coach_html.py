@@ -214,3 +214,15 @@ def test_parse_prescribed_sets_treats_sled_lengths_as_distance() -> None:
         {"type": "normal", "distance_meters": 10},
         {"type": "normal", "distance_meters": 10},
     ]
+
+
+def test_parse_prescribed_sets_treats_meter_prescriptions_as_distance() -> None:
+    sets = parse_prescribed_sets("5 x 400m")
+
+    assert [set_.model_dump(exclude_none=True) for set_ in sets] == [
+        {"type": "normal", "distance_meters": 400},
+        {"type": "normal", "distance_meters": 400},
+        {"type": "normal", "distance_meters": 400},
+        {"type": "normal", "distance_meters": 400},
+        {"type": "normal", "distance_meters": 400},
+    ]
