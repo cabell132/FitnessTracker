@@ -210,8 +210,9 @@ class HevyToTrueCoachResultReviewService:
         should_complete = result.request["mark_workout_completed"] and not unresolved_hevy_item_ids
         if should_complete:
             workout_item_writer.mark_workout_completed(int(result.request["workout_id"]))
+        completion_requested = result.completion_status != "skipped"
         completion_status = _completion_status(
-            approve_completion=result.completion_status != "skipped",
+            approve_completion=completion_requested,
             unresolved_hevy_workout_item_ids=unresolved_hevy_item_ids,
             completion_allowed=should_complete,
         )
@@ -637,17 +638,15 @@ def _hevy_item_ids_by_target_id(
     decisions: dict[str, Any],
 ) -> dict[int, int]:
     decision_items = _decision_items_by_hevy_id(decisions)
-    return {
-        target_id: int(item["hevy_workout_item_id"])
-        for item in plan["items"]
-        if (
-            target_id := _effective_target_id(
-                item,
-                decision_items.get(item["hevy_workout_item_id"], {}),
-            )
+    hevy_item_ids_by_target_id = {}
+    for item in plan["items"]:
+        target_id = _effective_target_id(
+            item,
+            decision_items.get(item["hevy_workout_item_id"], {}),
         )
-        is not None
-    }
+        if target_id is not None:
+            hevy_item_ids_by_target_id[target_id] = int(item["hevy_workout_item_id"])
+    return hevy_item_ids_by_target_id
 
 
 def _apply_update_operations(
@@ -662,7 +661,7 @@ def _apply_update_operations(
     updated_item_ids: list[int] = []
     unresolved_hevy_item_ids = list(result.unresolved_hevy_workout_item_ids)
     for update in result.request["update_workout_items"]:
-        item_id, _request_body = _apply_update_operation(
+        item_id = _apply_update_operation(
             store,
             workout_item_writer,
             update,
@@ -680,13 +679,13 @@ def _apply_update_operation(
     store: Store,
     workout_item_writer: TrueCoachWorkoutItemWriter,
     update: dict[str, Any],
-) -> tuple[int | None, PutWorkoutItemRequest]:
+) -> int | None:
     body = update["body"]["workout_item"]
     request_body = PutWorkoutItemRequest.model_validate(body)
     try:
         workout_item_writer.update_workout_item(int(body["id"]), request_body)
         _persist_true_coach_workout_item_update(store, request_body)
-        return int(body["id"]), request_body
+        return int(body["id"])
     except TrueCoachAPIError as exc:
         if exc.status_code != 404:
             raise
@@ -696,10 +695,10 @@ def _apply_update_operation(
             request_body,
         )
         if repaired_request is None:
-            return None, request_body
+            return None
         workout_item_writer.update_workout_item(repaired_request.id, repaired_request)
         _persist_true_coach_workout_item_update(store, repaired_request)
-        return repaired_request.id, repaired_request
+        return repaired_request.id
 
 
 def _repair_stale_workout_item_request(
@@ -718,32 +717,48 @@ def _repair_stale_workout_item_request(
         uow.cross_domain.insert_tc_tracker_workout_items()
         uow.session.flush()
         refreshed_items = uow.true_coach.get_workout_items(workout_id=stale_request.workout_id)
-        candidates = [
-            item
-            for item in refreshed_items
-            if item.id != stale_request.id
-            and item.name == stale_request.name
-            and item.position == stale_request.position
-            and item.exercise_id == stale_request.exercise_id
-            and item.assessment_id == stale_request.assessment_id
-            and item.is_circuit == stale_request.is_circuit
-        ]
-        if len(candidates) != 1:
+        target = _matching_refreshed_workout_item(stale_request, refreshed_items)
+        if target is None:
             return None
-        target = candidates[0]
-        return PutWorkoutItemRequest(
-            id=cast(int, target.id),
-            workout_id=cast(int, target.workout_id),
-            name=cast(str, target.name),
-            info=str(target.info or ""),
-            result=stale_request.result,
-            is_circuit=cast(bool, target.is_circuit),
-            state="completed",
-            state_event="mark_as_completed",
-            position=int(target.position or 0),
-            assessment_id=cast(int | None, target.assessment_id),
-            exercise_id=cast(int | None, target.exercise_id),
-        )
+        return _repaired_workout_item_request(stale_request, target)
+
+
+def _matching_refreshed_workout_item(
+    stale_request: PutWorkoutItemRequest,
+    refreshed_items: list[TrueCoachWorkoutItem],
+) -> TrueCoachWorkoutItem | None:
+    candidates = [
+        item
+        for item in refreshed_items
+        if item.id != stale_request.id
+        and item.name == stale_request.name
+        and item.position == stale_request.position
+        and item.exercise_id == stale_request.exercise_id
+        and item.assessment_id == stale_request.assessment_id
+        and item.is_circuit == stale_request.is_circuit
+    ]
+    if len(candidates) != 1:
+        return None
+    return candidates[0]
+
+
+def _repaired_workout_item_request(
+    stale_request: PutWorkoutItemRequest,
+    target: TrueCoachWorkoutItem,
+) -> PutWorkoutItemRequest:
+    return PutWorkoutItemRequest(
+        id=cast(int, target.id),
+        workout_id=cast(int, target.workout_id),
+        name=cast(str, target.name),
+        info=str(target.info or ""),
+        result=stale_request.result,
+        is_circuit=cast(bool, target.is_circuit),
+        state="completed",
+        state_event="mark_as_completed",
+        position=int(target.position or 0),
+        assessment_id=cast(int | None, target.assessment_id),
+        exercise_id=cast(int | None, target.exercise_id),
+    )
 
 
 def _persist_true_coach_workout_item_update(
