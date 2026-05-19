@@ -639,13 +639,11 @@ def _find_hevy_templates(args: argparse.Namespace) -> int:
     except HevyAppAPIError as exc:
         _emit(f"Error: {exc}")
         return 2
+    if args.json:
+        return _emit_json_result(_exercise_templates_payload(templates))
     if not templates:
-        if args.json:
-            return _emit_json_result({"ok": True, "exercise_templates": [], "warnings": []})
         _emit("No matching Hevy templates.")
         return 0
-    if args.json:
-        return _emit_json_result({"ok": True, "exercise_templates": templates, "warnings": []})
     for template in templates:
         _emit(
             " | ".join(
@@ -670,32 +668,22 @@ def _fuzzy_find_hevy_templates(args: argparse.Namespace) -> int:
         return 2
     by_title = {str(template.get("title", "")): template for template in templates}
     matches = process.extract(args.title, by_title.keys(), scorer=fuzz.WRatio, limit=args.limit)
-    ranked_matches = [
-        (float(score), by_title[title])
-        for title, score, _ in matches
-        if float(score) >= args.min_score
-    ]
+    ranked_matches: list[tuple[float, dict[str, Any]]] = []
+    for title, score, _ in matches:
+        normalized_score = float(score)
+        if normalized_score >= args.min_score:
+            ranked_matches.append((normalized_score, by_title[title]))
     if args.json:
-        return _emit_json_result(
-            {
-                "ok": True,
-                "matches": [
-                    {"score": score, "exercise_template": template}
-                    for score, template in ranked_matches
-                ],
-                "warnings": [],
-            }
-        )
-    emitted = False
+        return _emit_json_result(_fuzzy_template_matches_payload(ranked_matches))
+    if not ranked_matches:
+        _emit("No fuzzy Hevy template matches.")
+        return 0
     for score, template in ranked_matches:
         _emit(
             f"{score:.1f} | {template.get('id')} | {template.get('title')} | "
             f"{template.get('type')} | {template.get('equipment')} | "
             f"{template.get('primary_muscle_group')}"
         )
-        emitted = True
-    if not emitted:
-        _emit("No fuzzy Hevy template matches.")
     return 0
 
 
@@ -1010,7 +998,7 @@ def _find_hevy_routines(args: argparse.Namespace) -> int:
 def _inspect_hevy_routine(args: argparse.Namespace) -> int:
     routine = _hevy_api_json("GET", f"/routines/{args.routine_id}")
     if args.raw:
-        return _emit_json_result({"ok": True, "raw": routine, "warnings": []})
+        return _emit_json_result(_raw_payload(routine))
     routine_data = _unwrap_routine(routine)
     exercises = routine_data.get("exercises", [])
     empty_set_blocks = _empty_set_block_positions(exercises)
@@ -1062,7 +1050,7 @@ def _routine_inspect_payload(routine_data: dict[str, Any]) -> dict[str, Any]:
 def _inspect_hevy_workout(args: argparse.Namespace) -> int:
     workout = _hevy_api_json("GET", f"/workouts/{args.workout_id}")
     if args.raw:
-        return _emit_json_result({"ok": True, "raw": workout, "warnings": []})
+        return _emit_json_result(_raw_payload(workout))
     workout_data = _unwrap_workout(workout)
     exercises = workout_data.get("exercises", [])
     empty_set_blocks = _empty_set_block_positions(exercises)
@@ -2151,6 +2139,24 @@ def _required_template_payload(template: RequiredTemplate) -> dict[str, Any]:
         "source_workout_item_ids": list(template.source_workout_item_ids),
         "matching_template_ids": list(template.matching_template_ids),
     }
+
+
+def _exercise_templates_payload(templates: list[dict[str, Any]]) -> dict[str, Any]:
+    return {"ok": True, "exercise_templates": templates, "warnings": []}
+
+
+def _fuzzy_template_matches_payload(
+    matches: list[tuple[float, dict[str, Any]]],
+) -> dict[str, Any]:
+    return {
+        "ok": True,
+        "matches": [{"score": score, "exercise_template": template} for score, template in matches],
+        "warnings": [],
+    }
+
+
+def _raw_payload(raw: Any) -> dict[str, Any]:
+    return {"ok": True, "raw": raw, "warnings": []}
 
 
 def _emit_json_result(
