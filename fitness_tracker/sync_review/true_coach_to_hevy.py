@@ -9,7 +9,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from functools import cache
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from fitness_tracker.apis.hevy_app.types import (
     PostRoutinesRequestBody,
@@ -32,6 +32,13 @@ from fitness_tracker.sync._true_coach_html import (
     parse_workout_order,
 )
 from fitness_tracker.sync.ports import HevyRoutineWriter
+from fitness_tracker.sync_review.split_circuit.core import (
+    SplitCircuitExercisePlan,
+    SplitCircuitPrescription,
+    SplitCircuitTemplateRef,
+    SplitCircuitTemplateRequirement,
+    plan_prescription_split_circuit,
+)
 
 SET_DISPLAY_KEYS = ("type", "weight_kg", "reps", "distance_meters", "duration_seconds")
 BLOCKING_REQUIRED_TEMPLATE_STATUSES = frozenset({"missing", "ambiguous"})
@@ -423,13 +430,49 @@ class TrueCoachToHevyReviewService:
         superset_id: int | None,
         parsed_block: ParsedCircuitBlock,
     ) -> list[PlannedBlock]:
-        blocks: list[PlannedBlock] = []
-        block_kind = _circuit_block_kind(parsed_block)
-        for index, movement in enumerate(parsed_block.movements, start=1):
+        def resolve_template(
+            movement_name: str,
+            source_text: str,
+        ) -> tuple[SplitCircuitTemplateRef | None, list[SplitCircuitTemplateRequirement]]:
+            movement = ParsedCircuitMovement(
+                name=movement_name,
+                target="",
+                source_text=source_text,
+            )
             template, required_templates = self._selected_template_for_circuit_movement(
                 uow, item, movement
             )
-            proposed_sets = _sets_for_circuit_movement(movement)
+            return (
+                _split_template_ref(template),
+                [_split_requirement(required_template) for required_template in required_templates],
+            )
+
+        split_plan = plan_prescription_split_circuit(
+            prescription=SplitCircuitPrescription(
+                name=item.name or "",
+                text=item.info or "",
+                inherit_superset_context=superset_id is not None,
+            ),
+            resolve_template=resolve_template,
+        )
+        if split_plan is None:
+            return []
+
+        blocks: list[PlannedBlock] = []
+        block_kind = _circuit_block_kind(parsed_block)
+        movements_by_source_text = {
+            movement.source_text: movement for movement in parsed_block.movements
+        }
+        for index, exercise in enumerate(split_plan.exercises, start=1):
+            movement = movements_by_source_text[exercise.source_text]
+            template = _hevy_template_for_split_exercise(uow, exercise)
+            required_templates = [
+                _required_template_from_split(requirement, source_workout_item_id=item.id)
+                for requirement in exercise.template_requirements
+            ]
+            proposed_sets = [
+                _post_routine_set_from_split_row(set_row) for set_row in exercise.set_rows
+            ]
             proposed_sets, set_provenance = _enrich_sets_from_history(uow, template, proposed_sets)
             blocks.append(
                 PlannedBlock(
@@ -446,17 +489,8 @@ class TrueCoachToHevyReviewService:
                     required_hevy_templates=required_templates,
                     proposed_sets=proposed_sets,
                     set_provenance=set_provenance,
-                    warnings=_circuit_movement_warnings(
-                        template=template,
-                        movement=movement,
-                        proposed_sets=proposed_sets,
-                    ),
-                    blockers=_circuit_movement_blockers(
-                        template=template,
-                        movement=movement,
-                        parsed_block=parsed_block,
-                    )
-                    + _required_template_blockers(required_templates),
+                    warnings=list(exercise.warnings),
+                    blockers=list(exercise.blockers),
                 )
             )
         return blocks
@@ -1153,6 +1187,67 @@ def _selected_template_for_movement(
     return None
 
 
+def _split_template_ref(template: HevyAppExercise | None) -> SplitCircuitTemplateRef | None:
+    if template is None:
+        return None
+    return SplitCircuitTemplateRef(
+        id=template.id,
+        name=template.name,
+        type=template.type,
+        equipment=template.equipment,
+    )
+
+
+def _split_requirement(
+    required_template: RequiredHevyTemplate,
+) -> SplitCircuitTemplateRequirement:
+    spec = required_template.spec
+    return SplitCircuitTemplateRequirement(
+        title=spec.title,
+        expected_type=spec.expected_type,
+        equipment_category=spec.equipment_category,
+        muscle_group=spec.muscle_group,
+        other_muscles=spec.other_muscles,
+        status=required_template.status,
+        matching_template_ids=required_template.matching_template_ids,
+    )
+
+
+def _required_template_from_split(
+    requirement: SplitCircuitTemplateRequirement,
+    *,
+    source_workout_item_id: int,
+) -> RequiredHevyTemplate:
+    return RequiredHevyTemplate(
+        spec=RequiredTemplateSpec(
+            title=requirement.title,
+            expected_type=requirement.expected_type,
+            equipment_category=requirement.equipment_category,
+            muscle_group=requirement.muscle_group,
+            other_muscles=requirement.other_muscles,
+        ),
+        status=requirement.status,
+        source_workout_item_ids=(source_workout_item_id,),
+        matching_template_ids=requirement.matching_template_ids,
+    )
+
+
+def _hevy_template_for_split_exercise(
+    uow: Tx,
+    exercise: SplitCircuitExercisePlan,
+) -> HevyAppExercise | None:
+    if exercise.selected_template is None:
+        return None
+    template = uow.session.get(HevyAppExercise, id=exercise.selected_template.id)
+    if isinstance(template, HevyAppExercise):
+        return template
+    return None
+
+
+def _post_routine_set_from_split_row(row: dict[str, int | float | str]) -> PostRoutinesRequestSet:
+    return PostRoutinesRequestSet(**cast(Any, row))
+
+
 def _is_placeholder_template(template: HevyAppExercise) -> bool:
     return template.name == HEVY_PLACEHOLDER_TEMPLATE_NAME
 
@@ -1161,62 +1256,6 @@ def _circuit_block_kind(parsed_block: ParsedCircuitBlock) -> PlannedBlockKind:
     if parsed_block.kind == "amrap":
         return "amrap_movement"
     return "circuit_movement"
-
-
-def _circuit_movement_warnings(
-    *,
-    template: HevyAppExercise | None,
-    movement: ParsedCircuitMovement,
-    proposed_sets: list[PostRoutinesRequestSet],
-) -> list[str]:
-    warnings: list[str] = []
-    if template is None:
-        warnings.append(NO_LINKED_TEMPLATE_WARNING)
-    if movement.target and not proposed_sets:
-        warnings.append(NO_DETERMINISTIC_SET_PARSER_WARNING)
-    return warnings
-
-
-def _circuit_movement_blockers(
-    *,
-    template: HevyAppExercise | None,
-    movement: ParsedCircuitMovement,
-    parsed_block: ParsedCircuitBlock,
-) -> list[str]:
-    blockers: list[str] = []
-    if template is None:
-        blockers.append(f"Missing required Hevy exercise mapping: {movement.name}")
-    if parsed_block.requires_agent_decision:
-        blockers.append(
-            "Circuit block requires Agent decision: "
-            f"{parsed_block.agent_decision_reason or 'unspecified'}"
-        )
-    return blockers
-
-
-def _sets_for_circuit_movement(
-    movement: ParsedCircuitMovement,
-) -> list[PostRoutinesRequestSet]:
-    target = movement.target.strip()
-    if not target:
-        return []
-    if match := re.fullmatch(r"(?P<reps>\d+)(?:\s+(?:each side|es))?", target, re.IGNORECASE):
-        return [PostRoutinesRequestSet(type="normal", reps=int(match.group("reps")))]
-    if match := re.fullmatch(r"(?P<distance>\d+)\s*(?:m|meters?)", target, re.IGNORECASE):
-        return [PostRoutinesRequestSet(type="normal", distance_meters=int(match.group("distance")))]
-    if match := re.fullmatch(
-        r"(?P<seconds>\d+)\s*(?:s|sec|secs|second|seconds)", target, re.IGNORECASE
-    ):
-        return [PostRoutinesRequestSet(type="normal", duration_seconds=int(match.group("seconds")))]
-    if match := re.fullmatch(
-        r"(?P<minutes>\d+)\s*(?:min|mins|minute|minutes)(?:\s+\w+)?",
-        target,
-        re.IGNORECASE,
-    ):
-        return [
-            PostRoutinesRequestSet(type="normal", duration_seconds=int(match.group("minutes")) * 60)
-        ]
-    return []
 
 
 def _circuit_movement_notes(
