@@ -12,6 +12,7 @@ from typing import Any, cast, get_args
 
 import requests
 import urllib3
+from pydantic import ValidationError
 from rapidfuzz import fuzz, process
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
@@ -29,7 +30,12 @@ from fitness_tracker.apis.hevy_app.types.common import (
     EQUIPMENT_CATEGORIES,
     MUSCLE_GROUPS,
 )
-from fitness_tracker.apis.true_coach.types import Workout, WorkoutResponse
+from fitness_tracker.apis.true_coach.types import (
+    PutWorkoutItemRequest,
+    Workout,
+    WorkoutItem,
+    WorkoutResponse,
+)
 from fitness_tracker.apis.true_coach.workouts import WorkoutState
 from fitness_tracker.config import Config
 from fitness_tracker.database import Store
@@ -102,6 +108,8 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0911, PLR0912,
         return _truecoach_import_recent(args)
     if args.command == "truecoach" and args.truecoach_command == "workouts":
         return _truecoach_workouts(args)
+    if args.command == "truecoach" and args.truecoach_command == "workout-items":
+        return _truecoach_workout_items(args)
     if args.command == "exercise-links" and args.exercise_links_command == "set":
         return _set_exercise_link(args)
     if args.command == "sync-review" and args.sync_review_command == "truecoach-to-hevy":
@@ -340,6 +348,27 @@ def _add_truecoach_parser(subparsers: Any) -> None:
     _add_truecoach_due_parser(workout_subparsers.add_parser("due"))
 
     _add_truecoach_import_recent_parser(workout_subparsers.add_parser("import-recent"))
+
+    _add_truecoach_workout_items_parser(truecoach_subparsers.add_parser("workout-items"))
+
+
+def _add_truecoach_workout_items_parser(workout_items: argparse.ArgumentParser) -> None:
+    workout_item_subparsers = workout_items.add_subparsers(dest="truecoach_workout_item_command")
+
+    item_inspect = workout_item_subparsers.add_parser("inspect")
+    item_inspect.add_argument("--item-id", type=int, required=True)
+    item_inspect.add_argument("--raw", action="store_true")
+    _add_json_output_argument(item_inspect)
+
+    update_result = workout_item_subparsers.add_parser("update-result")
+    update_result.add_argument("--request")
+    update_result.add_argument("--item-id", type=int)
+    update_result.add_argument("--text-file")
+    update_result.add_argument("--response-path")
+    update_mode = update_result.add_mutually_exclusive_group()
+    update_mode.add_argument("--dry-run", action="store_true")
+    update_mode.add_argument("--yes", action="store_true")
+    _add_json_output_argument(update_result)
 
 
 def _add_truecoach_due_parser(due: argparse.ArgumentParser) -> None:
@@ -821,6 +850,142 @@ def _truecoach_workouts_inspect(args: argparse.Namespace) -> int:
     return 0
 
 
+def _truecoach_workout_items(args: argparse.Namespace) -> int:
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    if args.truecoach_workout_item_command == "inspect":
+        return _truecoach_workout_items_inspect(args)
+    if args.truecoach_workout_item_command == "update-result":
+        return _truecoach_workout_items_update_result(args)
+    return _emit_error(args, "missing truecoach workout-items subcommand")
+
+
+def _truecoach_workout_items_inspect(args: argparse.Namespace) -> int:
+    client = _truecoach_client_from_config()
+    if args.raw:
+        payload = {
+            "ok": True,
+            "raw": client.workouts.inspect_workout_item_raw(args.item_id),
+            "warnings": [],
+        }
+        return _emit_json_result(payload)
+    item = client.workouts.inspect_workout_item(args.item_id)
+    if item is None:
+        return _emit_error(args, f"True Coach Workout Item not found: {args.item_id}", exit_code=2)
+    item_payload = _truecoach_workout_item_payload(item)
+    payload = {
+        "ok": True,
+        "workout_item": item_payload,
+        "warnings": [],
+    }
+    if args.json:
+        return _emit_json_result(payload)
+    _emit(
+        f"{item_payload['id']} | {item_payload['position']} | "
+        f"{item_payload['state']} | {item_payload['name']}"
+    )
+    return 0
+
+
+def _truecoach_workout_items_update_result(args: argparse.Namespace) -> int:
+    if not args.dry_run and not args.yes:
+        return _emit_error(args, "real apply requires --yes; use --dry-run to validate only")
+    try:
+        request = _truecoach_workout_item_update_request_from_args(args)
+    except (OSError, ValueError, ValidationError) as exc:
+        return _emit_error(args, str(exc))
+    response: dict[str, Any] | None = None
+    action = "dry_run"
+    if args.yes:
+        client = _truecoach_client_from_config()
+        response_model = client.workouts.update_workout_item(request.id, request)
+        response = response_model.model_dump() if response_model is not None else {}
+        action = "updated"
+    response_path = _write_response_artifact(args.response_path, response or {})
+    response_info = (response_path, response)
+    payload = _truecoach_workout_item_update_summary(
+        request,
+        action=action,
+        response_info=response_info,
+    )
+    if args.json:
+        return _emit_json_result(payload)
+    _emit(f"{action}: True Coach Workout Item {request.id}")
+    if response_path is not None:
+        _emit(f"Wrote True Coach response: {response_path}")
+    return 0
+
+
+def _truecoach_workout_item_update_request_from_args(
+    args: argparse.Namespace,
+) -> PutWorkoutItemRequest:
+    if args.request and (args.item_id is not None or args.text_file):
+        msg = "--request cannot be combined with --item-id or --text-file"
+        raise ValueError(msg)
+    if args.request:
+        return _truecoach_workout_item_update_request_from_json(Path(args.request))
+    if args.item_id is None or not args.text_file:
+        msg = "provide --request or both --item-id and --text-file"
+        raise ValueError(msg)
+    client = _truecoach_client_from_config()
+    item = client.workouts.inspect_workout_item(args.item_id)
+    if item is None:
+        msg = f"True Coach Workout Item not found: {args.item_id}"
+        raise ValueError(msg)
+    result_text = Path(args.text_file).read_text(encoding="utf-8").strip()
+    return _truecoach_workout_item_result_request(item, result_text)
+
+
+def _truecoach_workout_item_update_request_from_json(path: Path) -> PutWorkoutItemRequest:
+    data = _read_json(path)
+    workout_item = data.get("workout_item")
+    if workout_item is None:
+        workout_item = data.get("body", {}).get("workout_item")
+    if workout_item is None:
+        msg = "request JSON must contain workout_item"
+        raise ValueError(msg)
+    return PutWorkoutItemRequest.model_validate(workout_item)
+
+
+def _truecoach_workout_item_result_request(
+    item: WorkoutItem,
+    result_text: str,
+) -> PutWorkoutItemRequest:
+    return PutWorkoutItemRequest(
+        id=item.id,
+        workout_id=item.workout_id,
+        name=item.name,
+        info=item.info,
+        result=result_text,
+        is_circuit=item.is_circuit,
+        state="completed",
+        state_event="mark_as_completed",
+        position=item.position,
+        assessment_id=item.assessment_id,
+        exercise_id=item.exercise_id,
+    )
+
+
+def _truecoach_workout_item_update_summary(
+    request: PutWorkoutItemRequest,
+    *,
+    action: str,
+    response_info: tuple[Path | None, dict[str, Any] | None],
+) -> dict[str, Any]:
+    response_path, response = response_info
+    payload: dict[str, Any] = {
+        "ok": True,
+        "action": action,
+        "workout_item_id": request.id,
+        "workout_id": request.workout_id,
+        "result": request.result,
+        "response_path": _json_response_path(response_path),
+        "warnings": [],
+    }
+    if response is not None:
+        payload["response"] = response
+    return payload
+
+
 def _truecoach_import_recent(args: argparse.Namespace) -> int:  # noqa: PLR0915
     client = _truecoach_client_from_config()
     store = Store(_engine_from_args(args))
@@ -925,10 +1090,14 @@ def _truecoach_workout_inspect_payload(response: WorkoutResponse) -> dict[str, A
 
 def _truecoach_related_workout_payload(response: WorkoutResponse) -> dict[str, Any]:
     return {
-        "workout_items": [item.model_dump() for item in response.workout_items],
+        "workout_items": [_truecoach_workout_item_payload(item) for item in response.workout_items],
         "comments": [comment.model_dump() for comment in response.comments],
         "meta": response.meta.model_dump(),
     }
+
+
+def _truecoach_workout_item_payload(item: WorkoutItem) -> dict[str, Any]:
+    return item.model_dump()
 
 
 def _truecoach_workout_payload(workout: Workout) -> dict[str, Any]:

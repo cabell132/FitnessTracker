@@ -12,7 +12,13 @@ from sqlalchemy import create_engine
 
 from fitness_tracker import cli
 from fitness_tracker.apis.hevy_app.exceptions import HevyAppAPIError
-from fitness_tracker.apis.true_coach.types import Meta, Workout, WorkoutItem, WorkoutResponse
+from fitness_tracker.apis.true_coach.types import (
+    Meta,
+    PutWorkoutItemResponse,
+    Workout,
+    WorkoutItem,
+    WorkoutResponse,
+)
 from fitness_tracker.database import Store
 from fitness_tracker.database.models import Exercise as TrackerExercise
 from fitness_tracker.database.models.hevy_app import HevyAppExercise
@@ -265,6 +271,288 @@ def test_truecoach_workouts_inspect_raw_json_returns_vendor_payload(
     assert exit_code == 0
     assert calls == [599821297]
     assert json.loads(captured.out) == {"ok": True, "raw": raw_response, "warnings": []}
+    assert captured.err == ""
+
+
+def test_truecoach_workout_items_inspect_json_fetches_remote_item(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    calls: list[int] = []
+
+    class FakeWorkouts:
+        def inspect_workout_item(self, item_id: int) -> WorkoutItem:
+            calls.append(item_id)
+            return _truecoach_api_workout_item()
+
+    class FakeClient:
+        workouts = FakeWorkouts()
+
+    monkeypatch.setattr(cli, "_truecoach_client_from_config", lambda: FakeClient())
+
+    exit_code = cli.main(
+        ["truecoach", "workout-items", "inspect", "--item-id", "-1393788898", "--json"]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert calls == [-1393788898]
+    assert json.loads(captured.out) == {
+        "ok": True,
+        "workout_item": _truecoach_api_workout_item().model_dump(),
+        "warnings": [],
+    }
+    assert captured.err == ""
+
+
+def test_truecoach_workout_items_inspect_raw_json_returns_vendor_payload(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    calls: list[int] = []
+    raw_response = {"workout_item": {"id": -1393788898, "vendorOnly": True}}
+
+    class FakeWorkouts:
+        def inspect_workout_item_raw(self, item_id: int) -> dict[str, Any]:
+            calls.append(item_id)
+            return raw_response
+
+    class FakeClient:
+        workouts = FakeWorkouts()
+
+    monkeypatch.setattr(cli, "_truecoach_client_from_config", lambda: FakeClient())
+
+    exit_code = cli.main(
+        [
+            "truecoach",
+            "workout-items",
+            "inspect",
+            "--item-id",
+            "-1393788898",
+            "--json",
+            "--raw",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert calls == [-1393788898]
+    assert json.loads(captured.out) == {"ok": True, "raw": raw_response, "warnings": []}
+    assert captured.err == ""
+
+
+def test_truecoach_workout_items_update_result_dry_run_validates_request_without_mutating(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    request_path = tmp_path / "truecoach-update-request.json"
+    request_path.write_text(
+        json.dumps(
+            {
+                "workout_item": {
+                    **_truecoach_api_workout_item().model_dump(),
+                    "state": "completed",
+                    "state_event": "mark_as_completed",
+                    "result": "8 x 80 kg\n7 x 80 kg",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    class FakeWorkouts:
+        def update_workout_item(self, item_id: int, workout_item: Any) -> None:
+            msg = "dry-run must not mutate True Coach"
+            raise AssertionError(msg)
+
+    class FakeClient:
+        workouts = FakeWorkouts()
+
+    monkeypatch.setattr(cli, "_truecoach_client_from_config", lambda: FakeClient())
+
+    exit_code = cli.main(
+        [
+            "truecoach",
+            "workout-items",
+            "update-result",
+            "--request",
+            str(request_path),
+            "--dry-run",
+            "--json",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert json.loads(captured.out) == {
+        "ok": True,
+        "action": "dry_run",
+        "workout_item_id": -1393788898,
+        "workout_id": 599821297,
+        "result": "8 x 80 kg\n7 x 80 kg",
+        "response_path": None,
+        "warnings": [],
+    }
+    assert captured.err == ""
+
+
+def test_truecoach_workout_items_update_result_json_reports_invalid_request(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    request_path = tmp_path / "bad-request.json"
+    request_path.write_text(json.dumps({"workout_item": {"id": -1393788898}}), encoding="utf-8")
+
+    exit_code = cli.main(
+        [
+            "truecoach",
+            "workout-items",
+            "update-result",
+            "--request",
+            str(request_path),
+            "--dry-run",
+            "--json",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert json.loads(captured.out)["ok"] is False
+    assert "workout_id" in json.loads(captured.out)["error"]
+    assert captured.err == ""
+
+
+def test_truecoach_workout_items_update_result_json_requires_confirmation(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    request_path = tmp_path / "truecoach-update-request.json"
+    request_path.write_text(
+        json.dumps({"workout_item": _truecoach_api_workout_item().model_dump()}),
+        encoding="utf-8",
+    )
+
+    exit_code = cli.main(
+        [
+            "truecoach",
+            "workout-items",
+            "update-result",
+            "--request",
+            str(request_path),
+            "--json",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert json.loads(captured.out) == {
+        "ok": False,
+        "error": "real apply requires --yes; use --dry-run to validate only",
+    }
+    assert captured.err == ""
+
+
+def test_truecoach_workout_items_update_result_applies_and_writes_response(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    calls: list[tuple[int, Any]] = []
+    request_path = tmp_path / "truecoach-update-request.json"
+    response_path = tmp_path / "truecoach-response.json"
+    update_payload = {
+        **_truecoach_api_workout_item().model_dump(),
+        "state": "completed",
+        "state_event": "mark_as_completed",
+        "result": "8 x 80 kg",
+    }
+    request_path.write_text(json.dumps({"workout_item": update_payload}), encoding="utf-8")
+    response_item = _truecoach_api_workout_item().model_copy(
+        update={"state": "completed", "result": "8 x 80 kg"}
+    )
+
+    class FakeWorkouts:
+        def update_workout_item(self, item_id: int, workout_item: Any) -> PutWorkoutItemResponse:
+            calls.append((item_id, workout_item))
+            return PutWorkoutItemResponse(workout_item=response_item)
+
+    class FakeClient:
+        workouts = FakeWorkouts()
+
+    monkeypatch.setattr(cli, "_truecoach_client_from_config", lambda: FakeClient())
+
+    exit_code = cli.main(
+        [
+            "truecoach",
+            "workout-items",
+            "update-result",
+            "--request",
+            str(request_path),
+            "--yes",
+            "--response-path",
+            str(response_path),
+            "--json",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert calls[0][0] == -1393788898
+    assert calls[0][1].result == "8 x 80 kg"
+    assert calls[0][1].state_event == "mark_as_completed"
+    response_payload = {"workout_item": response_item.model_dump()}
+    assert json.loads(response_path.read_text(encoding="utf-8")) == response_payload
+    assert json.loads(captured.out) == {
+        "ok": True,
+        "action": "updated",
+        "workout_item_id": -1393788898,
+        "workout_id": 599821297,
+        "result": "8 x 80 kg",
+        "response_path": str(response_path),
+        "response": response_payload,
+        "warnings": [],
+    }
+    assert captured.err == ""
+
+
+def test_truecoach_workout_items_update_result_text_file_builds_request_from_remote_item(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    result_path = tmp_path / "result.txt"
+    result_path.write_text("8 x 80 kg\n", encoding="utf-8")
+    calls: list[int] = []
+
+    class FakeWorkouts:
+        def inspect_workout_item(self, item_id: int) -> WorkoutItem:
+            calls.append(item_id)
+            return _truecoach_api_workout_item()
+
+    class FakeClient:
+        workouts = FakeWorkouts()
+
+    monkeypatch.setattr(cli, "_truecoach_client_from_config", lambda: FakeClient())
+
+    exit_code = cli.main(
+        [
+            "truecoach",
+            "workout-items",
+            "update-result",
+            "--item-id",
+            "-1393788898",
+            "--text-file",
+            str(result_path),
+            "--dry-run",
+            "--json",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert calls == [-1393788898]
+    assert json.loads(captured.out)["result"] == "8 x 80 kg"
     assert captured.err == ""
 
 
