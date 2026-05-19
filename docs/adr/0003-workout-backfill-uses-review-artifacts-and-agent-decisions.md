@@ -22,7 +22,7 @@ workout intervals, heart-rate patterns, and candidate workout windows, but the
 CLI must not silently choose uncertain timestamps. If confidence is low,
 timestamps remain unset until the Agent or Athlete selects them.
 
-Choice Workout Items, where the Coach offers multiple movement options and the
+Choice Workout Items, where the Coach offers multiple exercise options and the
 Athlete's result text identifies what was actually performed, are resolved
 through explicit decisions when ambiguous. One Choice Workout Item may split
 into multiple Hevy exercise blocks when the Athlete performed multiple

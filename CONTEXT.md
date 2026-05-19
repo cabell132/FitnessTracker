@@ -109,7 +109,7 @@ alone. If the role remains ambiguous, the Agent should ask the Athlete before
 syncing the affected items.
 
 **Choice Workout Item**:
-A Coach-authored Workout Item where the Coach offers multiple movement options
+A Coach-authored Workout Item where the Coach offers multiple exercise options
 and the Athlete's result text identifies which option was performed. During
 Workout backfill, the performed exercise is selected from the Athlete's result
 text rather than the Coach's generic choice wording.
@@ -132,7 +132,7 @@ An item-level correction where the wording of a True Coach Workout Item implies 
 more specific Hevy exercise template than the default exercise link. The override
 applies to the generated Routine item only; it does not change the permanent
 True Coach to Hevy exercise link.
-When Coach notes materially change the movement, such as "Use handles" on a
+When Coach notes materially change the exercise, such as "Use handles" on a
 rope-named item, Routine feedback may correct the selected Hevy template rather
 than preserving the original name-based mapping. Notes disappearing after an
 in-workout Hevy exercise replacement are a Hevy app artifact, not necessarily
@@ -148,7 +148,7 @@ making notes and load changes lower-signal than the template replacement itself.
 
 **Mixed-mode prescription**:
 A single True Coach Workout Item that prescribes materially different set modes
-for the same movement, such as timed isometric holds followed by rep-based sets.
+for the same exercise, such as timed isometric holds followed by rep-based sets.
 When syncing to Hevy, a mixed-mode prescription should become multiple Routine
 exercise blocks when the phases can be split deterministically. Split phases may
 require different Hevy exercise templates when their set modes differ, such as a
@@ -196,48 +196,71 @@ number or type of generated Hevy set rows, such as "alternating" or RIR targets.
 Execution markers should be preserved in notes.
 
 **Circuit block**:
-A Coach-authored Workout Item that contains multiple movements performed as a
+A Coach-authored Workout Item that contains multiple exercises performed as a
 round or conditioning sequence. When syncing to Hevy, a Circuit block should
 become multiple generated Routine exercise blocks in one superset when its
-movements can be identified and mapped deterministically; otherwise it remains
+exercises can be identified and mapped deterministically; otherwise it remains
 review-required rather than silently becoming a generic placeholder. Each
 generated Routine exercise block should receive one set row per prescribed
-round, with movement-specific targets where parseable. If any movement in a
+round, with exercise-specific targets where parseable. If any exercise in a
 split Circuit block cannot be mapped to a concrete Hevy exercise template, the
 whole split is review-blocked rather than partially synced. Split Circuit blocks
 use the same Hevy superset id stream as Coach-authored supersets: a standalone
 Circuit block receives the next available superset id, while a Circuit block
-inside an existing Coach-authored superset inherits that superset id. Movement
+inside an existing Coach-authored superset inherits that superset id. Exercise
 boundaries inside a Circuit block should be identified only from deterministic
 list structure such as line breaks, bullets, numbered lines, or clear comma
-lists; uncertain movement boundaries are review-blocked. A split Circuit block
+lists; uncertain exercise boundaries are review-blocked. A split Circuit block
 must have a deterministic round count; missing or ambiguous round counts are
 review-blocked. A split Circuit block may contain mixed target types because
 each generated Hevy exercise block owns its own set rows. Unsupported or
-ambiguous target details stay in that movement's notes. Each generated movement
-block should preserve the original Circuit block wording in notes for
-traceability. Split Circuit movements must resolve to concrete Hevy exercise
+ambiguous target details stay in that exercise's notes. Missing deterministic
+set rows do not block the split when the generated exercise is still useful as
+notes-only or when a review decision explicitly accepts it; otherwise the
+generated exercise remains review-blocked. Each generated exercise should
+preserve the original Circuit block wording in notes for traceability. Split
+Circuit exercises must resolve to concrete Hevy exercise
 templates; generic placeholder templates should not be used for them. A
-single-movement Circuit block remains one Routine exercise block rather than a
+single-exercise Circuit block remains one Routine exercise block rather than a
 one-item superset. Rest between rounds should be represented as the rest period
-on the final generated movement block in the circuit round. A movement duration
-may be represented as that movement's rest period when the duration is the
-Athlete-facing timer for the movement, such as a plank, but round-level circuit
-rest takes priority over movement duration on the final movement. Cardio machine
+on the final generated exercise in the circuit round. An exercise duration
+may be represented as that exercise's rest period when the duration is the
+Athlete-facing timer for the exercise, such as a plank, but round-level circuit
+rest takes priority over exercise duration on the final exercise. Cardio machine
 durations, such as cycling for time, should not be represented as rest periods.
-When a movement duration is structurally supported by Hevy, it should remain a
-duration set target even if it is also used as that movement's rest period.
-Movement-level rest should attach to the preceding generated movement block;
-round-level circuit rest still takes priority on the final movement. Rest-only
-lines in a Circuit block are rest metadata, not generated movements.
+When an exercise duration is structurally supported by Hevy, it should remain a
+duration set target even if it is also used as that exercise's rest period.
+Exercise-level rest should attach to the preceding generated exercise;
+round-level circuit rest still takes priority on the final exercise. Rest-only
+lines in a Circuit block are rest metadata, not generated exercises.
 
 **AMRAP block**:
 A Coach-authored Workout Item performed for as many rounds or reps as possible.
-A multi-movement AMRAP should be treated as a Circuit block; a single-movement
+A multi-exercise AMRAP should be treated as a Circuit block; a single-exercise
 AMRAP should remain one Routine exercise block with the AMRAP instruction
-preserved in notes. For time-boxed multi-movement AMRAPs, each generated
-movement block should default to half the number of cap minutes, rounded down,
+preserved in notes. For time-boxed multi-exercise AMRAPs, each generated
+exercise should default to half the number of cap minutes, rounded down,
 with a minimum of one set row; the time cap remains in notes.
+
+**Split Circuit plan**:
+A deterministic representation of a Circuit block or multi-exercise AMRAP block
+as generated exercises, selected Hevy exercise templates or template blockers,
+rest metadata, round/count evidence, and review blockers before it is adapted
+into either a Hevy Routine or a backfilled Hevy Workout. A Split Circuit plan
+may carry optional performed evidence, such as completed round counts, for
+Workout backfill; Routine creation treats the same plan as prescription-only.
+An exercise omitted by the Athlete may be preserved as review evidence, but it
+is not part of the backfilled Hevy Workout because Workout backfill represents
+performed work. Workout backfill omission evidence does not affect Routine
+creation unless the Athlete explicitly promotes it through Routine feedback or a
+future prescription review decision. A Split Circuit plan owns the generated exercises' Circuit
+grouping intent, including whether that group inherits Coach-authored superset
+context, but the numeric Hevy `superset_id` is assigned only when adapting the
+plan into a Hevy request. Athlete-history enrichment is not part of a Split
+Circuit plan; Routine creation may enrich generated exercise set rows after the
+plan is adapted. In Workout backfill, an Athlete comment that names a
+replacement exercise for a generated exercise always requires an explicit
+decision rather than silent automatic resolution.
 
 **Substitution instruction**:
 Coach guidance that names alternatives when equipment or conditions differ.
