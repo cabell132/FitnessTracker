@@ -1006,11 +1006,15 @@ def _round_time_seconds(segment: str) -> int | None:
 def _omitted_movement_names(comment: str) -> dict[str, str]:
     omitted: dict[str, str] = {}
     for segment in _comment_segments(comment):
-        match = re.fullmatch(r"(?:w/o|without|no)\s+(?P<name>.+)", segment, re.IGNORECASE)
+        match = re.search(
+            r"(?P<source>(?:w/o|without|no)\s+(?P<name>.+))$",
+            segment,
+            re.IGNORECASE,
+        )
         if match is None:
             continue
         name = match.group("name").strip()
-        omitted[_normalize_choice_text(name)] = segment
+        omitted[_normalize_choice_text(name)] = match.group("source").strip()
     return omitted
 
 

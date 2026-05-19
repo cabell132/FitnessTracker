@@ -1558,6 +1558,73 @@ def test_workout_backfill_apply_persists_synthetic_tracker_items_for_split_circu
         ] == [1, 2, 3, 4, 5, 6, 7, 8, 9]
 
 
+def test_workout_backfill_apply_does_not_create_synthetic_tracker_item_for_inline_omission(
+    tmp_path: Path,
+) -> None:
+    store = Store(create_engine(f"sqlite:///{tmp_path / 'tracker.sqlite'}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    _add_choice_templates(
+        store,
+        [
+            ("hevy-bike", "Bike"),
+            ("hevy-burpees", "Burpees"),
+            ("hevy-plank", "Plank"),
+        ],
+    )
+    _add_circuit_backfill_item(
+        store,
+        info="2 Rounds\n10 Burpees\n15 Bike\nPlank 30s",
+        comment="2 Rounds w/o Bike",
+    )
+    decisions_path = _write_timestamp_decisions(tmp_path)
+    service = TrueCoachWorkoutBackfillReviewService(store=store, output_root=tmp_path / "reports")
+    writer = _RecordingWorkoutWriter(
+        response=_split_circuit_hevy_workout_response(workout_id="hevy-created-455045484")
+    )
+
+    dry_run = service.write_apply_request(455045484, decisions_path=decisions_path)
+    plan = json.loads(
+        (
+            tmp_path
+            / "reports"
+            / "sync-review"
+            / "truecoach-workout-backfill"
+            / "455045484"
+            / "plan.json"
+        ).read_text(encoding="utf-8")
+    )
+    service.apply(
+        455045484,
+        workout_writer=writer,
+        decisions_path=decisions_path,
+    )
+
+    assert [
+        exercise.exercise_template_id for exercise in dry_run.request_body.workout.exercises
+    ] == [
+        "hevy-bench",
+        "hevy-row",
+        "hevy-burpees",
+        "hevy-plank",
+    ]
+    bike_item = next(item for item in plan["items"] if item["name"] == "Bike")
+    assert bike_item["sets"] == []
+    assert bike_item["warnings"] == ["Athlete comment omits Circuit movement: w/o Bike"]
+    with store.unit_of_work() as uow:
+        tracker_workout = uow.tracker.get_workout(true_coach_id=455045484)
+        assert tracker_workout is not None
+        synthetic_items = [
+            item
+            for item in tracker_workout.workout_items
+            if item.true_coach_id == 8106 and item.exercise.hevy_app_id is not None
+        ]
+        assert [(item.exercise.name, item.hevy_app_id) for item in synthetic_items] == [
+            ("Burpees", 3),
+            ("Plank", 4),
+        ]
+
+
 def test_workout_backfill_apply_repairs_local_links_from_existing_remote_marker(
     tmp_path: Path,
 ) -> None:
