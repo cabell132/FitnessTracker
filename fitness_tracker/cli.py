@@ -28,6 +28,7 @@ from fitness_tracker.apis.hevy_app.types.common import (
     EQUIPMENT_CATEGORIES,
     MUSCLE_GROUPS,
 )
+from fitness_tracker.apis.true_coach.types import Workout, WorkoutResponse
 from fitness_tracker.apis.true_coach.workouts import WorkoutState
 from fitness_tracker.config import Config
 from fitness_tracker.database import Store
@@ -66,6 +67,8 @@ from fitness_tracker.sync_review import (
     WorkoutBackfillReviewError,
 )
 from fitness_tracker.sync_review.true_coach_to_hevy import ApplyResult, _build_hevy_routine_request
+
+TRUECOACH_OPERATIONAL_STATES: tuple[WorkoutState, ...] = ("pending", "completed", "missed")
 
 
 def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0911, PLR0912, PLR0915
@@ -300,7 +303,7 @@ def _add_truecoach_parser(subparsers: Any) -> None:
         "--state",
         dest="states",
         action="append",
-        choices=("pending", "completed", "missed"),
+        choices=TRUECOACH_OPERATIONAL_STATES,
         default=[],
     )
     workout_list.add_argument("--limit", type=int, default=20)
@@ -333,7 +336,7 @@ def _add_truecoach_import_recent_parser(import_recent: argparse.ArgumentParser) 
         "--state",
         dest="states",
         action="append",
-        choices=("pending", "completed", "missed"),
+        choices=TRUECOACH_OPERATIONAL_STATES,
         help="State to import. May be repeated. Defaults to all operational states.",
     )
     import_recent.add_argument("--db", help="SQLite database path. Prefer --database-url.")
@@ -740,27 +743,13 @@ def _truecoach_workouts(args: argparse.Namespace) -> int:
 
 def _truecoach_workouts_list(args: argparse.Namespace) -> int:
     client = _truecoach_client_from_config()
-    states = cast(
-        WorkoutState | list[WorkoutState],
-        args.states[0] if len(args.states) == 1 else args.states,
-    )
     response = client.workouts.get(
         order=args.order,
         page=args.page,
         per_page=args.limit,
-        states=states or "pending",
+        states=_truecoach_workout_list_states(args.states),
     )
-    if response is None:
-        payload = {
-            "ok": True,
-            "workouts": [],
-            "workout_items": [],
-            "comments": [],
-            "meta": None,
-            "warnings": [],
-        }
-    else:
-        payload = _truecoach_workout_response_payload(response)
+    payload = _truecoach_workout_response_payload(response)
     if args.json:
         return _emit_json_result(payload)
     if response is None:
@@ -802,7 +791,7 @@ def _truecoach_import_recent(args: argparse.Namespace) -> int:  # noqa: PLR0915
     client = _truecoach_client_from_config()
     store = Store(_engine_from_args(args))
     syncer = TrueCoachToFitnessTrackerSyncronizer(store=store, source=client)
-    states = cast(list[WorkoutState], args.states or ["pending", "completed", "missed"])
+    states = cast(list[WorkoutState], args.states or list(TRUECOACH_OPERATIONAL_STATES))
     imported_workouts = 0
     imported_items = 0
     imported_pages = 0
@@ -854,13 +843,28 @@ def _truecoach_client_from_config() -> TrueCoachClient:
     )
 
 
-def _truecoach_workout_response_payload(response: Any) -> dict[str, Any]:
+def _truecoach_workout_list_states(states: list[WorkoutState]) -> WorkoutState | list[WorkoutState]:
+    if len(states) == 1:
+        return states[0]
+    if states:
+        return states
+    return "pending"
+
+
+def _truecoach_workout_response_payload(response: WorkoutResponse | None) -> dict[str, Any]:
+    if response is None:
+        return {
+            "ok": True,
+            "workouts": [],
+            "workout_items": [],
+            "comments": [],
+            "meta": None,
+            "warnings": [],
+        }
     return {
         "ok": True,
         "workouts": [_truecoach_workout_payload(workout) for workout in response.workouts],
-        "workout_items": [item.model_dump() for item in response.workout_items],
-        "comments": [comment.model_dump() for comment in response.comments],
-        "meta": response.meta.model_dump(),
+        **_truecoach_related_workout_payload(response),
         "warnings": [],
     }
 
@@ -875,19 +879,25 @@ def _truecoach_due_row_payload(row: Any) -> dict[str, Any]:
     }
 
 
-def _truecoach_workout_inspect_payload(response: Any) -> dict[str, Any]:
+def _truecoach_workout_inspect_payload(response: WorkoutResponse) -> dict[str, Any]:
     workout = response.workouts[0] if response.workouts else None
     return {
         "ok": True,
         "workout": _truecoach_workout_payload(workout) if workout else None,
-        "workout_items": [item.model_dump() for item in response.workout_items],
-        "comments": [comment.model_dump() for comment in response.comments],
-        "meta": response.meta.model_dump(),
+        **_truecoach_related_workout_payload(response),
         "warnings": [],
     }
 
 
-def _truecoach_workout_payload(workout: Any) -> dict[str, Any]:
+def _truecoach_related_workout_payload(response: WorkoutResponse) -> dict[str, Any]:
+    return {
+        "workout_items": [item.model_dump() for item in response.workout_items],
+        "comments": [comment.model_dump() for comment in response.comments],
+        "meta": response.meta.model_dump(),
+    }
+
+
+def _truecoach_workout_payload(workout: Workout) -> dict[str, Any]:
     return {
         "id": workout.id,
         "due": workout.due,
