@@ -37,6 +37,7 @@ from fitness_tracker.sync_review import (
 
 def test_hevy_to_truecoach_result_review_cli_writes_read_only_artifacts(  # noqa: PLR0915
     tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     db_path = tmp_path / "tracker.sqlite"
     store = Store(create_engine(f"sqlite:///{db_path}"))
@@ -130,6 +131,15 @@ def test_hevy_to_truecoach_result_review_cli_writes_read_only_artifacts(  # noqa
     assert "Unsupported Hevy exercise type" in report
     assert "Proposed result:" in report
     assert "8 x 80.0 kg" in report
+
+    output = capsys.readouterr().out
+    assert f"review_dir: {bundle_dir}" in output
+    assert f"report: {bundle_dir / 'report.md'}" in output
+    assert f"plan: {bundle_dir / 'plan.json'}" in output
+    assert f"decisions: {bundle_dir / 'result-decisions.json'}" in output
+    assert f"decision_validation: {bundle_dir / 'decision-validation.json'}" in output
+    assert "blockers: 3" in output
+    assert "warnings: 1" in output
 
 
 def test_hevy_to_truecoach_result_review_validates_mapping_override(
@@ -574,6 +584,7 @@ def test_hevy_to_truecoach_result_apply_allows_partial_apply_for_resolved_items(
 
 def test_hevy_to_truecoach_result_apply_dry_run_cli_writes_request(
     tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     db_path = tmp_path / "tracker.sqlite"
     store = Store(create_engine(f"sqlite:///{db_path}"))
@@ -608,6 +619,189 @@ def test_hevy_to_truecoach_result_apply_dry_run_cli_writes_request(
     request = json.loads(request_path.read_text(encoding="utf-8"))
     assert exit_code == 0
     assert request["update_workout_items"][0]["endpoint"] == "workout_items/9101"
+    output = capsys.readouterr().out
+    assert f"review_dir: {request_path.parent}" in output
+    assert f"request: {request_path}" in output
+    assert "blockers: 0" in output
+    assert "warnings: 1" in output
+    assert "action: dry_run" in output
+    assert "updated_true_coach_workout_item_ids: [9101, 9103]" in output
+    assert "omitted_hevy_workout_item_ids: [2, 4]" in output
+    assert "unresolved_hevy_workout_item_ids: []" in output
+    assert "completion_status: skipped" in output
+
+
+def test_hevy_to_truecoach_result_apply_cli_refuses_unresolved_blockers(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_result_review_workout(store)
+
+    exit_code = main(
+        [
+            "sync-apply",
+            "hevy-to-truecoach-results",
+            "--workout-id",
+            "hevy-result-1",
+            "--database-url",
+            f"sqlite:///{db_path}",
+            "--output-dir",
+            str(tmp_path / "reports"),
+            "--dry-run",
+        ]
+    )
+
+    assert exit_code == 2
+    assert "Unsupported Hevy exercise type" in capsys.readouterr().out
+
+
+def test_hevy_to_truecoach_result_apply_cli_refuses_invalid_decisions(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_result_review_workout(store)
+    decisions_path = tmp_path / "decisions.json"
+    decisions_path.write_text(
+        json.dumps(
+            {
+                "hevy_workout_id": "hevy-result-1",
+                "allow_partial_apply": True,
+                "items": [
+                    {"hevy_workout_item_id": 1, "action": "sync"},
+                    {
+                        "hevy_workout_item_id": 3,
+                        "action": "sync",
+                        "override_true_coach_workout_item_id": 9101,
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code = main(
+        [
+            "sync-apply",
+            "hevy-to-truecoach-results",
+            "--workout-id",
+            "hevy-result-1",
+            "--database-url",
+            f"sqlite:///{db_path}",
+            "--output-dir",
+            str(tmp_path / "reports"),
+            "--decisions",
+            str(decisions_path),
+            "--dry-run",
+        ]
+    )
+
+    assert exit_code == 2
+    assert "receives multiple performed Hevy items" in capsys.readouterr().out
+
+
+def test_hevy_to_truecoach_result_apply_cli_refuses_real_apply_without_confirmation(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_result_review_workout(store)
+    decisions_path = _write_safe_apply_decisions(tmp_path)
+
+    exit_code = main(
+        [
+            "sync-apply",
+            "hevy-to-truecoach-results",
+            "--workout-id",
+            "hevy-result-1",
+            "--database-url",
+            f"sqlite:///{db_path}",
+            "--output-dir",
+            str(tmp_path / "reports"),
+            "--decisions",
+            str(decisions_path),
+        ]
+    )
+
+    assert exit_code == 2
+    assert "Error: real apply requires --yes" in capsys.readouterr().out
+
+
+def test_hevy_to_truecoach_result_apply_cli_sends_real_apply_with_fake_adapter(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_result_review_workout(store)
+    decisions_path = tmp_path / "decisions.json"
+    decisions_path.write_text(
+        json.dumps(
+            {
+                "hevy_workout_id": "hevy-result-1",
+                "allow_partial_apply": False,
+                "approve_completion": True,
+                "items": [
+                    {"hevy_workout_item_id": 1, "action": "sync"},
+                    {
+                        "hevy_workout_item_id": 2,
+                        "action": "omit",
+                        "omit_reason": "Unsupported custom metric result.",
+                    },
+                    {
+                        "hevy_workout_item_id": 3,
+                        "action": "sync",
+                        "override_true_coach_workout_item_id": 9103,
+                    },
+                    {
+                        "hevy_workout_item_id": 4,
+                        "action": "omit",
+                        "omit_reason": "Accidental extra Hevy block.",
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    writer = _RecordingTrueCoachWorkoutItemWriter()
+    monkeypatch.setattr("fitness_tracker.cli.Config.from_env", lambda: _FakeConfig())
+    monkeypatch.setattr("fitness_tracker.cli.TrueCoachClient", lambda **_: object())
+    monkeypatch.setattr(
+        "fitness_tracker.cli.TrueCoachWorkoutItemWriterAdapter",
+        lambda _client: writer,
+    )
+
+    exit_code = main(
+        [
+            "sync-apply",
+            "hevy-to-truecoach-results",
+            "--workout-id",
+            "hevy-result-1",
+            "--database-url",
+            f"sqlite:///{db_path}",
+            "--output-dir",
+            str(tmp_path / "reports"),
+            "--decisions",
+            str(decisions_path),
+            "--yes",
+        ]
+    )
+
+    assert exit_code == 0
+    assert [item_id for item_id, _ in writer.update_requests] == [9101, 9103]
+    assert writer.completed_workout_ids == [9001]
+    output = capsys.readouterr().out
+    assert "action: applied" in output
+    assert "completion_status: performed" in output
 
 
 def test_hevy_to_truecoach_result_apply_sends_full_reviewed_updates(
@@ -849,6 +1043,16 @@ class _RecordingTrueCoachWorkoutItemWriter:
 
     def mark_workout_completed(self, workout_id: int) -> None:
         self.completed_workout_ids.append(workout_id)
+
+
+class _FakeSecret:
+    def get_secret_value(self) -> str:
+        return "secret"
+
+
+class _FakeConfig:
+    email = "athlete@example.com"
+    truecoach_password = _FakeSecret()
 
 
 class _RefreshingTrueCoachWorkoutItemWriter(_RecordingTrueCoachWorkoutItemWriter):

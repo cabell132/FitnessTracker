@@ -414,6 +414,7 @@ def _add_sync_apply_parser(  # noqa: PLR0915
         help="Editable Hevy to True Coach result decisions JSON to apply to the request.",
     )
     hevy_to_truecoach_results.add_argument("--dry-run", action="store_true")
+    hevy_to_truecoach_results.add_argument("--yes", action="store_true")
 
     truecoach_to_hevy = sync_apply_subparsers.add_parser("truecoach-to-hevy")
     truecoach_to_hevy.add_argument("--workout-id", type=int, required=True)
@@ -941,11 +942,14 @@ def _sync_review_hevy_to_truecoach_results(args: argparse.Namespace) -> int:
     except HevyToTrueCoachResultReviewError as exc:
         _emit(f"Error: {exc}")
         return 2
-    _emit(f"Wrote Hevy to True Coach result review: {bundle.directory}")
+    _print_hevy_to_truecoach_result_review_summary(bundle)
     return 0
 
 
 def _sync_apply_hevy_to_truecoach_results(args: argparse.Namespace) -> int:
+    if not args.dry_run and not args.yes:
+        _emit("Error: real apply requires --yes")
+        return 2
     store = Store(_engine_from_args(args))
     service = HevyToTrueCoachResultReviewService(store=store, output_root=Path(args.output_dir))
     decisions_path = Path(args.decisions) if args.decisions else None
@@ -971,14 +975,31 @@ def _sync_apply_hevy_to_truecoach_results(args: argparse.Namespace) -> int:
     except (HevyToTrueCoachResultReviewError, HevyToTrueCoachResultApplyError) as exc:
         _emit(f"Error: {exc}")
         return 2
-    if args.dry_run:
-        _emit(f"Wrote Hevy to True Coach result update request dry-run: {result.request_path}")
-    else:
-        _emit(f"Applied Hevy to True Coach result update request: {result.request_path}")
-        _emit(f"Updated True Coach Workout Items: {result.updated_true_coach_workout_item_ids}")
-        _emit(f"Omitted Hevy Workout Items: {result.omitted_hevy_workout_item_ids}")
-        _emit(f"Unresolved Hevy Workout Items: {result.unresolved_hevy_workout_item_ids}")
+    _print_hevy_to_truecoach_result_apply_summary(result)
     return 0
+
+
+def _print_hevy_to_truecoach_result_review_summary(
+    bundle: Any,
+) -> None:
+    validation = _read_json(bundle.decision_validation_path)
+    _emit(f"review_dir: {bundle.directory}")
+    _emit(f"report: {bundle.report_path}")
+    _emit(f"plan: {bundle.plan_path}")
+    _emit(f"decisions: {bundle.decisions_path}")
+    _emit(f"decision_validation: {bundle.decision_validation_path}")
+    _emit(f"blockers: {len(validation.get('blockers', []))}")
+    _emit(f"warnings: {len(validation.get('warnings', []))}")
+
+
+def _print_hevy_to_truecoach_result_apply_summary(result: Any) -> None:
+    _print_hevy_to_truecoach_result_review_summary(result.review_bundle)
+    _emit(f"request: {result.request_path}")
+    _emit(f"action: {result.action}")
+    _emit(f"updated_true_coach_workout_item_ids: {result.updated_true_coach_workout_item_ids}")
+    _emit(f"omitted_hevy_workout_item_ids: {result.omitted_hevy_workout_item_ids}")
+    _emit(f"unresolved_hevy_workout_item_ids: {result.unresolved_hevy_workout_item_ids}")
+    _emit(f"completion_status: {result.completion_status}")
 
 
 def _sync_review_truecoach_workout_backfill_candidates(args: argparse.Namespace) -> int:
