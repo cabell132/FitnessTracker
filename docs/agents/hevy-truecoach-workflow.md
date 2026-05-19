@@ -218,16 +218,18 @@ Platform primitive command conventions:
 - Hevy exercise template commands live under
   `fitness-tracker hevy exercise-templates ...`.
 - For commands that expose `--json`, the --json stdout is machine-only: it must
-  be a single strict JSON document. Human-facing warnings and progress messages go to stderr so Agents can parse stdout without filtering.
+  be a single strict JSON document. Human-facing warnings and progress messages
+  go to stderr so Agents can parse stdout without filtering.
 - Platform inspection is remote-first: `inspect`, `list`, and `find` commands
-  read remote API truth by default. Local tracker reads must use explicit `cached` commands.
+  read remote API truth by default. Local tracker reads must use explicit
+  `cached` commands.
 - Create and update commands should make mutation obvious in the command name,
   accept structured request input where practical, and write response artifacts
   when requested.
 - Destructive commands should require an explicit confirmation flag such as
   `--yes`.
-- Nuanced cross-platform judgement belongs in `sync-review` and `sync-apply`, not in
-  platform primitive commands.
+- Nuanced cross-platform judgement belongs in `sync-review` and `sync-apply`,
+  not in platform primitive commands.
 - Removed legacy command groups should not be used in Agent docs or command
   recipes.
 
