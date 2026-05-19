@@ -135,6 +135,36 @@ def test_split_circuit_core_carries_template_blockers() -> None:
     )
 
 
+def test_split_circuit_core_allows_useful_notes_only_generated_exercises() -> None:
+    plan = plan_prescription_split_circuit(
+        prescription=SplitCircuitPrescription(
+            name="Circuit",
+            text="""
+            15 cals Bike
+            Broad Jumps
+            """,
+        ),
+        resolve_template=lambda name, source_text: (
+            SplitCircuitTemplateRef(
+                id=f"hevy-{name.casefold().replace(' ', '-')}",
+                name=name,
+                type="reps",
+                equipment="bodyweight",
+            ),
+            [],
+        ),
+    )
+
+    assert plan is not None
+    assert [exercise.set_rows for exercise in plan.exercises] == [[], []]
+    assert [exercise.notes_only for exercise in plan.exercises] == [True, False]
+    assert plan.exercises[0].warnings == ("No deterministic set parser result found.",)
+    assert plan.exercises[0].blockers == ()
+    assert plan.exercises[1].blockers == (
+        "Generated Circuit exercise has no deterministic sets or target details: Broad Jumps",
+    )
+
+
 def test_split_circuit_core_records_inherited_grouping_intent_without_numeric_id() -> None:
     plan = plan_prescription_split_circuit(
         prescription=SplitCircuitPrescription(

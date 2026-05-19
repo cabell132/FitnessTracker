@@ -157,6 +157,7 @@ class PlannedBlock:
     required_hevy_templates: list[RequiredHevyTemplate]
     proposed_sets: list[PostRoutinesRequestSet]
     set_provenance: list[SetProvenance]
+    notes_only: bool
     warnings: list[str]
     blockers: list[str]
 
@@ -418,6 +419,7 @@ class TrueCoachToHevyReviewService:
                     required_hevy_templates=required_templates,
                     proposed_sets=proposed_sets,
                     set_provenance=set_provenance,
+                    notes_only=False,
                     warnings=[],
                     blockers=[],
                 )
@@ -490,6 +492,7 @@ class TrueCoachToHevyReviewService:
                     required_hevy_templates=required_templates,
                     proposed_sets=proposed_sets,
                     set_provenance=set_provenance,
+                    notes_only=exercise.notes_only,
                     warnings=list(exercise.warnings),
                     blockers=list(exercise.blockers),
                 )
@@ -655,7 +658,7 @@ def _apply_blockers(plan: dict[str, Any]) -> list[str]:
         f"Invalid set payload for {block['source_text']}: no sets"
         for item in items
         for block in item.get("planned_blocks", [])
-        if not block.get("proposed_sets")
+        if not block.get("proposed_sets") and not block.get("notes_only")
     )
     return blockers
 
@@ -1469,6 +1472,7 @@ def _planned_block_to_dict(block: PlannedBlock) -> dict[str, Any]:
             block.proposed_sets,
             block.set_provenance,
         ),
+        "notes_only": block.notes_only,
         "warnings": block.warnings,
         "blockers": block.blockers,
     }
@@ -1514,6 +1518,7 @@ def _format_planned_block(block: PlannedBlock) -> list[str]:
     lines.extend(
         [
             f"  Notes: {block.notes}",
+            f"  Notes-only: {'yes' if block.notes_only else 'no'}",
             f"  {_format_template(block.selected_hevy_template)}",
             "  Proposed sets:",
         ]

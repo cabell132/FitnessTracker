@@ -629,6 +629,39 @@ def test_sync_apply_builds_hevy_request_for_resolved_amrap(
     assert [exercise["rest_seconds"] for exercise in exercises] == [0, 60]
 
 
+def test_sync_apply_allows_notes_only_generated_circuit_exercise(tmp_path: Path) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_notes_only_circuit_workout(store)
+    service = TrueCoachToHevyReviewService(store=store, output_root=tmp_path / "reports")
+
+    result = service.write_apply_request(59)
+    plan = json.loads(result.review_bundle.plan_path.read_text(encoding="utf-8"))
+    report = result.review_bundle.report_path.read_text(encoding="utf-8")
+    exercises = result.request_body.model_dump()["routine"]["exercises"]
+
+    bike_block = plan["items"][0]["planned_blocks"][0]
+    assert bike_block["movement_name"] == "Bike"
+    assert bike_block["movement_target"] == "15 cals"
+    assert bike_block["notes_only"] is True
+    assert bike_block["proposed_sets"] == []
+    assert bike_block["blockers"] == []
+    assert "Notes-only: yes" in report
+    assert exercises[0]["exercise_template_id"] == "hevy-bike"
+    assert exercises[0]["sets"] == []
+    assert "Movement target: 15 cals" in exercises[0]["notes"]
+    assert exercises[1]["sets"] == [
+        {
+            "weight_kg": None,
+            "reps": 10,
+            "distance_meters": None,
+            "duration_seconds": None,
+            "type": "normal",
+        }
+    ]
+
+
 def test_sync_apply_assigns_circuit_superset_ids_around_existing_groups(
     tmp_path: Path,
 ) -> None:
@@ -1578,6 +1611,78 @@ def _seed_round_circuit_request_workout(store: Store) -> None:
                 state="pending",
                 position=1,
                 exercise_id=524,
+                assessment_id=None,
+            )
+        )
+
+
+def _seed_notes_only_circuit_workout(store: Store) -> None:
+    now = datetime(2026, 5, 17, tzinfo=UTC)
+    with store.unit_of_work() as uow:
+        uow.session.add(
+            TrueCoachWorkout(
+                id=59,
+                title="Notes Only Circuit",
+                due=now,
+                short_description='<p class="name-and-info">A) 1 Round Circuit</p>',
+                state="pending",
+                rest_day=False,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        uow.session.add(TrueCoachExercise(id=531, name="1 Round Circuit", default=False))
+        uow.session.add(TrueCoachExercise(id=532, name="Bike", default=False))
+        uow.session.add(TrueCoachExercise(id=533, name="Burpees", default=False))
+        uow.session.add(
+            HevyAppExercise(
+                id="hevy-circuit",
+                name="Circuit",
+                type="reps_only",
+                equipment="bodyweight",
+                default=True,
+            )
+        )
+        uow.session.add(
+            HevyAppExercise(
+                id="hevy-bike",
+                name="Bike",
+                type="short_distance",
+                equipment="machine",
+                default=True,
+            )
+        )
+        uow.session.add(
+            HevyAppExercise(
+                id="hevy-burpees",
+                name="Burpees",
+                type="reps_only",
+                equipment="bodyweight",
+                default=True,
+            )
+        )
+        uow.session.add(
+            TrackerExercise(
+                name="1 Round Circuit",
+                hevy_app_id="hevy-circuit",
+                true_coach_id=531,
+            )
+        )
+        uow.session.add(TrackerExercise(name="Bike", hevy_app_id="hevy-bike", true_coach_id=532))
+        uow.session.add(
+            TrackerExercise(name="Burpees", hevy_app_id="hevy-burpees", true_coach_id=533)
+        )
+        uow.session.add(
+            TrueCoachWorkoutItem(
+                id=1019,
+                workout_id=59,
+                name="1 Round Circuit",
+                info="15 cals Bike\n10 Burpees",
+                comment="",
+                is_circuit=True,
+                state="pending",
+                position=1,
+                exercise_id=531,
                 assessment_id=None,
             )
         )
