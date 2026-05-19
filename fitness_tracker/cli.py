@@ -44,7 +44,11 @@ from fitness_tracker.maintenance.hevy_template_ensure import (
     TemplateEnsureError,
     TemplateEnsureResult,
 )
-from fitness_tracker.sync.adapters import HevyRoutineWriterAdapter, HevyWorkoutWriterAdapter
+from fitness_tracker.sync.adapters import (
+    HevyRoutineWriterAdapter,
+    HevyWorkoutWriterAdapter,
+    TrueCoachWorkoutItemWriterAdapter,
+)
 from fitness_tracker.sync.true_coach_tracker.sync import TrueCoachToFitnessTrackerSyncronizer
 from fitness_tracker.sync_review import (
     HevyToTrueCoachResultApplyError,
@@ -942,20 +946,37 @@ def _sync_review_hevy_to_truecoach_results(args: argparse.Namespace) -> int:
 
 
 def _sync_apply_hevy_to_truecoach_results(args: argparse.Namespace) -> int:
-    if not args.dry_run:
-        _emit("Error: Hevy to True Coach result apply currently requires --dry-run")
-        return 2
     store = Store(_engine_from_args(args))
     service = HevyToTrueCoachResultReviewService(store=store, output_root=Path(args.output_dir))
     try:
-        result = service.write_apply_request(
-            args.workout_id,
-            decisions_path=Path(args.decisions) if args.decisions else None,
-        )
+        if args.dry_run:
+            result = service.write_apply_request(
+                args.workout_id,
+                decisions_path=Path(args.decisions) if args.decisions else None,
+            )
+        else:
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+            cfg = Config.from_env()
+            result = service.apply(
+                args.workout_id,
+                workout_item_writer=TrueCoachWorkoutItemWriterAdapter(
+                    TrueCoachClient(
+                        email=cfg.email,
+                        password=cfg.truecoach_password.get_secret_value(),
+                    )
+                ),
+                decisions_path=Path(args.decisions) if args.decisions else None,
+            )
     except (HevyToTrueCoachResultReviewError, HevyToTrueCoachResultApplyError) as exc:
         _emit(f"Error: {exc}")
         return 2
-    _emit(f"Wrote Hevy to True Coach result update request dry-run: {result.request_path}")
+    if args.dry_run:
+        _emit(f"Wrote Hevy to True Coach result update request dry-run: {result.request_path}")
+    else:
+        _emit(f"Applied Hevy to True Coach result update request: {result.request_path}")
+        _emit(f"Updated True Coach Workout Items: {result.updated_true_coach_workout_item_ids}")
+        _emit(f"Omitted Hevy Workout Items: {result.omitted_hevy_workout_item_ids}")
+        _emit(f"Unresolved Hevy Workout Items: {result.unresolved_hevy_workout_item_ids}")
     return 0
 
 

@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import create_engine
 
+from fitness_tracker.apis.true_coach.types import PutWorkoutItemRequest
 from fitness_tracker.cli import main
 from fitness_tracker.database import Store
 from fitness_tracker.database.models.hevy_app import (
@@ -489,6 +490,40 @@ def test_hevy_to_truecoach_result_apply_refuses_unresolved_blockers(
         service.write_apply_request("hevy-result-1")
 
 
+def test_hevy_to_truecoach_result_apply_partial_refuses_duplicate_mappings(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_result_review_workout(store)
+    decisions_path = tmp_path / "decisions.json"
+    decisions_path.write_text(
+        json.dumps(
+            {
+                "hevy_workout_id": "hevy-result-1",
+                "allow_partial_apply": True,
+                "items": [
+                    {"hevy_workout_item_id": 1, "action": "sync"},
+                    {
+                        "hevy_workout_item_id": 3,
+                        "action": "sync",
+                        "override_true_coach_workout_item_id": 9101,
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    service = HevyToTrueCoachResultReviewService(store=store, output_root=tmp_path / "reports")
+
+    with pytest.raises(
+        HevyToTrueCoachResultApplyError,
+        match="receives multiple performed Hevy items",
+    ):
+        service.write_apply_request("hevy-result-1", decisions_path=decisions_path)
+
+
 def test_hevy_to_truecoach_result_apply_allows_partial_apply_for_resolved_items(
     tmp_path: Path,
 ) -> None:
@@ -570,6 +605,111 @@ def test_hevy_to_truecoach_result_apply_dry_run_cli_writes_request(
     assert request["update_workout_items"][0]["endpoint"] == "workout_items/9101"
 
 
+def test_hevy_to_truecoach_result_apply_sends_full_reviewed_updates(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_result_review_workout(store)
+    decisions_path = tmp_path / "decisions.json"
+    decisions_path.write_text(
+        json.dumps(
+            {
+                "hevy_workout_id": "hevy-result-1",
+                "allow_partial_apply": False,
+                "approve_completion": True,
+                "items": [
+                    {"hevy_workout_item_id": 1, "action": "sync"},
+                    {
+                        "hevy_workout_item_id": 2,
+                        "action": "omit",
+                        "omit_reason": "Unsupported custom metric result.",
+                    },
+                    {
+                        "hevy_workout_item_id": 3,
+                        "action": "sync",
+                        "override_true_coach_workout_item_id": 9103,
+                    },
+                    {
+                        "hevy_workout_item_id": 4,
+                        "action": "omit",
+                        "omit_reason": "Accidental extra Hevy block.",
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    service = HevyToTrueCoachResultReviewService(store=store, output_root=tmp_path / "reports")
+    writer = _RecordingTrueCoachWorkoutItemWriter()
+
+    applied = service.apply(
+        "hevy-result-1",
+        workout_item_writer=writer,
+        decisions_path=decisions_path,
+    )
+
+    assert [item_id for item_id, _ in writer.update_requests] == [9101, 9103]
+    assert writer.completed_workout_ids == [9001]
+    assert applied.updated_true_coach_workout_item_ids == [9101, 9103]
+    assert applied.omitted_hevy_workout_item_ids == [2, 4]
+    assert applied.unresolved_hevy_workout_item_ids == []
+
+
+def test_hevy_to_truecoach_result_apply_sends_partial_reviewed_updates(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_result_review_workout(store)
+    decisions_path = tmp_path / "decisions.json"
+    decisions_path.write_text(
+        json.dumps(
+            {
+                "hevy_workout_id": "hevy-result-1",
+                "allow_partial_apply": True,
+                "approve_completion": True,
+                "items": [
+                    {"hevy_workout_item_id": 1, "action": "sync"},
+                    {
+                        "hevy_workout_item_id": 2,
+                        "action": "omit",
+                        "omit_reason": "Unsupported custom metric result.",
+                    },
+                    {
+                        "hevy_workout_item_id": 3,
+                        "action": "sync",
+                        "override_true_coach_workout_item_id": 9103,
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    service = HevyToTrueCoachResultReviewService(store=store, output_root=tmp_path / "reports")
+    dry_run = service.write_apply_request("hevy-result-1", decisions_path=decisions_path)
+    writer = _RecordingTrueCoachWorkoutItemWriter()
+
+    applied = service.apply(
+        "hevy-result-1",
+        workout_item_writer=writer,
+        decisions_path=decisions_path,
+    )
+
+    dry_run_request = json.loads(dry_run.request_path.read_text(encoding="utf-8"))
+    assert [request.model_dump() for _, request in writer.update_requests] == [
+        update["body"]["workout_item"] for update in dry_run_request["update_workout_items"]
+    ]
+    assert [item_id for item_id, _ in writer.update_requests] == [9101, 9103]
+    assert writer.completed_workout_ids == []
+    assert applied.action == "applied"
+    assert applied.updated_true_coach_workout_item_ids == [9101, 9103]
+    assert applied.omitted_hevy_workout_item_ids == [2]
+    assert applied.unresolved_hevy_workout_item_ids == [4]
+
+
 def _write_review_with_decisions(
     tmp_path: Path,
     db_path: Path,
@@ -631,6 +771,18 @@ def _write_safe_apply_decisions(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     return decisions_path
+
+
+class _RecordingTrueCoachWorkoutItemWriter:
+    def __init__(self) -> None:
+        self.update_requests: list[tuple[int, PutWorkoutItemRequest]] = []
+        self.completed_workout_ids: list[int] = []
+
+    def update_workout_item(self, item_id: int, item: PutWorkoutItemRequest) -> None:
+        self.update_requests.append((item_id, item))
+
+    def mark_workout_completed(self, workout_id: int) -> None:
+        self.completed_workout_ids.append(workout_id)
 
 
 def _replace_row_work_with_repeated_warmup_and_main(store: Store, *, ambiguous: bool) -> None:
