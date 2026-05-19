@@ -34,11 +34,13 @@ from fitness_tracker.sync._true_coach_html import (
 from fitness_tracker.sync.ports import HevyRoutineWriter
 from fitness_tracker.sync_review.split_circuit.core import (
     SetRow,
+    SplitCircuitExerciseNoteContext,
     SplitCircuitExercisePlan,
     SplitCircuitPrescription,
     SplitCircuitTemplateRef,
     SplitCircuitTemplateRequirement,
     plan_parsed_split_circuit,
+    render_split_circuit_exercise_notes,
 )
 
 SET_DISPLAY_KEYS = ("type", "weight_kg", "reps", "distance_meters", "duration_seconds")
@@ -463,11 +465,6 @@ class TrueCoachToHevyReviewService:
         blocks: list[PlannedBlock] = []
         block_kind = _circuit_block_kind(parsed_block)
         for index, exercise in enumerate(split_plan.exercises, start=1):
-            movement = ParsedCircuitMovement(
-                name=exercise.name,
-                target=exercise.target,
-                source_text=exercise.source_text,
-            )
             template = _hevy_template_for_split_exercise(uow, exercise)
             required_templates = [
                 _required_template_from_split(requirement, source_workout_item_id=item.id)
@@ -483,11 +480,18 @@ class TrueCoachToHevyReviewService:
                     superset_id=superset_id,
                     block_index=index,
                     block_kind=block_kind,
-                    source_text=movement.source_text,
+                    source_text=exercise.source_text,
                     original_source_text=item.info or "",
-                    notes=_circuit_movement_notes(item, movement, parsed_block),
-                    movement_name=movement.name,
-                    movement_target=movement.target,
+                    notes=render_split_circuit_exercise_notes(
+                        SplitCircuitExerciseNoteContext(
+                            exercise=exercise,
+                            plan=split_plan,
+                            source_text=item.info or "",
+                            include_metadata_lines=True,
+                        )
+                    ),
+                    movement_name=exercise.name,
+                    movement_target=exercise.target,
                     selected_hevy_template=template,
                     required_hevy_templates=required_templates,
                     proposed_sets=proposed_sets,
@@ -1266,30 +1270,6 @@ def _circuit_block_kind(parsed_block: ParsedCircuitBlock) -> PlannedBlockKind:
     if parsed_block.kind == "amrap":
         return "amrap_movement"
     return "circuit_movement"
-
-
-def _circuit_movement_notes(
-    item: TrueCoachWorkoutItem,
-    movement: ParsedCircuitMovement,
-    parsed_block: ParsedCircuitBlock,
-) -> str:
-    parts = [
-        movement.source_text,
-        f"Movement: {movement.name}",
-        f"Movement target: {movement.target or 'none'}",
-    ]
-    if parsed_block.round_count is not None:
-        parts.append(f"Rounds: {parsed_block.round_count}")
-    if parsed_block.amrap_time_cap_seconds is not None:
-        parts.append(f"AMRAP time cap seconds: {parsed_block.amrap_time_cap_seconds}")
-    if parsed_block.rests:
-        parts.append("Rest lines: " + "; ".join(rest.source_text for rest in parsed_block.rests))
-    if parsed_block.metadata_lines:
-        parts.append(
-            "Metadata lines: " + "; ".join(line.source_text for line in parsed_block.metadata_lines)
-        )
-    parts.append(f"Source: {item.info or ''}")
-    return "\n".join(parts)
 
 
 def _enrich_sets_from_history(

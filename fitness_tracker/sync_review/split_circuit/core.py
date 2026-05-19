@@ -109,6 +109,18 @@ class SplitCircuitPrescription:
 
 
 @dataclass(frozen=True)
+class SplitCircuitExerciseNoteContext:
+    """Inputs for rendering notes on one generated Split Circuit exercise."""
+
+    exercise: SplitCircuitExercisePlan
+    plan: SplitCircuitPlan
+    source_text: str
+    round_count_label: str = "Rounds"
+    extra_lines: tuple[str, ...] = ()
+    include_metadata_lines: bool = False
+
+
+@dataclass(frozen=True)
 class _BlockerContext:
     selected_template: SplitCircuitTemplateRef | None
     requirements: list[SplitCircuitTemplateRequirement]
@@ -197,6 +209,36 @@ def plan_parsed_split_circuit(
         agent_decision_reason=parsed_block.agent_decision_reason,
         original_source_text=prescription.text,
     )
+
+
+def render_split_circuit_exercise_notes(context: SplitCircuitExerciseNoteContext) -> str:
+    """Render shared generated exercise notes from a Split Circuit plan.
+
+    Args:
+        context (SplitCircuitExerciseNoteContext): Plan and workflow-specific note
+            evidence for one generated exercise.
+
+    Returns:
+        str: Notes text suitable for Routine or Workout request adaptation.
+    """
+    exercise = context.exercise
+    plan = context.plan
+    parts = [
+        exercise.source_text,
+        f"Movement: {exercise.name}",
+        f"Movement target: {exercise.target or 'none'}",
+    ]
+    if plan.round_count is not None:
+        parts.append(f"{context.round_count_label}: {plan.round_count}")
+    if plan.amrap_time_cap_seconds is not None:
+        parts.append(f"AMRAP time cap seconds: {plan.amrap_time_cap_seconds}")
+    parts.extend(context.extra_lines)
+    if plan.rests:
+        parts.append("Rest lines: " + "; ".join(rest.source_text for rest in plan.rests))
+    if context.include_metadata_lines and plan.metadata_lines:
+        parts.append("Metadata lines: " + "; ".join(plan.metadata_lines))
+    parts.append(f"Source: {context.source_text}")
+    return "\n".join(parts)
 
 
 def _exercise_plan(

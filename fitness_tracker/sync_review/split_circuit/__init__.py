@@ -4,6 +4,7 @@ from fitness_tracker.sync_review.split_circuit.core import (
     AGENT_DECISION_BLOCKER_PREFIX,
     SetRow,
     SplitCircuitExercisePlan,
+    SplitCircuitExerciseNoteContext,
     SplitCircuitGroupingIntent,
     SplitCircuitPlan,
     SplitCircuitPrescription,
@@ -12,11 +13,13 @@ from fitness_tracker.sync_review.split_circuit.core import (
     SplitCircuitTemplateRequirement,
     plan_parsed_split_circuit,
     plan_prescription_split_circuit,
+    render_split_circuit_exercise_notes,
 )
 
 __all__ = [
     "AGENT_DECISION_BLOCKER_PREFIX",
     "SetRow",
+    "SplitCircuitExerciseNoteContext",
     "SplitCircuitExercisePlan",
     "SplitCircuitGroupingIntent",
     "SplitCircuitPlan",
@@ -26,4 +29,5 @@ __all__ = [
     "SplitCircuitTemplateRequirement",
     "plan_parsed_split_circuit",
     "plan_prescription_split_circuit",
+    "render_split_circuit_exercise_notes",
 ]

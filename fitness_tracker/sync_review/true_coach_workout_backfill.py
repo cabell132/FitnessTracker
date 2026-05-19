@@ -40,12 +40,14 @@ from fitness_tracker.sync.ports import HevyWorkoutWriter
 from fitness_tracker.sync_review.split_circuit.core import (
     AGENT_DECISION_BLOCKER_PREFIX,
     SetRow,
+    SplitCircuitExerciseNoteContext,
     SplitCircuitExercisePlan,
     SplitCircuitPlan,
     SplitCircuitPrescription,
     SplitCircuitTemplateRef,
     SplitCircuitTemplateRequirement,
     plan_parsed_split_circuit,
+    render_split_circuit_exercise_notes,
 )
 
 
@@ -163,17 +165,6 @@ class CircuitReviewContext:
     comment: str
     templates: list[HevyAppExercise]
     parsed_block: ParsedCircuitBlock
-
-
-@dataclass(frozen=True)
-class CircuitMovementNoteContext:
-    """Inputs for rendering notes on one generated Circuit movement."""
-
-    exercise: SplitCircuitExercisePlan
-    split_plan: SplitCircuitPlan
-    source_text: str
-    comment: str
-    round_time_lines: list[str]
 
 
 @dataclass(frozen=True)
@@ -881,13 +872,24 @@ def _circuit_review_items(context: CircuitReviewContext) -> list[BackfillReviewI
                 comment=context.comment,
                 selected_hevy_template=template,
                 sets=sets,
-                notes=_circuit_movement_notes(
-                    CircuitMovementNoteContext(
+                notes=render_split_circuit_exercise_notes(
+                    SplitCircuitExerciseNoteContext(
                         exercise=exercise,
-                        split_plan=split_plan,
+                        plan=split_plan,
                         source_text=context.info,
-                        comment=context.comment,
-                        round_time_lines=round_time_lines,
+                        round_count_label="Prescribed rounds",
+                        extra_lines=tuple(
+                            line
+                            for line in (
+                                (
+                                    f"Completed round times: {'; '.join(round_time_lines)}"
+                                    if round_time_lines
+                                    else None
+                                ),
+                                f"Athlete comment: {context.comment}" if context.comment else None,
+                            )
+                            if line is not None
+                        ),
                     )
                 ),
                 warnings=warnings,
@@ -1107,28 +1109,6 @@ def _repeat_sets(
     count: int,
 ) -> list[PostWorkoutsRequestSet]:
     return [set_row for _ in range(count) for set_row in sets]
-
-
-def _circuit_movement_notes(context: CircuitMovementNoteContext) -> str:
-    exercise = context.exercise
-    split_plan = context.split_plan
-    parts = [
-        exercise.source_text,
-        f"Movement: {exercise.name}",
-        f"Movement target: {exercise.target or 'none'}",
-    ]
-    if split_plan.round_count is not None:
-        parts.append(f"Prescribed rounds: {split_plan.round_count}")
-    if split_plan.amrap_time_cap_seconds is not None:
-        parts.append(f"AMRAP time cap seconds: {split_plan.amrap_time_cap_seconds}")
-    if context.round_time_lines:
-        parts.append(f"Completed round times: {'; '.join(context.round_time_lines)}")
-    if split_plan.rests:
-        parts.append("Rest lines: " + "; ".join(rest.source_text for rest in split_plan.rests))
-    if context.comment:
-        parts.append(f"Athlete comment: {context.comment}")
-    parts.append(f"Source: {context.source_text}")
-    return "\n".join(parts)
 
 
 def _choice_review_items(context: ChoiceReviewContext) -> list[BackfillReviewItem]:

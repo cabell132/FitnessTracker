@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from fitness_tracker.sync_review.split_circuit.core import (
+    SplitCircuitExerciseNoteContext,
     SplitCircuitPrescription,
     SplitCircuitTemplateRef,
     SplitCircuitTemplateRequirement,
     plan_prescription_split_circuit,
+    render_split_circuit_exercise_notes,
 )
 
 
@@ -215,3 +217,44 @@ def test_split_circuit_core_records_inherited_grouping_intent_without_numeric_id
     assert plan is not None
     assert plan.grouping_intent.inherit_superset_context is True
     assert plan.grouping_intent.numeric_superset_id is None
+
+
+def test_split_circuit_core_renders_generated_exercise_notes() -> None:
+    plan = plan_prescription_split_circuit(
+        prescription=SplitCircuitPrescription(
+            name="3 Round Circuit",
+            text=("10 Burpees\nPlank 30s\nRest 15s between exercises and 60s between rounds"),
+        ),
+        resolve_template=lambda name, source_text: (
+            SplitCircuitTemplateRef(
+                id=f"hevy-{name.casefold().replace(' ', '-')}",
+                name=name,
+                type="reps",
+                equipment="bodyweight",
+            ),
+            [],
+        ),
+    )
+
+    assert plan is not None
+    notes = render_split_circuit_exercise_notes(
+        SplitCircuitExerciseNoteContext(
+            exercise=plan.exercises[0],
+            plan=plan,
+            source_text=plan.original_source_text,
+            round_count_label="Prescribed rounds",
+            extra_lines=("Completed round times: 2 min 10 sec; 2 min 15 sec",),
+        )
+    )
+
+    assert notes == (
+        "10 Burpees\n"
+        "Movement: Burpees\n"
+        "Movement target: 10\n"
+        "Prescribed rounds: 3\n"
+        "Completed round times: 2 min 10 sec; 2 min 15 sec\n"
+        "Rest lines: Rest 15s between exercises and 60s between rounds\n"
+        "Source: 10 Burpees\n"
+        "Plank 30s\n"
+        "Rest 15s between exercises and 60s between rounds"
+    )
