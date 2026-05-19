@@ -60,6 +60,12 @@ class WorkoutBackfillApplyError(Exception):
 _EMPTY_WORKOUT_BACKFILL_REQUEST_BLOCKER = (
     "No performed exercise blocks are requestable for Workout backfill"
 )
+_REPLACEMENT_MOVEMENT_PATTERNS = (
+    r"(?:w/o|without|no)\s+(?P<omitted>.+?)\s+"
+    r"(?:replaced\s+with|instead\s+of|subbed\s+with|swapped\s+for)\s+"
+    r"(?P<replacement>.+)",
+    r"(?:w/o|without|no)\s+(?P<omitted>.+?),?\s+(?P<replacement>.+?)\s+instead",
+)
 
 
 @dataclass(frozen=True)
@@ -814,24 +820,25 @@ def _circuit_review_items(context: CircuitReviewContext) -> list[BackfillReviewI
     completed_round_count = _completed_round_count(context.comment, context.parsed_block)
     round_time_lines = _round_time_lines(context.comment)
     omitted_movements = _omitted_movement_names(context.comment)
-    replacement_movements = _replacement_movement_names(context.comment)
+    replacement_movements = _replacement_movements_from_comment(context.comment)
     review_items: list[BackfillReviewItem] = []
     for offset, exercise in enumerate(split_plan.exercises):
         replacement = _matching_replacement(exercise.name, replacement_movements)
-        review_name = replacement.name if replacement is not None else exercise.name
+        review_name = exercise.name
+        template = _hevy_template_for_split_exercise(context.templates, exercise)
+        replacement_for_movement_name: str | None = None
+        replacement_source_comment: str | None = None
+        if replacement is not None:
+            review_name = replacement.name
+            template = None
+            replacement_for_movement_name = exercise.name
+            replacement_source_comment = replacement.source_text
         matches = _matching_choice_templates(review_name, context.templates)
-        template = (
-            None
-            if replacement is not None
-            else _hevy_template_for_split_exercise(context.templates, exercise)
-        )
         omission_comment = _matching_omission_comment(exercise.name, omitted_movements)
         base_sets = [_workout_set_from_split_row(set_row) for set_row in exercise.set_rows]
-        sets = (
-            []
-            if omission_comment is not None and replacement is None
-            else _repeat_sets(base_sets, count=completed_round_count or 1)
-        )
+        sets = _repeat_sets(base_sets, count=completed_round_count or 1)
+        if omission_comment is not None and replacement is None:
+            sets = []
         warnings: list[str] = []
         blockers: list[str] = []
         circuit_decision_reason: str | None = None
@@ -886,10 +893,8 @@ def _circuit_review_items(context: CircuitReviewContext) -> list[BackfillReviewI
                 completed_round_count=completed_round_count,
                 circuit_template_candidate_ids=[template.id for template in matches],
                 circuit_decision_reason=circuit_decision_reason,
-                replacement_for_movement_name=(exercise.name if replacement is not None else None),
-                replacement_source_comment=(
-                    replacement.source_text if replacement is not None else None
-                ),
+                replacement_for_movement_name=replacement_for_movement_name,
+                replacement_source_comment=replacement_source_comment,
             )
         )
     return review_items
@@ -1018,10 +1023,10 @@ class ReplacementMovement:
     source_text: str
 
 
-def _replacement_movement_names(comment: str) -> list[ReplacementMovement]:
+def _replacement_movements_from_comment(comment: str) -> list[ReplacementMovement]:
     replacements: list[ReplacementMovement] = []
     for segment in _replacement_comment_segments(comment):
-        replacement = _replacement_movement_name(segment)
+        replacement = _replacement_movement_from_segment(segment)
         if replacement is not None:
             replacements.append(replacement)
     return replacements
@@ -1031,12 +1036,8 @@ def _replacement_comment_segments(comment: str) -> list[str]:
     return [segment.strip() for segment in re.split(r"\n|;", comment) if segment.strip()]
 
 
-def _replacement_movement_name(segment: str) -> ReplacementMovement | None:
-    patterns = [
-        r"(?:w/o|without|no)\s+(?P<omitted>.+?)\s+(?:replaced\s+with|instead\s+of|subbed\s+with|swapped\s+for)\s+(?P<replacement>.+)",
-        r"(?:w/o|without|no)\s+(?P<omitted>.+?),?\s+(?P<replacement>.+?)\s+instead",
-    ]
-    for pattern in patterns:
+def _replacement_movement_from_segment(segment: str) -> ReplacementMovement | None:
+    for pattern in _REPLACEMENT_MOVEMENT_PATTERNS:
         match = re.fullmatch(pattern, segment.strip(), flags=re.IGNORECASE)
         if match is None:
             continue
@@ -1613,10 +1614,9 @@ def _circuit_decision_templates(plan: dict[str, Any]) -> list[dict[str, Any]]:
             "candidate_template_ids": item["circuit_template_candidates"],
             "reason": item["circuit_decision_reason"],
         }
-        if "replacement_for_movement_name" in item:
-            decision["replacement_for_movement_name"] = item["replacement_for_movement_name"]
-        if "replacement_source_comment" in item:
-            decision["replacement_source_comment"] = item["replacement_source_comment"]
+        for key in ("replacement_for_movement_name", "replacement_source_comment"):
+            if key in item:
+                decision[key] = item[key]
         templates.append(decision)
     return templates
 
