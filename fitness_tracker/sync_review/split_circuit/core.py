@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, TypedDict
 
 from fitness_tracker.sync._circuit_block_parser import (
     ParsedCircuitBlock,
@@ -15,7 +15,18 @@ from fitness_tracker.sync._circuit_block_parser import (
 
 SplitCircuitKind = Literal["circuit", "amrap"]
 TemplateRequirementStatus = Literal["existing", "missing", "ambiguous"]
-SetRow = dict[str, int | float | str]
+SetRowType = Literal["normal", "warmup", "failure", "dropset"]
+AGENT_DECISION_BLOCKER_PREFIX = "Circuit block requires Agent decision: "
+
+
+class SetRow(TypedDict, total=False):
+    """Plain set row produced by Split Circuit planning."""
+
+    type: SetRowType
+    weight_kg: float
+    reps: int
+    distance_meters: int
+    duration_seconds: int
 
 
 @dataclass(frozen=True)
@@ -164,6 +175,7 @@ def plan_parsed_split_circuit(
             resolve_template=resolve_template,
         )
         for movement in parsed_block.movements
+        if not _is_round_count_instruction(movement.source_text)
     )
     return SplitCircuitPlan(
         kind=parsed_block.kind,
@@ -233,6 +245,10 @@ def _is_notes_only_generated_exercise(*, target: str, set_rows: list[SetRow]) ->
     return bool(target.strip()) and not set_rows
 
 
+def _is_round_count_instruction(source_text: str) -> bool:
+    return re.fullmatch(r"\d+\s*rounds?", source_text.strip(), re.IGNORECASE) is not None
+
+
 def _warnings(
     *,
     selected_template: SplitCircuitTemplateRef | None,
@@ -258,8 +274,7 @@ def _blockers(context: _BlockerContext) -> tuple[str, ...]:
     )
     if context.agent_decision_reason is not None:
         blockers.append(
-            "Circuit block requires Agent decision: "
-            f"{context.agent_decision_reason or 'unspecified'}"
+            f"{AGENT_DECISION_BLOCKER_PREFIX}{context.agent_decision_reason or 'unspecified'}"
         )
     if context.agent_decision_reason is None and not context.set_rows and not context.notes_only:
         blockers.append(

@@ -47,6 +47,32 @@ def test_split_circuit_core_plans_resolved_round_circuit_without_request_objects
     assert all(not exercise.blockers for exercise in plan.exercises)
 
 
+def test_split_circuit_core_treats_body_round_count_line_as_metadata() -> None:
+    plan = plan_prescription_split_circuit(
+        prescription=SplitCircuitPrescription(
+            name="Conditioning Circuit",
+            text="""
+            3 Rounds
+            10 Burpees
+            Plank 30s
+            """,
+        ),
+        resolve_template=lambda name, source_text: (
+            SplitCircuitTemplateRef(
+                id=f"hevy-{name.casefold().replace(' ', '-')}",
+                name=name,
+                type="reps",
+                equipment="bodyweight",
+            ),
+            [],
+        ),
+    )
+
+    assert plan is not None
+    assert plan.round_count == 3
+    assert [exercise.name for exercise in plan.exercises] == ["Burpees", "Plank"]
+
+
 def test_split_circuit_core_plans_multi_exercise_amrap() -> None:
     plan = plan_prescription_split_circuit(
         prescription=SplitCircuitPrescription(

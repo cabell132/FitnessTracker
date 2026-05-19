@@ -33,11 +33,20 @@ from fitness_tracker.database.models.tracker import (
 from fitness_tracker.database.models.true_coach import TrueCoachWorkout
 from fitness_tracker.sync._circuit_block_parser import (
     ParsedCircuitBlock,
-    ParsedCircuitMovement,
     parse_circuit_block,
 )
 from fitness_tracker.sync._true_coach_html import build_superset_index, parse_workout_order
 from fitness_tracker.sync.ports import HevyWorkoutWriter
+from fitness_tracker.sync_review.split_circuit.core import (
+    AGENT_DECISION_BLOCKER_PREFIX,
+    SetRow,
+    SplitCircuitExercisePlan,
+    SplitCircuitPlan,
+    SplitCircuitPrescription,
+    SplitCircuitTemplateRef,
+    SplitCircuitTemplateRequirement,
+    plan_parsed_split_circuit,
+)
 
 
 class WorkoutBackfillReviewError(Exception):
@@ -148,8 +157,8 @@ class CircuitReviewContext:
 class CircuitMovementNoteContext:
     """Inputs for rendering notes on one generated Circuit movement."""
 
-    movement: ParsedCircuitMovement
-    parsed_block: ParsedCircuitBlock
+    exercise: SplitCircuitExercisePlan
+    split_plan: SplitCircuitPlan
     source_text: str
     comment: str
     round_time_lines: list[str]
@@ -799,15 +808,16 @@ def _review_item(  # noqa: C901, PLR0915
 
 
 def _circuit_review_items(context: CircuitReviewContext) -> list[BackfillReviewItem]:  # noqa: PLR0915
+    split_plan = _split_circuit_plan(context)
     completed_round_count = _completed_round_count(context.comment, context.parsed_block)
     round_time_lines = _round_time_lines(context.comment)
     omitted_movements = _omitted_movement_names(context.comment)
     review_items: list[BackfillReviewItem] = []
-    for offset, movement in enumerate(_reviewable_circuit_movements(context.parsed_block)):
-        matches = _matching_choice_templates(movement.name, context.templates)
-        template = matches[0] if len(matches) == 1 else None
-        omission_comment = _matching_omission_comment(movement.name, omitted_movements)
-        base_sets = _sets_for_circuit_movement(movement)
+    for offset, exercise in enumerate(split_plan.exercises):
+        matches = _matching_choice_templates(exercise.name, context.templates)
+        template = _hevy_template_for_split_exercise(context.templates, exercise)
+        omission_comment = _matching_omission_comment(exercise.name, omitted_movements)
+        base_sets = [_workout_set_from_split_row(set_row) for set_row in exercise.set_rows]
         sets = (
             []
             if omission_comment is not None
@@ -821,17 +831,18 @@ def _circuit_review_items(context: CircuitReviewContext) -> list[BackfillReviewI
         elif not matches:
             blockers.append(
                 f"Missing Hevy template mapping for Circuit Workout Item "
-                f"{context.source_id}: {movement.name}"
+                f"{context.source_id}: {exercise.name}"
             )
             circuit_decision_reason = "missing_template"
         elif len(matches) > 1:
             ids = ", ".join(template.id for template in matches)
             blockers.append(
                 f"Ambiguous Hevy template mapping for Circuit Workout Item "
-                f"{context.source_id}: {movement.name} ({ids})"
+                f"{context.source_id}: {exercise.name} ({ids})"
             )
             circuit_decision_reason = "ambiguous_template"
-        if movement.target and not base_sets and omission_comment is None:
+        blockers.extend(_agent_decision_blockers(exercise))
+        if exercise.target and not base_sets and omission_comment is None:
             warnings.append("No deterministic set parser for Circuit movement target.")
         review_items.append(
             BackfillReviewItem(
@@ -839,15 +850,15 @@ def _circuit_review_items(context: CircuitReviewContext) -> list[BackfillReviewI
                 tracker_workout_item_id=context.item.id,
                 position=context.position + offset,
                 superset_id=context.superset_id,
-                name=movement.name,
+                name=exercise.name,
                 info=context.info,
                 comment=context.comment,
                 selected_hevy_template=template,
                 sets=sets,
                 notes=_circuit_movement_notes(
                     CircuitMovementNoteContext(
-                        movement=movement,
-                        parsed_block=context.parsed_block,
+                        exercise=exercise,
+                        split_plan=split_plan,
                         source_text=context.info,
                         comment=context.comment,
                         round_time_lines=round_time_lines,
@@ -855,8 +866,8 @@ def _circuit_review_items(context: CircuitReviewContext) -> list[BackfillReviewI
                 ),
                 warnings=warnings,
                 blockers=blockers,
-                movement_target=movement.target,
-                original_prescription_text=movement.source_text,
+                movement_target=exercise.target,
+                original_prescription_text=exercise.source_text,
                 completed_round_count=completed_round_count,
                 circuit_template_candidate_ids=[template.id for template in matches],
                 circuit_decision_reason=circuit_decision_reason,
@@ -865,13 +876,54 @@ def _circuit_review_items(context: CircuitReviewContext) -> list[BackfillReviewI
     return review_items
 
 
-def _reviewable_circuit_movements(
-    parsed_block: ParsedCircuitBlock,
-) -> list[ParsedCircuitMovement]:
+def _split_circuit_plan(context: CircuitReviewContext) -> SplitCircuitPlan:
+    def resolve_template(
+        movement_name: str,
+        _source_text: str,
+    ) -> tuple[SplitCircuitTemplateRef | None, list[SplitCircuitTemplateRequirement]]:
+        matches = _matching_choice_templates(movement_name, context.templates)
+        template = matches[0] if len(matches) == 1 else None
+        return _split_template_ref(template), []
+
+    return plan_parsed_split_circuit(
+        parsed_block=context.parsed_block,
+        prescription=SplitCircuitPrescription(
+            name=context.item.true_coach.name or "",
+            text=context.info,
+            inherit_superset_context=context.superset_id is not None,
+        ),
+        resolve_template=resolve_template,
+    )
+
+
+def _split_template_ref(template: HevyAppExercise | None) -> SplitCircuitTemplateRef | None:
+    if template is None:
+        return None
+    return SplitCircuitTemplateRef(
+        id=template.id,
+        name=template.name,
+        type=template.type,
+        equipment=template.equipment,
+    )
+
+
+def _hevy_template_for_split_exercise(
+    templates: list[HevyAppExercise],
+    exercise: SplitCircuitExercisePlan,
+) -> HevyAppExercise | None:
+    if exercise.selected_template is None:
+        return None
+    for template in templates:
+        if template.id == exercise.selected_template.id:
+            return template
+    return None
+
+
+def _agent_decision_blockers(exercise: SplitCircuitExercisePlan) -> list[str]:
     return [
-        movement
-        for movement in parsed_block.movements
-        if not re.fullmatch(r"\d+\s*rounds?", movement.source_text.strip(), re.IGNORECASE)
+        blocker
+        for blocker in exercise.blockers
+        if blocker.startswith(AGENT_DECISION_BLOCKER_PREFIX)
     ]
 
 
@@ -953,29 +1005,14 @@ def _matching_omission_comment(
     return None
 
 
-def _sets_for_circuit_movement(
-    movement: ParsedCircuitMovement,
-) -> list[PostWorkoutsRequestSet]:
-    target = movement.target.strip()
-    if not target:
-        return []
-    if match := re.fullmatch(r"(?P<reps>\d+)(?:\s+(?:each side|es))?", target, re.IGNORECASE):
-        return [PostWorkoutsRequestSet(type="normal", reps=int(match.group("reps")))]
-    if match := re.fullmatch(r"(?P<distance>\d+)\s*(?:m|meters?)", target, re.IGNORECASE):
-        return [PostWorkoutsRequestSet(type="normal", distance_meters=int(match.group("distance")))]
-    if match := re.fullmatch(
-        r"(?P<seconds>\d+)\s*(?:s|sec|secs|second|seconds)", target, re.IGNORECASE
-    ):
-        return [PostWorkoutsRequestSet(type="normal", duration_seconds=int(match.group("seconds")))]
-    if match := re.fullmatch(
-        r"(?P<minutes>\d+)\s*(?:min|mins|minute|minutes)(?:\s+\w+)?",
-        target,
-        re.IGNORECASE,
-    ):
-        return [
-            PostWorkoutsRequestSet(type="normal", duration_seconds=int(match.group("minutes")) * 60)
-        ]
-    return []
+def _workout_set_from_split_row(row: SetRow) -> PostWorkoutsRequestSet:
+    return PostWorkoutsRequestSet(
+        type=row.get("type", "normal"),
+        weight_kg=row.get("weight_kg"),
+        reps=row.get("reps"),
+        distance_meters=row.get("distance_meters"),
+        duration_seconds=row.get("duration_seconds"),
+    )
 
 
 def _repeat_sets(
@@ -987,21 +1024,21 @@ def _repeat_sets(
 
 
 def _circuit_movement_notes(context: CircuitMovementNoteContext) -> str:
-    movement = context.movement
-    parsed_block = context.parsed_block
+    exercise = context.exercise
+    split_plan = context.split_plan
     parts = [
-        movement.source_text,
-        f"Movement: {movement.name}",
-        f"Movement target: {movement.target or 'none'}",
+        exercise.source_text,
+        f"Movement: {exercise.name}",
+        f"Movement target: {exercise.target or 'none'}",
     ]
-    if parsed_block.round_count is not None:
-        parts.append(f"Prescribed rounds: {parsed_block.round_count}")
-    if parsed_block.amrap_time_cap_seconds is not None:
-        parts.append(f"AMRAP time cap seconds: {parsed_block.amrap_time_cap_seconds}")
+    if split_plan.round_count is not None:
+        parts.append(f"Prescribed rounds: {split_plan.round_count}")
+    if split_plan.amrap_time_cap_seconds is not None:
+        parts.append(f"AMRAP time cap seconds: {split_plan.amrap_time_cap_seconds}")
     if context.round_time_lines:
         parts.append(f"Completed round times: {'; '.join(context.round_time_lines)}")
-    if parsed_block.rests:
-        parts.append("Rest lines: " + "; ".join(rest.source_text for rest in parsed_block.rests))
+    if split_plan.rests:
+        parts.append("Rest lines: " + "; ".join(rest.source_text for rest in split_plan.rests))
     if context.comment:
         parts.append(f"Athlete comment: {context.comment}")
     parts.append(f"Source: {context.source_text}")
@@ -1720,6 +1757,7 @@ def _validate_apply_request(context: ApplyRequestValidationContext) -> None:
         for item in context.plan.get("items", [])
         for blocker in item.get("blockers", [])
         if _request_exercise_template_id(item, context.decisions) is None
+        or blocker.startswith(AGENT_DECISION_BLOCKER_PREFIX)
     ]
     blockers.extend(context.decision_validation.get("blockers", []))
     workout = context.request_body.workout

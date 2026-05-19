@@ -1,6 +1,8 @@
 """Shared Split Circuit planning core."""
 
 from fitness_tracker.sync_review.split_circuit.core import (
+    AGENT_DECISION_BLOCKER_PREFIX,
+    SetRow,
     SplitCircuitExercisePlan,
     SplitCircuitGroupingIntent,
     SplitCircuitPlan,
@@ -13,6 +15,8 @@ from fitness_tracker.sync_review.split_circuit.core import (
 )
 
 __all__ = [
+    "AGENT_DECISION_BLOCKER_PREFIX",
+    "SetRow",
     "SplitCircuitExercisePlan",
     "SplitCircuitGroupingIntent",
     "SplitCircuitPlan",

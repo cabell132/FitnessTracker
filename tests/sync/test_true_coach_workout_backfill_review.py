@@ -966,6 +966,47 @@ def test_workout_backfill_circuit_round_count_can_come_from_athlete_comment(
     ]
 
 
+def test_workout_backfill_circuit_ladder_requires_agent_decision(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    _add_choice_templates(store, [("hevy-squat", "Goblet Squat"), ("hevy-push-up", "Push Up")])
+    _add_circuit_backfill_item(
+        store,
+        name="3 Round Circuit",
+        info="""
+        Goblet Squat
+        Push Up
+        Round 1: 12 reps
+        Round 2: 10 reps
+        Round 3: 8 reps
+        """,
+        comment="3 Rounds",
+    )
+
+    bundle_dir = _write_backfill_review(db_path, tmp_path)
+    plan = json.loads((bundle_dir / "plan.json").read_text(encoding="utf-8"))
+    report = (bundle_dir / "report.md").read_text(encoding="utf-8")
+
+    circuit_items = plan["items"][2:]
+    assert [item["name"] for item in circuit_items] == ["Goblet Squat", "Push Up"]
+    assert [item["blockers"] for item in circuit_items] == [
+        ["Circuit block requires Agent decision: round_specific_rep_ladder"],
+        ["Circuit block requires Agent decision: round_specific_rep_ladder"],
+    ]
+    assert "BLOCKER: Circuit block requires Agent decision: round_specific_rep_ladder" in report
+
+    service = TrueCoachWorkoutBackfillReviewService(store=store, output_root=tmp_path / "reports")
+    with pytest.raises(
+        WorkoutBackfillApplyError,
+        match="Circuit block requires Agent decision: round_specific_rep_ladder",
+    ):
+        service.write_apply_request(455045484)
+
+
 def test_workout_backfill_circuit_item_missing_template_writes_required_decision(
     tmp_path: Path,
 ) -> None:
