@@ -11,6 +11,7 @@ import pytest
 from sqlalchemy import create_engine
 
 from fitness_tracker import cli
+from fitness_tracker.apis.hevy_app.exceptions import HevyAppAPIError
 from fitness_tracker.database import Store
 from fitness_tracker.database.models import Exercise as TrackerExercise
 from fitness_tracker.database.models.hevy_app import HevyAppExercise
@@ -80,6 +81,69 @@ def test_hevy_routines_inspect_prints_compact_summary(
     assert "exercises: 2" in output
     assert "superset_ids: [0, 0]" in output
     assert "empty_set_blocks: [2]" in output
+
+
+def test_hevy_routines_inspect_json_keeps_stdout_parseable_and_warnings_on_stderr(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        cli,
+        "_hevy_api_json",
+        lambda *args, **kwargs: {
+            "routine": {
+                "id": "routine-1",
+                "title": "18 May 2026\nLower Body\n123",
+                "exercises": [
+                    {
+                        "exercise_template_id": "template-a",
+                        "superset_id": 0,
+                        "notes": "A1",
+                        "sets": [{"type": "normal", "reps": 5}],
+                    },
+                    {
+                        "exercise_template_id": "template-b",
+                        "superset_id": 0,
+                        "notes": "A2",
+                        "sets": [],
+                    },
+                ],
+            }
+        },
+    )
+
+    exit_code = cli.main(["hevy", "routines", "inspect", "routine-1", "--json"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert json.loads(captured.out) == {
+        "ok": True,
+        "routine": {
+            "id": "routine-1",
+            "title": "18 May 2026\nLower Body\n123",
+            "exercise_count": 2,
+            "superset_ids": [0, 0],
+            "empty_set_blocks": [2],
+            "exercises": [
+                {
+                    "position": 1,
+                    "superset_id": 0,
+                    "exercise_template_id": "template-a",
+                    "notes": "A1",
+                    "set_count": 1,
+                },
+                {
+                    "position": 2,
+                    "superset_id": 0,
+                    "exercise_template_id": "template-b",
+                    "notes": "A2",
+                    "set_count": 0,
+                },
+            ],
+        },
+        "warnings": ["Routine has empty set blocks: [2]"],
+    }
+    assert captured.err == "Warning: Routine has empty set blocks: [2]\n"
 
 
 def test_hevy_workouts_inspect_prints_compact_summary(
@@ -186,6 +250,72 @@ def test_hevy_routines_create_from_json_validates_and_writes_response(
         "routine": [{"id": "routine-2"}]
     }
     assert "Created Hevy routine: routine-2" in capsys.readouterr().out
+
+
+def test_hevy_routines_create_from_json_json_skips_response_artifact_without_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    request_path = tmp_path / "hevy-request.manual.json"
+    request_path.write_text(
+        json.dumps(
+            {
+                "routine": {
+                    "title": "18 May 2026\nLower Body\n123",
+                    "notes": "",
+                    "exercises": [
+                        {
+                            "exercise_template_id": "template-a",
+                            "notes": "A1",
+                            "sets": [{"type": "normal", "reps": 5}],
+                        }
+                    ],
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        cli,
+        "_hevy_api_json",
+        lambda *args, **kwargs: {"routine": {"id": "routine-2"}},
+    )
+
+    exit_code = cli.main(["hevy", "routines", "create-from-json", str(request_path), "--json"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert json.loads(captured.out) == {
+        "ok": True,
+        "action": "created",
+        "routine_id": "routine-2",
+        "response_path": None,
+        "response": {"routine": {"id": "routine-2"}},
+        "warnings": [],
+    }
+    assert captured.err == ""
+    assert not (tmp_path / "hevy-request.manual.response.json").exists()
+
+
+def test_hevy_routines_inspect_json_reports_nonzero_errors_as_json_stdout(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        cli,
+        "_hevy_api_json",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            HevyAppAPIError("upstream failed", url="https://api.hevyapp.com/v1/routines/404")
+        ),
+    )
+
+    exit_code = cli.main(["hevy", "routines", "inspect", "routine-404", "--json"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert json.loads(captured.out) == {"ok": False, "error": "upstream failed"}
+    assert captured.err == ""
 
 
 def test_hevy_routines_update_from_json_strips_folder_and_nulls(
