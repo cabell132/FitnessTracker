@@ -1,0 +1,383 @@
+from __future__ import annotations
+
+import json
+from datetime import UTC, datetime
+from pathlib import Path
+
+from sqlalchemy import create_engine
+
+from fitness_tracker.cli import main
+from fitness_tracker.database import Store
+from fitness_tracker.database.models.hevy_app import (
+    HevyAppExercise,
+    HevyAppSets,
+    HevyAppWorkout,
+    HevyAppWorkoutItem,
+)
+from fitness_tracker.database.models.tracker import (
+    Exercise as TrackerExercise,
+    Workout as TrackerWorkout,
+    WorkoutItem as TrackerWorkoutItem,
+)
+from fitness_tracker.database.models.true_coach import (
+    TrueCoachExercise,
+    TrueCoachWorkout,
+    TrueCoachWorkoutItem,
+)
+
+
+def test_hevy_to_truecoach_result_review_cli_writes_read_only_artifacts(  # noqa: PLR0915
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_result_review_workout(store)
+
+    exit_code = main(
+        [
+            "sync-review",
+            "hevy-to-truecoach-results",
+            "--workout-id",
+            "hevy-result-1",
+            "--database-url",
+            f"sqlite:///{db_path}",
+            "--output-dir",
+            str(tmp_path / "reports"),
+        ]
+    )
+
+    assert exit_code == 0
+    bundle_dir = (
+        tmp_path / "reports" / "sync-review" / "hevy-to-truecoach-results" / "hevy-result-1"
+    )
+    plan = json.loads((bundle_dir / "plan.json").read_text(encoding="utf-8"))
+    decisions = json.loads((bundle_dir / "result-decisions.json").read_text(encoding="utf-8"))
+    validation = json.loads((bundle_dir / "decision-validation.json").read_text(encoding="utf-8"))
+    report = (bundle_dir / "report.md").read_text(encoding="utf-8")
+
+    assert plan["workout"] == {
+        "hevy_workout_id": "hevy-result-1",
+        "title": "Upper Result",
+        "true_coach_workout_id": 9001,
+        "true_coach_title": "Upper Result",
+    }
+    assert [item["hevy_workout_item_id"] for item in plan["items"]] == [
+        1,
+        2,
+        3,
+        4,
+    ]
+    assert plan["items"][0]["target"]["true_coach_workout_item_id"] == 9101
+    assert plan["items"][0]["formatter"] == "weight_reps"
+    assert plan["items"][0]["proposed_result_text"] == "8 x 80.0 kg\n7 x 80.0 kg"
+    assert plan["items"][0]["sets"] == [
+        {
+            "index": 0,
+            "type": "normal",
+            "weight_kg": 80.0,
+            "reps": 8,
+            "distance_meters": None,
+            "duration_seconds": None,
+            "rpe": None,
+        },
+        {
+            "index": 1,
+            "type": "normal",
+            "weight_kg": 80.0,
+            "reps": 7,
+            "distance_meters": None,
+            "duration_seconds": None,
+            "rpe": None,
+        },
+    ]
+    assert plan["items"][1]["blockers"] == [
+        "Unsupported Hevy exercise type for True Coach result formatting: custom_metric"
+    ]
+    assert plan["items"][2]["blockers"] == [
+        "Ambiguous True Coach target for unlinked performed Hevy item: 2 candidates"
+    ]
+    assert [
+        candidate["true_coach_workout_item_id"] for candidate in plan["items"][2]["candidates"]
+    ] == [
+        9103,
+        9104,
+    ]
+    assert plan["items"][3]["blockers"] == [
+        "Missing True Coach Workout Item link for performed Hevy item"
+    ]
+    assert "would_call_true_coach_api" not in json.dumps(plan)
+
+    assert decisions["hevy_workout_id"] == "hevy-result-1"
+    assert decisions["items"][0] == {
+        "hevy_workout_item_id": 1,
+        "action": "sync",
+        "override_true_coach_workout_item_id": None,
+        "performed_as": None,
+        "order_context": None,
+        "omit_reason": None,
+    }
+    assert validation["blockers"] == plan["blockers"]
+    assert "Unsupported Hevy exercise type" in report
+    assert "Proposed result:" in report
+    assert "8 x 80.0 kg" in report
+
+
+def _seed_result_review_workout(store: Store) -> None:
+    now = datetime(2026, 5, 18, tzinfo=UTC)
+    with store.unit_of_work() as uow:
+        for row in (
+            HevyAppExercise(
+                id="hevy-bench",
+                name="Bench Press",
+                type="weight_reps",
+                equipment="barbell",
+                default=True,
+            ),
+            HevyAppExercise(
+                id="hevy-custom",
+                name="Tempo Balance",
+                type="custom_metric",
+                equipment="bodyweight",
+                default=True,
+            ),
+            HevyAppExercise(
+                id="hevy-row",
+                name="Chest Supported Row",
+                type="weight_reps",
+                equipment="machine",
+                default=True,
+            ),
+            HevyAppExercise(
+                id="hevy-curl",
+                name="DB Curl",
+                type="weight_reps",
+                equipment="dumbbell",
+                default=True,
+            ),
+        ):
+            uow.session.add(row)
+        for row in (
+            TrueCoachExercise(id=701, name="Bench Press", default=False),
+            TrueCoachExercise(id=702, name="Tempo Balance", default=False),
+            TrueCoachExercise(id=703, name="Chest Supported Row", default=False),
+            TrueCoachExercise(id=704, name="DB Curl", default=False),
+        ):
+            uow.session.add(row)
+        for row in (
+            TrackerExercise(name="Bench Press", hevy_app_id="hevy-bench", true_coach_id=701),
+            TrackerExercise(name="Tempo Balance", hevy_app_id="hevy-custom", true_coach_id=702),
+            TrackerExercise(name="Chest Supported Row", hevy_app_id="hevy-row", true_coach_id=703),
+            TrackerExercise(name="DB Curl", hevy_app_id="hevy-curl", true_coach_id=704),
+        ):
+            uow.session.add(row)
+        uow.session.add(
+            TrueCoachWorkout(
+                id=9001,
+                title="Upper Result",
+                due=now,
+                short_description="",
+                state="pending",
+                rest_day=False,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        uow.session.add(
+            HevyAppWorkout(
+                id="hevy-result-1",
+                title="Upper Result",
+                description="",
+                start_time=now,
+                end_time=now,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        uow.session.flush()
+        tracker_exercises = {
+            exercise.name: exercise
+            for exercise in uow.session.query(TrackerExercise).order_by(TrackerExercise.id)
+        }
+        uow.session.add(
+            TrackerWorkout(
+                title="Upper Result",
+                description="",
+                start_date=now,
+                end_date=now,
+                hevy_app_id="hevy-result-1",
+                true_coach_id=9001,
+            )
+        )
+        uow.session.flush()
+        tracker_workout = uow.session.query(TrackerWorkout).filter_by(true_coach_id=9001).one()
+        for row in (
+            TrueCoachWorkoutItem(
+                id=9101,
+                workout_id=9001,
+                name="Bench Press",
+                info="2 x 8",
+                comment="",
+                is_circuit=False,
+                state="pending",
+                position=1,
+                exercise_id=701,
+                assessment_id=None,
+            ),
+            TrueCoachWorkoutItem(
+                id=9102,
+                workout_id=9001,
+                name="Tempo Balance",
+                info="2 sets",
+                comment="",
+                is_circuit=False,
+                state="pending",
+                position=2,
+                exercise_id=702,
+                assessment_id=None,
+            ),
+            TrueCoachWorkoutItem(
+                id=9103,
+                workout_id=9001,
+                name="Chest Supported Row Warmup",
+                info="1 x 12",
+                comment="",
+                is_circuit=False,
+                state="pending",
+                position=3,
+                exercise_id=703,
+                assessment_id=None,
+            ),
+            TrueCoachWorkoutItem(
+                id=9104,
+                workout_id=9001,
+                name="Chest Supported Row Main",
+                info="2 x 10",
+                comment="",
+                is_circuit=False,
+                state="pending",
+                position=4,
+                exercise_id=703,
+                assessment_id=None,
+            ),
+            TrueCoachWorkoutItem(
+                id=9105,
+                workout_id=9001,
+                name="DB Curl",
+                info="2 x 12",
+                comment="",
+                is_circuit=False,
+                state="pending",
+                position=5,
+                exercise_id=704,
+                assessment_id=None,
+            ),
+        ):
+            uow.session.add(row)
+        for row in (
+            HevyAppWorkoutItem(
+                workout_id="hevy-result-1",
+                index=0,
+                name="Bench Press",
+                notes="",
+                superset_id=None,
+                exercise_id="hevy-bench",
+            ),
+            HevyAppWorkoutItem(
+                workout_id="hevy-result-1",
+                index=1,
+                name="Tempo Balance",
+                notes="",
+                superset_id=None,
+                exercise_id="hevy-custom",
+            ),
+            HevyAppWorkoutItem(
+                workout_id="hevy-result-1",
+                index=2,
+                name="Chest Supported Row",
+                notes="",
+                superset_id=None,
+                exercise_id="hevy-row",
+            ),
+            HevyAppWorkoutItem(
+                workout_id="hevy-result-1",
+                index=3,
+                name="DB Curl",
+                notes="",
+                superset_id=None,
+                exercise_id="hevy-curl",
+            ),
+        ):
+            uow.session.add(row)
+        uow.session.flush()
+        hevy_items = {
+            item.index: item
+            for item in uow.session.query(HevyAppWorkoutItem).order_by(HevyAppWorkoutItem.index)
+        }
+        for row in (
+            HevyAppSets(
+                workout_item_id=hevy_items[0].id,
+                index=0,
+                type="normal",
+                weight_kg=80.0,
+                reps=8,
+            ),
+            HevyAppSets(
+                workout_item_id=hevy_items[0].id,
+                index=1,
+                type="normal",
+                weight_kg=80.0,
+                reps=7,
+            ),
+            HevyAppSets(workout_item_id=hevy_items[1].id, index=0, type="normal", reps=1),
+            HevyAppSets(
+                workout_item_id=hevy_items[2].id,
+                index=0,
+                type="normal",
+                weight_kg=55.0,
+                reps=10,
+            ),
+            HevyAppSets(
+                workout_item_id=hevy_items[3].id,
+                index=0,
+                type="normal",
+                weight_kg=14.0,
+                reps=12,
+            ),
+        ):
+            uow.session.add(row)
+        for row in (
+            TrackerWorkoutItem(
+                workout_id=tracker_workout.id,
+                position=1,
+                exercise_id=tracker_exercises["Bench Press"].id,
+                hevy_app_id=hevy_items[0].id,
+                true_coach_id=9101,
+                rest=90,
+            ),
+            TrackerWorkoutItem(
+                workout_id=tracker_workout.id,
+                position=2,
+                exercise_id=tracker_exercises["Tempo Balance"].id,
+                hevy_app_id=hevy_items[1].id,
+                true_coach_id=9102,
+                rest=90,
+            ),
+            TrackerWorkoutItem(
+                workout_id=tracker_workout.id,
+                position=3,
+                exercise_id=tracker_exercises["Chest Supported Row"].id,
+                hevy_app_id=None,
+                true_coach_id=9103,
+                rest=90,
+            ),
+            TrackerWorkoutItem(
+                workout_id=tracker_workout.id,
+                position=4,
+                exercise_id=tracker_exercises["Chest Supported Row"].id,
+                hevy_app_id=None,
+                true_coach_id=9104,
+                rest=90,
+            ),
+        ):
+            uow.session.add(row)

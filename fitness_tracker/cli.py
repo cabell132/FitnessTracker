@@ -6,7 +6,7 @@ import argparse
 import json
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, get_args
+from typing import Any, cast, get_args
 
 import requests
 import urllib3
@@ -27,6 +27,7 @@ from fitness_tracker.apis.hevy_app.types.common import (
     EQUIPMENT_CATEGORIES,
     MUSCLE_GROUPS,
 )
+from fitness_tracker.apis.true_coach.workouts import WorkoutState
 from fitness_tracker.config import Config
 from fitness_tracker.database import Store
 from fitness_tracker.database.config import create_database_engine
@@ -46,6 +47,8 @@ from fitness_tracker.maintenance.hevy_template_ensure import (
 from fitness_tracker.sync.adapters import HevyRoutineWriterAdapter, HevyWorkoutWriterAdapter
 from fitness_tracker.sync.true_coach_tracker.sync import TrueCoachToFitnessTrackerSyncronizer
 from fitness_tracker.sync_review import (
+    HevyToTrueCoachResultReviewError,
+    HevyToTrueCoachResultReviewService,
     SyncApplyError,
     SyncReviewError,
     TrueCoachToHevyReviewService,
@@ -92,6 +95,8 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0911, PLR0912,
         return _set_exercise_link(args)
     if args.command == "sync-review" and args.sync_review_command == "truecoach-to-hevy":
         return _sync_review_truecoach_to_hevy(args)
+    if args.command == "sync-review" and args.sync_review_command == "hevy-to-truecoach-results":
+        return _sync_review_hevy_to_truecoach_results(args)
     if (
         args.command == "sync-review"
         and args.sync_review_command == "truecoach-workout-backfill-candidates"
@@ -310,6 +315,20 @@ def _add_sync_review_parser(  # noqa: PLR0915
         help="Report root. Defaults to reports.",
     )
     truecoach_to_hevy.add_argument("--summary", action="store_true")
+
+    hevy_to_truecoach_results = sync_review_subparsers.add_parser("hevy-to-truecoach-results")
+    hevy_to_truecoach_results.add_argument("--workout-id", required=True)
+    hevy_to_truecoach_results.add_argument(
+        "--db", help="SQLite database path. Prefer --database-url."
+    )
+    hevy_to_truecoach_results.add_argument(
+        "--database-url", help="SQLAlchemy database URL. Defaults to DATABASE_URL."
+    )
+    hevy_to_truecoach_results.add_argument(
+        "--output-dir",
+        default="reports",
+        help="Report root. Defaults to reports.",
+    )
 
     backfill_candidates = sync_review_subparsers.add_parser("truecoach-workout-backfill-candidates")
     backfill_candidates.add_argument("--db", help="SQLite database path. Prefer --database-url.")
@@ -565,7 +584,7 @@ def _set_exercise_link(args: argparse.Namespace) -> int:
                 _emit(f"Error: Hevy template not found: {args.hevy_template_id}")
                 return 2
             uow.hevy.add_exercise(remote)
-            uow.flush()
+            uow.session.flush()
             template = (
                 uow.session.query(HevyAppExercise).filter_by(id=args.hevy_template_id).one_or_none()
             )
@@ -581,7 +600,7 @@ def _set_exercise_link(args: argparse.Namespace) -> int:
                 true_coach_id=args.truecoach_exercise_id,
             )
             uow.session.add(tracker)
-            uow.flush()
+            uow.session.flush()
         tracker.hevy_app_id = args.hevy_template_id
         _emit(
             f"Linked TrueCoach exercise {args.truecoach_exercise_id} "
@@ -621,7 +640,7 @@ def _truecoach_import_recent(args: argparse.Namespace) -> int:  # noqa: PLR0915
     )
     store = Store(_engine_from_args(args))
     syncer = TrueCoachToFitnessTrackerSyncronizer(store=store, source=client)
-    states = args.states or ["pending", "completed", "missed"]
+    states = cast(list[WorkoutState], args.states or ["pending", "completed", "missed"])
     imported_workouts = 0
     imported_items = 0
     imported_pages = 0
@@ -878,6 +897,18 @@ def _sync_review_truecoach_to_hevy(args: argparse.Namespace) -> int:
     _emit(f"Wrote sync review: {bundle.directory}")
     if args.summary:
         _print_sync_review_summary(bundle.plan_path)
+    return 0
+
+
+def _sync_review_hevy_to_truecoach_results(args: argparse.Namespace) -> int:
+    store = Store(_engine_from_args(args))
+    service = HevyToTrueCoachResultReviewService(store=store, output_root=Path(args.output_dir))
+    try:
+        bundle = service.write_review(args.workout_id)
+    except HevyToTrueCoachResultReviewError as exc:
+        _emit(f"Error: {exc}")
+        return 2
+    _emit(f"Wrote Hevy to True Coach result review: {bundle.directory}")
     return 0
 
 

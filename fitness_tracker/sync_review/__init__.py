@@ -17,10 +17,18 @@ from fitness_tracker.sync_review.true_coach_workout_backfill import (
     WorkoutBackfillReviewBundle,
     WorkoutBackfillReviewError,
 )
+from fitness_tracker.sync_review.hevy_to_true_coach_result import (
+    HevyToTrueCoachResultReviewBundle,
+    HevyToTrueCoachResultReviewError,
+    HevyToTrueCoachResultReviewService,
+)
 
 __all__ = [
     "BackfillCandidate",
     "BackfillDiscoveryBundle",
+    "HevyToTrueCoachResultReviewBundle",
+    "HevyToTrueCoachResultReviewError",
+    "HevyToTrueCoachResultReviewService",
     "SyncApplyError",
     "SyncReviewError",
     "TrueCoachToHevyReviewService",
