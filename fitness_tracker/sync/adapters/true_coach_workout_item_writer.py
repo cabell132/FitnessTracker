@@ -6,6 +6,8 @@ from typing import Any
 
 from fitness_tracker.apis.true_coach.client import TrueCoachClient
 from fitness_tracker.apis.true_coach.types import PutWorkoutItemRequest, PutWorkoutItemResponse
+from fitness_tracker.apis.true_coach.types import Workout as TrueCoachWorkoutPayload
+from fitness_tracker.apis.true_coach.types import WorkoutItem as TrueCoachWorkoutItemPayload
 
 
 class TrueCoachWorkoutItemWriterAdapter:
@@ -43,3 +45,35 @@ class TrueCoachWorkoutItemWriterAdapter:
             Any: API response body.
         """
         return self._client.workouts.mark_as_completed(workout_id)
+
+    def get_recent_workout(
+        self,
+        workout_id: int,
+    ) -> tuple[TrueCoachWorkoutPayload, list[TrueCoachWorkoutItemPayload]] | None:
+        """Fetch the latest visible True Coach workout snapshot.
+
+        Args:
+            workout_id (int): True Coach workout id.
+
+        Returns:
+            tuple[TrueCoachWorkoutPayload, list[TrueCoachWorkoutItemPayload]] | None:
+                Latest workout and item payloads, or ``None`` when not found.
+        """
+        page = 1
+        total_pages = 1
+        while page <= total_pages:
+            response = self._client.workouts.get(
+                order="desc",
+                page=page,
+                per_page=100,
+                states=["pending", "completed", "missed"],
+            )
+            if response is None:
+                return None
+            total_pages = response.meta.total_pages
+            workout = next((row for row in response.workouts if row.id == workout_id), None)
+            if workout is not None:
+                items = [item for item in response.workout_items if item.workout_id == workout_id]
+                return workout, items
+            page += 1
+        return None

@@ -7,7 +7,10 @@ from pathlib import Path
 import pytest
 from sqlalchemy import create_engine
 
+from fitness_tracker.apis.true_coach.exceptions import TrueCoachAPIError
 from fitness_tracker.apis.true_coach.types import PutWorkoutItemRequest
+from fitness_tracker.apis.true_coach.types import Workout as TrueCoachWorkoutPayload
+from fitness_tracker.apis.true_coach.types import WorkoutItem as TrueCoachWorkoutItemPayload
 from fitness_tracker.cli import main
 from fitness_tracker.database import Store
 from fitness_tracker.database.models.hevy_app import (
@@ -406,6 +409,7 @@ def test_hevy_to_truecoach_result_apply_dry_run_writes_update_request(
     assert dry_run.action == "dry_run"
     assert request["workout_id"] == 9001
     assert request["mark_workout_completed"] is False
+    assert request["completion_status"] == "skipped"
     assert request["update_workout_items"][0] == {
         "method": "PUT",
         "endpoint": "workout_items/9101",
@@ -561,6 +565,7 @@ def test_hevy_to_truecoach_result_apply_allows_partial_apply_for_resolved_items(
 
     request = json.loads(dry_run.request_path.read_text(encoding="utf-8"))
     assert request["mark_workout_completed"] is False
+    assert request["completion_status"] == "blocked"
     assert [update["body"]["workout_item"]["id"] for update in request["update_workout_items"]] == [
         9101,
         9103,
@@ -657,6 +662,66 @@ def test_hevy_to_truecoach_result_apply_sends_full_reviewed_updates(
     assert applied.unresolved_hevy_workout_item_ids == []
 
 
+def test_hevy_to_truecoach_result_apply_refreshes_stale_item_and_retries_safely(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_result_review_workout(store)
+    decisions_path = tmp_path / "decisions.json"
+    decisions_path.write_text(
+        json.dumps(
+            {
+                "hevy_workout_id": "hevy-result-1",
+                "allow_partial_apply": False,
+                "approve_completion": True,
+                "items": [
+                    {"hevy_workout_item_id": 1, "action": "sync"},
+                    {
+                        "hevy_workout_item_id": 2,
+                        "action": "omit",
+                        "omit_reason": "Unsupported custom metric result.",
+                    },
+                    {
+                        "hevy_workout_item_id": 3,
+                        "action": "sync",
+                        "override_true_coach_workout_item_id": 9103,
+                    },
+                    {
+                        "hevy_workout_item_id": 4,
+                        "action": "omit",
+                        "omit_reason": "Accidental extra Hevy block.",
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    service = HevyToTrueCoachResultReviewService(store=store, output_root=tmp_path / "reports")
+    writer = _RefreshingTrueCoachWorkoutItemWriter(
+        stale_item_id=9101,
+        replacement_item=_true_coach_workout_item_payload(
+            item_id=9201,
+            name="Bench Press",
+            position=1,
+        ),
+    )
+
+    applied = service.apply(
+        "hevy-result-1",
+        workout_item_writer=writer,
+        decisions_path=decisions_path,
+    )
+
+    assert [item_id for item_id, _ in writer.update_requests] == [9101, 9201, 9103]
+    assert writer.completed_workout_ids == [9001]
+    assert writer.refresh_requests == [9001]
+    assert applied.updated_true_coach_workout_item_ids == [9201, 9103]
+    assert applied.unresolved_hevy_workout_item_ids == []
+    assert applied.request["completion_status"] == "performed"
+
+
 def test_hevy_to_truecoach_result_apply_sends_partial_reviewed_updates(
     tmp_path: Path,
 ) -> None:
@@ -699,6 +764,7 @@ def test_hevy_to_truecoach_result_apply_sends_partial_reviewed_updates(
     )
 
     dry_run_request = json.loads(dry_run.request_path.read_text(encoding="utf-8"))
+    assert dry_run_request["completion_status"] == "blocked"
     assert [request.model_dump() for _, request in writer.update_requests] == [
         update["body"]["workout_item"] for update in dry_run_request["update_workout_items"]
     ]
@@ -783,6 +849,121 @@ class _RecordingTrueCoachWorkoutItemWriter:
 
     def mark_workout_completed(self, workout_id: int) -> None:
         self.completed_workout_ids.append(workout_id)
+
+
+class _RefreshingTrueCoachWorkoutItemWriter(_RecordingTrueCoachWorkoutItemWriter):
+    def __init__(
+        self,
+        *,
+        stale_item_id: int,
+        replacement_item: TrueCoachWorkoutItemPayload,
+    ) -> None:
+        super().__init__()
+        self._stale_item_id = stale_item_id
+        self._replacement_item = replacement_item
+        self.refresh_requests: list[int] = []
+
+    def update_workout_item(self, item_id: int, item: PutWorkoutItemRequest) -> None:
+        super().update_workout_item(item_id, item)
+        if item_id == self._stale_item_id:
+            msg = "missing"
+            raise TrueCoachAPIError(msg, status_code=404, url=f"workout_items/{item_id}")
+
+    def get_recent_workout(
+        self,
+        workout_id: int,
+    ) -> tuple[TrueCoachWorkoutPayload, list[TrueCoachWorkoutItemPayload]] | None:
+        self.refresh_requests.append(workout_id)
+        return (
+            _true_coach_workout_payload(workout_id, [9201, 9102, 9103, 9104, 9105]),
+            [
+                self._replacement_item,
+                _true_coach_workout_item_payload(
+                    item_id=9102,
+                    name="Tempo Balance",
+                    position=2,
+                ),
+                _true_coach_workout_item_payload(
+                    item_id=9103,
+                    name="Chest Supported Row Warmup",
+                    position=3,
+                ),
+                _true_coach_workout_item_payload(
+                    item_id=9104,
+                    name="Chest Supported Row Main",
+                    position=4,
+                ),
+                _true_coach_workout_item_payload(
+                    item_id=9105,
+                    name="DB Curl",
+                    position=5,
+                ),
+            ],
+        )
+
+
+def _true_coach_workout_payload(
+    workout_id: int,
+    workout_item_ids: list[int],
+) -> TrueCoachWorkoutPayload:
+    return TrueCoachWorkoutPayload(
+        id=workout_id,
+        due="2026-05-18",
+        short_description="",
+        created_at="2026-05-18T00:00:00.000000Z",
+        updated_at="2026-05-18T00:10:00.000000Z",
+        title="Upper Result",
+        state="pending",
+        rest_day=False,
+        rest_day_instructions="",
+        warmup=None,
+        warmup_selected_exercises=[],
+        cooldown_selected_exercises=[],
+        cooldown=None,
+        position=None,
+        order=1,
+        uuid=f"uuid-{workout_id}",
+        program_name=None,
+        hidden=False,
+        edit_client_workout=True,
+        client_id=2876143,
+        comment_ids=[],
+        note_id=None,
+        program_id=None,
+        workout_item_ids=workout_item_ids,
+    )
+
+
+def _true_coach_workout_item_payload(
+    *,
+    item_id: int,
+    name: str,
+    position: int,
+) -> TrueCoachWorkoutItemPayload:
+    exercise_ids = {
+        "Bench Press": 701,
+        "Tempo Balance": 702,
+        "Chest Supported Row Warmup": 703,
+        "Chest Supported Row Main": 703,
+        "DB Curl": 704,
+    }
+    return TrueCoachWorkoutItemPayload(
+        id=item_id,
+        workout_id=9001,
+        name=name,
+        info="2 x 8" if name == "Bench Press" else "",
+        result="",
+        is_circuit=False,
+        state="pending",
+        selected_exercises=[],
+        linked=False,
+        position=position,
+        assessment_id=None,
+        created_at="2026-05-18T00:00:00.000000Z",
+        attachments=[],
+        exercise_id=exercise_ids[name],
+        request_video=False,
+    )
 
 
 def _replace_row_work_with_repeated_warmup_and_main(store: Store, *, ambiguous: bool) -> None:

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from fitness_tracker.apis.hevy_app.types import Set as HevySet
+from fitness_tracker.apis.true_coach.exceptions import TrueCoachAPIError
 from fitness_tracker.apis.true_coach.types import PutWorkoutItemRequest
 from fitness_tracker.database import Store
 from fitness_tracker.database.models.hevy_app import (
@@ -61,6 +62,7 @@ class HevyToTrueCoachResultApplyResult:
     updated_true_coach_workout_item_ids: list[int] = field(default_factory=list)
     omitted_hevy_workout_item_ids: list[int] = field(default_factory=list)
     unresolved_hevy_workout_item_ids: list[int] = field(default_factory=list)
+    completion_status: str = "skipped"
 
 
 @dataclass(frozen=True)
@@ -178,6 +180,7 @@ class HevyToTrueCoachResultReviewService:
             updated_true_coach_workout_item_ids=report["updated_true_coach_workout_item_ids"],
             omitted_hevy_workout_item_ids=report["omitted_hevy_workout_item_ids"],
             unresolved_hevy_workout_item_ids=report["unresolved_hevy_workout_item_ids"],
+            completion_status=report["completion_status"],
         )
 
     def apply(
@@ -198,15 +201,36 @@ class HevyToTrueCoachResultReviewService:
             HevyToTrueCoachResultApplyResult: Apply artifact details and item-level report.
         """
         result = self.write_apply_request(hevy_workout_id, decisions_path=decisions_path)
-        for update in result.request["update_workout_items"]:
-            body = update["body"]["workout_item"]
-            workout_item_writer.update_workout_item(
-                int(body["id"]),
-                PutWorkoutItemRequest.model_validate(body),
-            )
-        if result.request["mark_workout_completed"]:
+        updated_item_ids, unresolved_hevy_item_ids = _apply_update_operations(
+            self._store,
+            workout_item_writer,
+            result,
+        )
+
+        should_complete = result.request["mark_workout_completed"] and not unresolved_hevy_item_ids
+        if should_complete:
             workout_item_writer.mark_workout_completed(int(result.request["workout_id"]))
-        return replace(result, action="applied")
+        completion_status = _completion_status(
+            approve_completion=result.completion_status != "skipped",
+            unresolved_hevy_workout_item_ids=unresolved_hevy_item_ids,
+            completion_allowed=should_complete,
+        )
+        applied_request = {
+            **result.request,
+            "mark_workout_completed": should_complete,
+            "completion_status": completion_status,
+            "updated_true_coach_workout_item_ids": updated_item_ids,
+            "unresolved_hevy_workout_item_ids": unresolved_hevy_item_ids,
+        }
+        _write_json(result.request_path, applied_request)
+        return replace(
+            result,
+            action="applied",
+            request=applied_request,
+            updated_true_coach_workout_item_ids=updated_item_ids,
+            unresolved_hevy_workout_item_ids=unresolved_hevy_item_ids,
+            completion_status=completion_status,
+        )
 
 
 def _write_bundle(
@@ -563,6 +587,7 @@ def _build_true_coach_update_request(
         "workout_id": plan["workout"]["true_coach_workout_id"],
         "hevy_workout_id": plan["workout"]["hevy_workout_id"],
         "mark_workout_completed": bool(decisions.get("approve_completion") and not allow_partial),
+        "completion_status": "skipped",
         "update_workout_items": updates,
     }
 
@@ -580,16 +605,153 @@ def _apply_report(
     plan: dict[str, Any],
     decisions: dict[str, Any],
     request: dict[str, Any],
-) -> dict[str, list[int]]:
+) -> dict[str, Any]:
+    unresolved_hevy_workout_item_ids = _unresolved_hevy_item_ids(plan, decisions, request)
     return {
         "updated_true_coach_workout_item_ids": _updated_true_coach_item_ids(request),
         "omitted_hevy_workout_item_ids": _omitted_hevy_item_ids(plan, decisions),
-        "unresolved_hevy_workout_item_ids": _unresolved_hevy_item_ids(
-            plan,
-            decisions,
-            request,
+        "unresolved_hevy_workout_item_ids": unresolved_hevy_workout_item_ids,
+        "completion_status": _completion_status(
+            approve_completion=bool(decisions.get("approve_completion")),
+            unresolved_hevy_workout_item_ids=unresolved_hevy_workout_item_ids,
+            completion_allowed=bool(request["mark_workout_completed"]),
         ),
     }
+
+
+def _completion_status(
+    *,
+    approve_completion: bool,
+    unresolved_hevy_workout_item_ids: list[int],
+    completion_allowed: bool,
+) -> str:
+    if not approve_completion:
+        return "skipped"
+    if unresolved_hevy_workout_item_ids or not completion_allowed:
+        return "blocked"
+    return "performed"
+
+
+def _hevy_item_ids_by_target_id(
+    plan: dict[str, Any],
+    decisions: dict[str, Any],
+) -> dict[int, int]:
+    decision_items = _decision_items_by_hevy_id(decisions)
+    return {
+        target_id: int(item["hevy_workout_item_id"])
+        for item in plan["items"]
+        if (
+            target_id := _effective_target_id(
+                item,
+                decision_items.get(item["hevy_workout_item_id"], {}),
+            )
+        )
+        is not None
+    }
+
+
+def _apply_update_operations(
+    store: Store,
+    workout_item_writer: TrueCoachWorkoutItemWriter,
+    result: HevyToTrueCoachResultApplyResult,
+) -> tuple[list[int], list[int]]:
+    hevy_item_ids_by_target_id = _hevy_item_ids_by_target_id(
+        _load_json_file(result.review_bundle.plan_path),
+        _load_json_file(result.review_bundle.decisions_path),
+    )
+    updated_item_ids: list[int] = []
+    unresolved_hevy_item_ids = list(result.unresolved_hevy_workout_item_ids)
+    for update in result.request["update_workout_items"]:
+        item_id, _request_body = _apply_update_operation(
+            store,
+            workout_item_writer,
+            update,
+        )
+        if item_id is not None:
+            updated_item_ids.append(item_id)
+            continue
+        hevy_item_id = hevy_item_ids_by_target_id.get(int(update["body"]["workout_item"]["id"]))
+        if hevy_item_id is not None and hevy_item_id not in unresolved_hevy_item_ids:
+            unresolved_hevy_item_ids.append(hevy_item_id)
+    return updated_item_ids, unresolved_hevy_item_ids
+
+
+def _apply_update_operation(
+    store: Store,
+    workout_item_writer: TrueCoachWorkoutItemWriter,
+    update: dict[str, Any],
+) -> tuple[int | None, PutWorkoutItemRequest]:
+    body = update["body"]["workout_item"]
+    request_body = PutWorkoutItemRequest.model_validate(body)
+    try:
+        workout_item_writer.update_workout_item(int(body["id"]), request_body)
+        _persist_true_coach_workout_item_update(store, request_body)
+        return int(body["id"]), request_body
+    except TrueCoachAPIError as exc:
+        if exc.status_code != 404:
+            raise
+        repaired_request = _repair_stale_workout_item_request(
+            store,
+            workout_item_writer,
+            request_body,
+        )
+        if repaired_request is None:
+            return None, request_body
+        workout_item_writer.update_workout_item(repaired_request.id, repaired_request)
+        _persist_true_coach_workout_item_update(store, repaired_request)
+        return repaired_request.id, repaired_request
+
+
+def _repair_stale_workout_item_request(
+    store: Store,
+    workout_item_writer: TrueCoachWorkoutItemWriter,
+    stale_request: PutWorkoutItemRequest,
+) -> PutWorkoutItemRequest | None:
+    latest = workout_item_writer.get_recent_workout(stale_request.workout_id)
+    if latest is None:
+        return None
+    workout, workout_items = latest
+    with store.unit_of_work() as uow:
+        uow.true_coach.add_workout(workout)
+        for workout_item in workout_items:
+            uow.true_coach.add_workout_item(workout_item)
+        uow.cross_domain.insert_tc_tracker_workout_items()
+        uow.session.flush()
+        refreshed_items = uow.true_coach.get_workout_items(workout_id=stale_request.workout_id)
+        candidates = [
+            item
+            for item in refreshed_items
+            if item.id != stale_request.id
+            and item.name == stale_request.name
+            and item.position == stale_request.position
+            and item.exercise_id == stale_request.exercise_id
+            and item.assessment_id == stale_request.assessment_id
+            and item.is_circuit == stale_request.is_circuit
+        ]
+        if len(candidates) != 1:
+            return None
+        target = candidates[0]
+        return PutWorkoutItemRequest(
+            id=cast(int, target.id),
+            workout_id=cast(int, target.workout_id),
+            name=cast(str, target.name),
+            info=str(target.info or ""),
+            result=stale_request.result,
+            is_circuit=cast(bool, target.is_circuit),
+            state="completed",
+            state_event="mark_as_completed",
+            position=int(target.position or 0),
+            assessment_id=cast(int | None, target.assessment_id),
+            exercise_id=cast(int | None, target.exercise_id),
+        )
+
+
+def _persist_true_coach_workout_item_update(
+    store: Store,
+    workout_item: PutWorkoutItemRequest,
+) -> None:
+    with store.unit_of_work() as uow:
+        uow.true_coach.update_workout_item(workout_item)
 
 
 def _omitted_hevy_item_ids(plan: dict[str, Any], decisions: dict[str, Any]) -> list[int]:
