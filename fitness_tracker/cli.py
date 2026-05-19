@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast, get_args
@@ -175,17 +176,21 @@ def _add_hevy_parser(subparsers: Any) -> None:  # noqa: PLR0915
 
     find = routine_subparsers.add_parser("find")
     find.add_argument("--title", required=True)
+    _add_json_output_argument(find)
 
     inspect = routine_subparsers.add_parser("inspect")
     inspect.add_argument("routine_id")
+    _add_json_output_argument(inspect)
 
     delete = routine_subparsers.add_parser("delete")
     delete.add_argument("routine_id")
     delete.add_argument("--yes", action="store_true", required=True)
+    _add_json_output_argument(delete)
 
     create = routine_subparsers.add_parser("create-from-json")
     create.add_argument("request_path")
     create.add_argument("--response-path")
+    _add_json_output_argument(create)
 
     update = routine_subparsers.add_parser("update-from-json")
     update.add_argument("routine_id")
@@ -196,6 +201,7 @@ def _add_hevy_parser(subparsers: Any) -> None:  # noqa: PLR0915
         default="Updated from JSON.",
         help="Routine notes to use when the JSON has an empty notes field.",
     )
+    _add_json_output_argument(update)
 
     diff = routine_subparsers.add_parser("diff-json")
     diff.add_argument("routine_id")
@@ -208,12 +214,22 @@ def _add_hevy_parser(subparsers: Any) -> None:  # noqa: PLR0915
 
     workout_inspect = workout_subparsers.add_parser("inspect")
     workout_inspect.add_argument("workout_id")
+    _add_json_output_argument(workout_inspect)
 
     folders = hevy_subparsers.add_parser("routine-folders")
     folder_subparsers = folders.add_subparsers(dest="routine_folder_command")
 
     ensure = folder_subparsers.add_parser("ensure")
     ensure.add_argument("--title", required=True)
+    _add_json_output_argument(ensure)
+
+
+def _add_json_output_argument(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit a single strict JSON document on stdout.",
+    )
 
 
 def _add_hevy_templates_parser(subparsers: Any) -> None:  # noqa: PLR0915
@@ -721,10 +737,8 @@ def _hevy_routines(args: argparse.Namespace) -> int:  # noqa: PLR0911
         if args.routine_command == "diff-json":
             return _diff_hevy_routine_from_json(args)
     except HevyAppAPIError as exc:
-        _emit(f"Error: {exc}")
-        return 2
-    _emit("Error: missing hevy routines subcommand")
-    return 2
+        return _emit_error(args, str(exc))
+    return _emit_error(args, "missing hevy routines subcommand")
 
 
 def _hevy_workouts(args: argparse.Namespace) -> int:
@@ -733,10 +747,8 @@ def _hevy_workouts(args: argparse.Namespace) -> int:
         if args.workout_command == "inspect":
             return _inspect_hevy_workout(args)
     except HevyAppAPIError as exc:
-        _emit(f"Error: {exc}")
-        return 2
-    _emit("Error: missing hevy workouts subcommand")
-    return 2
+        return _emit_error(args, str(exc))
+    return _emit_error(args, "missing hevy workouts subcommand")
 
 
 def _hevy_routine_folders(args: argparse.Namespace) -> int:
@@ -745,14 +757,14 @@ def _hevy_routine_folders(args: argparse.Namespace) -> int:
         if args.routine_folder_command == "ensure":
             return _ensure_hevy_routine_folder(args)
     except HevyAppAPIError as exc:
-        _emit(f"Error: {exc}")
-        return 2
-    _emit("Error: missing hevy routine-folders subcommand")
-    return 2
+        return _emit_error(args, str(exc))
+    return _emit_error(args, "missing hevy routine-folders subcommand")
 
 
 def _find_hevy_routines(args: argparse.Namespace) -> int:
     routines = _find_remote_hevy_routines(args.title)
+    if args.json:
+        return _emit_json_result({"ok": True, "routines": routines, "warnings": []})
     if not routines:
         _emit("No matching Hevy routines.")
         return 0
@@ -765,9 +777,17 @@ def _inspect_hevy_routine(args: argparse.Namespace) -> int:
     routine = _hevy_api_json("GET", f"/routines/{args.routine_id}")
     routine_data = _unwrap_routine(routine)
     exercises = routine_data.get("exercises", [])
-    empty_set_blocks = [
-        index for index, exercise in enumerate(exercises, start=1) if not exercise.get("sets")
-    ]
+    empty_set_blocks = _empty_set_block_positions(exercises)
+    if args.json:
+        warnings = _empty_set_block_warnings("Routine", empty_set_blocks)
+        return _emit_json_result(
+            {
+                "ok": True,
+                "routine": _routine_inspect_payload(routine_data),
+                "warnings": warnings,
+            },
+            warnings=warnings,
+        )
     _emit(f"id: {routine_data.get('id')}")
     _emit(f"title: {routine_data.get('title')}")
     _emit(f"exercises: {len(exercises)}")
@@ -782,13 +802,42 @@ def _inspect_hevy_routine(args: argparse.Namespace) -> int:
     return 0
 
 
+def _routine_inspect_payload(routine_data: dict[str, Any]) -> dict[str, Any]:
+    exercises = routine_data.get("exercises", [])
+    return {
+        "id": routine_data.get("id"),
+        "title": routine_data.get("title"),
+        "exercise_count": len(exercises),
+        "superset_ids": [exercise.get("superset_id") for exercise in exercises],
+        "empty_set_blocks": _empty_set_block_positions(exercises),
+        "exercises": [
+            {
+                "position": index,
+                "superset_id": exercise.get("superset_id"),
+                "exercise_template_id": exercise.get("exercise_template_id"),
+                "notes": exercise.get("notes"),
+                "set_count": len(exercise.get("sets") or []),
+            }
+            for index, exercise in enumerate(exercises, start=1)
+        ],
+    }
+
+
 def _inspect_hevy_workout(args: argparse.Namespace) -> int:
     workout = _hevy_api_json("GET", f"/workouts/{args.workout_id}")
     workout_data = _unwrap_workout(workout)
     exercises = workout_data.get("exercises", [])
-    empty_set_blocks = [
-        index for index, exercise in enumerate(exercises, start=1) if not exercise.get("sets")
-    ]
+    empty_set_blocks = _empty_set_block_positions(exercises)
+    if args.json:
+        warnings = _empty_set_block_warnings("Workout", empty_set_blocks)
+        return _emit_json_result(
+            {
+                "ok": True,
+                "workout": _workout_inspect_payload(workout_data),
+                "warnings": warnings,
+            },
+            warnings=warnings,
+        )
     _emit(f"id: {workout_data.get('id')}")
     _emit(f"title: {workout_data.get('title')}")
     _emit(f"start_time: {workout_data.get('start_time')}")
@@ -807,8 +856,51 @@ def _inspect_hevy_workout(args: argparse.Namespace) -> int:
     return 0
 
 
+def _workout_inspect_payload(workout_data: dict[str, Any]) -> dict[str, Any]:
+    exercises = workout_data.get("exercises", [])
+    return {
+        "id": workout_data.get("id"),
+        "title": workout_data.get("title"),
+        "start_time": workout_data.get("start_time"),
+        "end_time": workout_data.get("end_time"),
+        "exercise_count": len(exercises),
+        "superset_ids": [exercise.get("superset_id") for exercise in exercises],
+        "empty_set_blocks": _empty_set_block_positions(exercises),
+        "exercises": [
+            {
+                "position": index,
+                "superset_id": exercise.get("superset_id"),
+                "exercise_template_id": exercise.get("exercise_template_id"),
+                "name": exercise.get("title") or exercise.get("name"),
+                "notes": exercise.get("notes"),
+                "set_count": len(exercise.get("sets") or []),
+            }
+            for index, exercise in enumerate(exercises, start=1)
+        ],
+    }
+
+
+def _empty_set_block_positions(exercises: list[dict[str, Any]]) -> list[int]:
+    return [index for index, exercise in enumerate(exercises, start=1) if not exercise.get("sets")]
+
+
+def _empty_set_block_warnings(label: str, empty_set_blocks: list[int]) -> list[str]:
+    if not empty_set_blocks:
+        return []
+    return [f"{label} has empty set blocks: {empty_set_blocks}"]
+
+
 def _delete_hevy_routine(args: argparse.Namespace) -> int:
     _hevy_web_json("DELETE", f"/routine/{args.routine_id}")
+    if args.json:
+        return _emit_json_result(
+            {
+                "ok": True,
+                "action": "deleted",
+                "routine_id": args.routine_id,
+                "warnings": [],
+            },
+        )
     _emit(f"Deleted Hevy routine: {args.routine_id}")
     return 0
 
@@ -818,13 +910,22 @@ def _create_hevy_routine_from_json(args: argparse.Namespace) -> int:
     payload = json.loads(request_path.read_text(encoding="utf-8"))
     PostRoutinesRequestBody(**payload)
     response = _hevy_api_json("POST", "/routines", json_body=payload)
-    response_path = _routine_response_path(args.response_path, request_path)
-    response_path.write_text(
-        json.dumps(response, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
+    response_path = _write_response_artifact(args.response_path, response)
     routine = _unwrap_routine(response)
+    if getattr(args, "json", False):
+        return _emit_json_result(
+            {
+                "ok": True,
+                "action": "created",
+                "routine_id": routine.get("id"),
+                "response_path": _json_response_path(response_path),
+                "response": response,
+                "warnings": [],
+            },
+        )
     _emit(f"Created Hevy routine: {routine.get('id')}")
-    _emit(f"Wrote Hevy response: {response_path}")
+    if response_path is not None:
+        _emit(f"Wrote Hevy response: {response_path}")
     return 0
 
 
@@ -841,14 +942,29 @@ def _update_hevy_routine_from_json(args: argparse.Namespace) -> int:
         f"/routines/{args.routine_id}",
         json_body=body.model_dump(exclude_none=True),
     )
-    response_path = _routine_response_path(args.response_path, request_path)
-    response_path.write_text(
-        json.dumps(response, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
+    response_path = _write_response_artifact(args.response_path, response)
     routine = _unwrap_routine(response)
+    if getattr(args, "json", False):
+        return _emit_json_result(
+            {
+                "ok": True,
+                "action": "updated",
+                "routine_id": routine.get("id", args.routine_id),
+                "response_path": _json_response_path(response_path),
+                "response": response,
+                "warnings": [],
+            },
+        )
     _emit(f"Updated Hevy routine: {routine.get('id', args.routine_id)}")
-    _emit(f"Wrote Hevy response: {response_path}")
+    if response_path is not None:
+        _emit(f"Wrote Hevy response: {response_path}")
     return 0
+
+
+def _json_response_path(response_path: Path | None) -> str | None:
+    if response_path is None:
+        return None
+    return str(response_path)
 
 
 def _diff_hevy_routine_from_json(args: argparse.Namespace) -> int:
@@ -874,6 +990,15 @@ def _diff_hevy_routine_from_json(args: argparse.Namespace) -> int:
 def _ensure_hevy_routine_folder(args: argparse.Namespace) -> int:
     existing = _find_remote_hevy_routine_folder(args.title)
     if existing is not None:
+        if args.json:
+            return _emit_json_result(
+                {
+                    "ok": True,
+                    "action": "existing",
+                    "routine_folder": existing,
+                    "warnings": [],
+                },
+            )
         _emit(f"{existing.get('id')} | {existing.get('title')}")
         return 0
     payload = PostRoutineFolderRequestBody(
@@ -881,6 +1006,16 @@ def _ensure_hevy_routine_folder(args: argparse.Namespace) -> int:
     ).model_dump()
     response = _hevy_api_json("POST", "/routine_folders", json_body=payload)
     folder = _unwrap_routine_folder(response)
+    if args.json:
+        return _emit_json_result(
+            {
+                "ok": True,
+                "action": "created",
+                "routine_folder": folder,
+                "response": response,
+                "warnings": [],
+            },
+        )
     _emit(f"{folder.get('id')} | {folder.get('title')}")
     return 0
 
@@ -1420,10 +1555,12 @@ def _unwrap_routine_folder(response: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
-def _routine_response_path(response_path: str | None, request_path: Path) -> Path:
-    if response_path:
-        return Path(response_path)
-    return request_path.with_name(f"{request_path.stem}.response.json")
+def _write_response_artifact(response_path: str | None, response: dict[str, Any]) -> Path | None:
+    if not response_path:
+        return None
+    path = Path(response_path)
+    path.write_text(json.dumps(response, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return path
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -1754,8 +1891,27 @@ def _print_template_ensure_result(result: TemplateEnsureResult) -> None:
         _emit("No Hevy templates to create.")
 
 
-def _emit(message: str) -> None:
-    print(message)  # noqa: T201
+def _emit_json_result(
+    payload: dict[str, Any],
+    *,
+    warnings: list[str] | None = None,
+    exit_code: int = 0,
+) -> int:
+    for warning in warnings or []:
+        _emit(f"Warning: {warning}", stderr=True)
+    _emit(json.dumps(payload, sort_keys=True, separators=(",", ":")))
+    return exit_code
+
+
+def _emit_error(args: argparse.Namespace, message: str, *, exit_code: int = 2) -> int:
+    if getattr(args, "json", False):
+        return _emit_json_result({"ok": False, "error": message}, exit_code=exit_code)
+    _emit(f"Error: {message}", stderr=True)
+    return exit_code
+
+
+def _emit(message: str, *, stderr: bool = False) -> None:
+    print(message, file=sys.stderr if stderr else sys.stdout)
 
 
 if __name__ == "__main__":
