@@ -329,6 +329,10 @@ def _add_sync_review_parser(  # noqa: PLR0915
         default="reports",
         help="Report root. Defaults to reports.",
     )
+    hevy_to_truecoach_results.add_argument(
+        "--decisions",
+        help="Editable Hevy to True Coach result decisions JSON to validate.",
+    )
 
     backfill_candidates = sync_review_subparsers.add_parser("truecoach-workout-backfill-candidates")
     backfill_candidates.add_argument("--db", help="SQLite database path. Prefer --database-url.")
@@ -904,7 +908,10 @@ def _sync_review_hevy_to_truecoach_results(args: argparse.Namespace) -> int:
     store = Store(_engine_from_args(args))
     service = HevyToTrueCoachResultReviewService(store=store, output_root=Path(args.output_dir))
     try:
-        bundle = service.write_review(args.workout_id)
+        bundle = service.write_review(
+            args.workout_id,
+            decisions_path=Path(args.decisions) if args.decisions else None,
+        )
     except HevyToTrueCoachResultReviewError as exc:
         _emit(f"Error: {exc}")
         return 2

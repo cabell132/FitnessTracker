@@ -123,6 +123,320 @@ def test_hevy_to_truecoach_result_review_cli_writes_read_only_artifacts(  # noqa
     assert "8 x 80.0 kg" in report
 
 
+def test_hevy_to_truecoach_result_review_validates_mapping_override(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_result_review_workout(store)
+    decisions_path = tmp_path / "decisions.json"
+    decisions_path.write_text(
+        json.dumps(
+            {
+                "hevy_workout_id": "hevy-result-1",
+                "allow_partial_apply": False,
+                "approve_completion": False,
+                "items": [
+                    {
+                        "hevy_workout_item_id": 3,
+                        "action": "sync",
+                        "override_true_coach_workout_item_id": 9103,
+                        "performed_as": "Chest Supported Row",
+                        "order_context": None,
+                        "omit_reason": None,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code = main(
+        [
+            "sync-review",
+            "hevy-to-truecoach-results",
+            "--workout-id",
+            "hevy-result-1",
+            "--database-url",
+            f"sqlite:///{db_path}",
+            "--output-dir",
+            str(tmp_path / "reports"),
+            "--decisions",
+            str(decisions_path),
+        ]
+    )
+
+    assert exit_code == 0
+    bundle_dir = (
+        tmp_path / "reports" / "sync-review" / "hevy-to-truecoach-results" / "hevy-result-1"
+    )
+    plan = json.loads((bundle_dir / "plan.json").read_text(encoding="utf-8"))
+    decisions = json.loads((bundle_dir / "result-decisions.json").read_text(encoding="utf-8"))
+    validation = json.loads((bundle_dir / "decision-validation.json").read_text(encoding="utf-8"))
+
+    assert plan["items"][2]["blockers"] == [
+        "Ambiguous True Coach target for unlinked performed Hevy item: 2 candidates"
+    ]
+    assert decisions["items"] == [
+        {
+            "hevy_workout_item_id": 3,
+            "action": "sync",
+            "override_true_coach_workout_item_id": 9103,
+            "performed_as": "Chest Supported Row",
+            "order_context": None,
+            "omit_reason": None,
+        }
+    ]
+    assert not any("Ambiguous True Coach target" in blocker for blocker in validation["blockers"])
+
+
+def test_hevy_to_truecoach_result_review_requires_omit_reason(tmp_path: Path) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_result_review_workout(store)
+
+    validation_without_reason = _write_review_with_decisions(
+        tmp_path,
+        db_path,
+        {
+            "hevy_workout_id": "hevy-result-1",
+            "items": [{"hevy_workout_item_id": 4, "action": "omit", "omit_reason": ""}],
+        },
+    )
+    validation_with_reason = _write_review_with_decisions(
+        tmp_path,
+        db_path,
+        {
+            "hevy_workout_id": "hevy-result-1",
+            "items": [
+                {
+                    "hevy_workout_item_id": 4,
+                    "action": "omit",
+                    "omit_reason": "Accidental extra Hevy block",
+                }
+            ],
+        },
+    )
+
+    assert (
+        "Hevy item 4 is omitted without a required reason" in validation_without_reason["blockers"]
+    )
+    assert (
+        "Hevy item 4 is omitted without a required reason" not in validation_with_reason["blockers"]
+    )
+    assert not any(
+        blocker == "Missing True Coach Workout Item link for performed Hevy item"
+        for blocker in validation_with_reason["blockers"]
+    )
+
+
+def test_hevy_to_truecoach_result_review_disambiguates_repeated_exercises_by_sets_and_reps(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_result_review_workout(store)
+    _replace_row_work_with_repeated_warmup_and_main(store, ambiguous=False)
+
+    exit_code = main(
+        [
+            "sync-review",
+            "hevy-to-truecoach-results",
+            "--workout-id",
+            "hevy-result-1",
+            "--database-url",
+            f"sqlite:///{db_path}",
+            "--output-dir",
+            str(tmp_path / "reports"),
+        ]
+    )
+
+    assert exit_code == 0
+    bundle_dir = (
+        tmp_path / "reports" / "sync-review" / "hevy-to-truecoach-results" / "hevy-result-1"
+    )
+    validation = json.loads((bundle_dir / "decision-validation.json").read_text(encoding="utf-8"))
+    plan = json.loads((bundle_dir / "plan.json").read_text(encoding="utf-8"))
+
+    row_items = [item for item in plan["items"] if item["name"] == "Chest Supported Row"]
+    assert [
+        [candidate["true_coach_workout_item_id"] for candidate in item["candidates"]]
+        for item in row_items
+    ] == [[9103], [9104]]
+    assert not any("Chest Supported Row" in blocker for blocker in validation["blockers"])
+    assert not any("Ambiguous True Coach target" in blocker for blocker in validation["blockers"])
+
+
+def test_hevy_to_truecoach_result_review_blocks_ambiguous_repeated_exercises(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_result_review_workout(store)
+    _replace_row_work_with_repeated_warmup_and_main(store, ambiguous=True)
+
+    exit_code = main(
+        [
+            "sync-review",
+            "hevy-to-truecoach-results",
+            "--workout-id",
+            "hevy-result-1",
+            "--database-url",
+            f"sqlite:///{db_path}",
+            "--output-dir",
+            str(tmp_path / "reports"),
+        ]
+    )
+
+    assert exit_code == 0
+    bundle_dir = (
+        tmp_path / "reports" / "sync-review" / "hevy-to-truecoach-results" / "hevy-result-1"
+    )
+    validation = json.loads((bundle_dir / "decision-validation.json").read_text(encoding="utf-8"))
+
+    assert any("Ambiguous True Coach target" in blocker for blocker in validation["blockers"])
+
+
+def test_hevy_to_truecoach_result_review_blocks_duplicate_decision_mappings(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_result_review_workout(store)
+
+    validation = _write_review_with_decisions(
+        tmp_path,
+        db_path,
+        {
+            "hevy_workout_id": "hevy-result-1",
+            "items": [
+                {
+                    "hevy_workout_item_id": 3,
+                    "action": "sync",
+                    "override_true_coach_workout_item_id": 9103,
+                },
+                {
+                    "hevy_workout_item_id": 3,
+                    "action": "sync",
+                    "override_true_coach_workout_item_id": 9104,
+                },
+            ],
+        },
+    )
+
+    assert any(
+        "Hevy item 3 is mapped more than once" in blocker for blocker in validation["blockers"]
+    )
+
+
+def test_hevy_to_truecoach_result_review_blocks_unsafe_completion(tmp_path: Path) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_result_review_workout(store)
+
+    validation = _write_review_with_decisions(
+        tmp_path,
+        db_path,
+        {
+            "hevy_workout_id": "hevy-result-1",
+            "approve_completion": True,
+            "items": [],
+        },
+    )
+
+    assert (
+        "Completion approval is unsafe while result mapping blockers remain"
+        in validation["blockers"]
+    )
+
+
+def _write_review_with_decisions(
+    tmp_path: Path,
+    db_path: Path,
+    decisions: dict[str, object],
+) -> dict[str, object]:
+    decisions_path = tmp_path / "decisions.json"
+    decisions_path.write_text(json.dumps(decisions), encoding="utf-8")
+
+    exit_code = main(
+        [
+            "sync-review",
+            "hevy-to-truecoach-results",
+            "--workout-id",
+            "hevy-result-1",
+            "--database-url",
+            f"sqlite:///{db_path}",
+            "--output-dir",
+            str(tmp_path / "reports"),
+            "--decisions",
+            str(decisions_path),
+        ]
+    )
+
+    assert exit_code == 0
+    bundle_dir = (
+        tmp_path / "reports" / "sync-review" / "hevy-to-truecoach-results" / "hevy-result-1"
+    )
+    return json.loads((bundle_dir / "decision-validation.json").read_text(encoding="utf-8"))
+
+
+def _replace_row_work_with_repeated_warmup_and_main(store: Store, *, ambiguous: bool) -> None:
+    with store.unit_of_work() as uow:
+        row_item = uow.session.query(HevyAppWorkoutItem).filter_by(index=2).one()
+        for set_ in list(row_item.sets):
+            uow.session.delete(set_)
+        uow.session.flush()
+        row_item.index = 2
+        uow.session.add(
+            HevyAppWorkoutItem(
+                workout_id="hevy-result-1",
+                index=4,
+                name="Chest Supported Row",
+                notes="",
+                superset_id=None,
+                exercise_id="hevy-row",
+            )
+        )
+        uow.session.flush()
+        row_items = (
+            uow.session.query(HevyAppWorkoutItem)
+            .filter_by(workout_id="hevy-result-1", exercise_id="hevy-row")
+            .order_by(HevyAppWorkoutItem.index)
+            .all()
+        )
+        warmup_reps = 10 if ambiguous else 12
+        for row in (
+            HevyAppSets(
+                workout_item_id=row_items[0].id,
+                index=0,
+                type="normal",
+                weight_kg=35.0,
+                reps=warmup_reps,
+            ),
+            HevyAppSets(
+                workout_item_id=row_items[1].id,
+                index=0,
+                type="normal",
+                weight_kg=55.0,
+                reps=10,
+            ),
+            HevyAppSets(
+                workout_item_id=row_items[1].id,
+                index=1,
+                type="normal",
+                weight_kg=55.0,
+                reps=10,
+            ),
+        ):
+            uow.session.add(row)
+
+
 def _seed_result_review_workout(store: Store) -> None:
     now = datetime(2026, 5, 18, tzinfo=UTC)
     with store.unit_of_work() as uow:
