@@ -53,15 +53,38 @@ Also accept a plain True Coach Workout id if the user invokes this command with 
    Appropriate Agent decisions:
    - Set `selected_start_time` and `selected_end_time` from Apple Health, True Coach timing, and workout structure.
    - Resolve Choice Workout Items where Ross prescribed options and the athlete result names the performed choice.
+   - Resolve split Circuit/AMRAP movement templates listed under `circuit_items`.
+     The backfill review may expand one True Coach circuit item into multiple
+     performed movement items. Pick concrete Hevy templates for movements that
+     were performed or presumed performed. Do not use generic placeholder
+     templates for split circuit movements.
    - Add notes only for information not already readable from structured sets, such as athlete comments like "box disappeared after round 1".
    - Leave uncertain fields blank rather than inventing values.
 
    Rules:
    - Do not duplicate readable set data into exercise notes.
    - Preserve supersets from the True Coach workout order.
+   - Split Circuit/AMRAP movements are grouped with a Hevy `superset_id`.
+   - Prescribed circuit movement targets may be used as performed set values
+     when the athlete comment does not contradict them.
+   - Round-duration comments such as `2 min 10 sec` are completed round times,
+     not movement durations. Use the number of round-time lines as completed
+     round count and preserve the times in notes.
+   - If the athlete comment gives a lower completed round count, such as
+     `3 Rounds`, use that count rather than the prescribed count.
+   - If the athlete comment clearly omits a movement, such as `W/o Cycle`, omit
+     that movement and preserve the comment in notes.
+   - If the comment names a replacement movement, require a clear template
+     decision before applying.
    - Hevy duration values must be integer seconds.
    - Hevy does not accept zero-set exercises. Intentional non-set movements such as `Down Regulate` should use a deterministic fallback set, currently 4 minutes.
    - Placeholder Rest items with no meaningful performance should remain omitted.
+   - Backfill apply/repair may persist synthetic local tracker Workout Items
+     for split circuit movements. This is expected; it gives each created Hevy
+     exercise row a one-to-one local link.
+   - Current circuit movement template matching is conservative. Prefer
+     explicit decisions or existing tracker-linked templates over fuzzy guesses
+     for names like `PullUps`, `Push Ups`, `Row`, or `DB Push Press`.
 
 7. Regenerate the review after editing decisions.
 
@@ -111,6 +134,8 @@ Also accept a plain True Coach Workout id if the user invokes this command with 
    - Selected start/end time and why.
    - Any Apple Health evidence used.
    - Any Choice Workout Item decisions.
+   - Any Circuit/AMRAP movement template decisions, omissions, or synthetic
+     tracker items created/repaired.
    - Any omitted placeholder items.
    - Report, decisions, and request artifact paths.
    - Final diff result.
