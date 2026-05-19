@@ -29,6 +29,18 @@ The third-party platform where the Athlete logs training — system of record fo
 A planned, not-yet-performed training session — a prescription. In Hevy terms, a routine.
 _Avoid_: plan, template, workout
 
+**Routine feedback**:
+An Athlete-approved update to a Hevy Routine after completing a Workout, used as evidence for improving future generated Routine prescriptions without treating ordinary performed results as new Coach intent.
+Pure load or rep value changes are low-signal by default; set-count changes and set-type changes are reviewable feedback because they alter Routine structure.
+Warmup-row additions are structural Routine feedback, but they remain
+review-required because they may reflect a one-off Workout choice rather than a
+future prescription default.
+Routine feedback review should classify differences by signal: template
+changes, rest period changes, notes changes, set-count changes, and set-type
+changes are shown by default; pure load changes, pure rep value changes, and
+performed cardio durations on distance sets are low-signal unless explicitly
+requested.
+
 **Workout**:
 A single training session that has been performed and logged.
 _Avoid_: session, routine
@@ -59,6 +71,9 @@ The Athlete's completed set outcomes for a Workout, such as load, reps,
 distance, duration, and effort. For Workout backfill, performed results are the
 data being transferred; Coach-authored prescription text remains context for
 review and notes.
+Cardio durations added after completing a Routine, such as completed Rowing
+Machine split times, are performed results by default and should not become
+future Routine duration targets unless the Athlete explicitly promotes them.
 When performed-result text cannot be fully represented in Hevy's structured set
 fields, the raw text is preserved in Hevy exercise notes.
 Exercise notes should preserve non-structured context and Athlete feedback, not
@@ -88,6 +103,19 @@ An item-level correction where the wording of a True Coach Workout Item implies 
 more specific Hevy exercise template than the default exercise link. The override
 applies to the generated Routine item only; it does not change the permanent
 True Coach to Hevy exercise link.
+When Coach notes materially change the movement, such as "Use handles" on a
+rope-named item, Routine feedback may correct the selected Hevy template rather
+than preserving the original name-based mapping. Notes disappearing after an
+in-workout Hevy exercise replacement are a Hevy app artifact, not necessarily
+Athlete intent to drop Coach context.
+Whether a note-driven replacement becomes a permanent exercise link, a
+Template selection override, or a one-off correction is a case-by-case Athlete
+decision and must not be applied silently.
+
+**Exercise replacement artifact**:
+A Hevy behavior where replacing an exercise while performing a Workout may drop
+Routine notes and populate set values from the replacement exercise's history,
+making notes and load changes lower-signal than the template replacement itself.
 
 **Mixed-mode prescription**:
 A single True Coach Workout Item that prescribes materially different set modes
@@ -140,8 +168,47 @@ Execution markers should be preserved in notes.
 
 **Circuit block**:
 A Coach-authored Workout Item that contains multiple movements performed as a
-round or conditioning sequence. Circuit blocks should remain a single generated
-Hevy block unless the Coach authored the movements as separate Workout Items.
+round or conditioning sequence. When syncing to Hevy, a Circuit block should
+become multiple generated Routine exercise blocks in one superset when its
+movements can be identified and mapped deterministically; otherwise it remains
+review-required rather than silently becoming a generic placeholder. Each
+generated Routine exercise block should receive one set row per prescribed
+round, with movement-specific targets where parseable. If any movement in a
+split Circuit block cannot be mapped to a concrete Hevy exercise template, the
+whole split is review-blocked rather than partially synced. Split Circuit blocks
+use the same Hevy superset id stream as Coach-authored supersets: a standalone
+Circuit block receives the next available superset id, while a Circuit block
+inside an existing Coach-authored superset inherits that superset id. Movement
+boundaries inside a Circuit block should be identified only from deterministic
+list structure such as line breaks, bullets, numbered lines, or clear comma
+lists; uncertain movement boundaries are review-blocked. A split Circuit block
+must have a deterministic round count; missing or ambiguous round counts are
+review-blocked. A split Circuit block may contain mixed target types because
+each generated Hevy exercise block owns its own set rows. Unsupported or
+ambiguous target details stay in that movement's notes. Each generated movement
+block should preserve the original Circuit block wording in notes for
+traceability. Split Circuit movements must resolve to concrete Hevy exercise
+templates; generic placeholder templates should not be used for them. A
+single-movement Circuit block remains one Routine exercise block rather than a
+one-item superset. Rest between rounds should be represented as the rest period
+on the final generated movement block in the circuit round. A movement duration
+may be represented as that movement's rest period when the duration is the
+Athlete-facing timer for the movement, such as a plank, but round-level circuit
+rest takes priority over movement duration on the final movement. Cardio machine
+durations, such as cycling for time, should not be represented as rest periods.
+When a movement duration is structurally supported by Hevy, it should remain a
+duration set target even if it is also used as that movement's rest period.
+Movement-level rest should attach to the preceding generated movement block;
+round-level circuit rest still takes priority on the final movement. Rest-only
+lines in a Circuit block are rest metadata, not generated movements.
+
+**AMRAP block**:
+A Coach-authored Workout Item performed for as many rounds or reps as possible.
+A multi-movement AMRAP should be treated as a Circuit block; a single-movement
+AMRAP should remain one Routine exercise block with the AMRAP instruction
+preserved in notes. For time-boxed multi-movement AMRAPs, each generated
+movement block should default to half the number of cap minutes, rounded down,
+with a minimum of one set row; the time cap remains in notes.
 
 **Substitution instruction**:
 Coach guidance that names alternatives when equipment or conditions differ.
@@ -152,6 +219,12 @@ change the selected Hevy exercise template.
 The recovery time *prescribed* for an exercise — a single per-exercise value on a Routine. It is a prescription, not an outcome: Hevy never records the rest actually taken during a Workout.
 A simple single rest value may be structured into Hevy's exercise rest period;
 complex or per-set rest instructions should remain in notes.
+Rest period edits made through Routine feedback are high-signal for future
+Routine generation. Explicit Coach rest text in the True Coach prescription is
+higher priority than Athlete feedback and should be structured when it is a
+simple single rest value.
+When Coach text is silent, Athlete Routine feedback may establish a reusable
+default Rest period for the selected Hevy exercise template.
 
 ## Relationships
 

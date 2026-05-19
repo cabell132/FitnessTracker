@@ -183,6 +183,12 @@ def _add_hevy_parser(subparsers: Any) -> None:  # noqa: PLR0915
         help="Routine notes to use when the JSON has an empty notes field.",
     )
 
+    diff = routine_subparsers.add_parser("diff-json")
+    diff.add_argument("routine_id")
+    diff.add_argument("request_path")
+    diff.add_argument("--output-path")
+    diff.add_argument("--include-low-signal", action="store_true")
+
     workouts = hevy_subparsers.add_parser("workouts")
     workout_subparsers = workouts.add_subparsers(dest="workout_command")
 
@@ -660,6 +666,8 @@ def _hevy_routines(args: argparse.Namespace) -> int:  # noqa: PLR0911
             return _create_hevy_routine_from_json(args)
         if args.routine_command == "update-from-json":
             return _update_hevy_routine_from_json(args)
+        if args.routine_command == "diff-json":
+            return _diff_hevy_routine_from_json(args)
     except HevyAppAPIError as exc:
         _emit(f"Error: {exc}")
         return 2
@@ -789,6 +797,26 @@ def _update_hevy_routine_from_json(args: argparse.Namespace) -> int:
     _emit(f"Updated Hevy routine: {routine.get('id', args.routine_id)}")
     _emit(f"Wrote Hevy response: {response_path}")
     return 0
+
+
+def _diff_hevy_routine_from_json(args: argparse.Namespace) -> int:
+    request_path = Path(args.request_path)
+    expected = json.loads(request_path.read_text(encoding="utf-8")).get("routine", {})
+    response = _hevy_api_json("GET", f"/routines/{args.routine_id}")
+    actual = _unwrap_routine(response)
+    report = _format_routine_diff_report(
+        routine_id=args.routine_id,
+        expected=expected,
+        actual=actual,
+        include_low_signal=args.include_low_signal,
+    )
+    if args.output_path:
+        output_path = Path(args.output_path)
+        output_path.write_text(report + "\n", encoding="utf-8")
+        _emit(f"Wrote Hevy routine diff: {output_path}")
+    else:
+        _emit(report)
+    return 1 if "## " in report else 0
 
 
 def _ensure_hevy_routine_folder(args: argparse.Namespace) -> int:
@@ -1381,6 +1409,142 @@ def _workout_request_local_differences(
                 f"exercise {index + 1} set count request={len(request_sets)} local={len(local_sets)}"
             )
     return differences
+
+
+def _format_routine_diff_report(  # noqa: PLR0913
+    *,
+    routine_id: str,
+    expected: dict[str, Any],
+    actual: dict[str, Any],
+    include_low_signal: bool = False,
+) -> str:
+    expected_exercises = [
+        _normalized_routine_exercise(row) for row in expected.get("exercises", [])
+    ]
+    actual_exercises = [_normalized_routine_exercise(row) for row in actual.get("exercises", [])]
+    lines = [
+        f"# Hevy Routine Diff: {routine_id}",
+        "",
+        f"Expected title: {expected.get('title')!r}",
+        f"Actual title: {actual.get('title')!r}",
+        f"Exercise count expected={len(expected_exercises)} actual={len(actual_exercises)}",
+        "",
+    ]
+    differences = _routine_exercise_differences(
+        expected_exercises,
+        actual_exercises,
+        include_low_signal=include_low_signal,
+    )
+    if not differences:
+        lines.append("No normalized differences found.")
+        return "\n".join(lines)
+    lines.append("Differences:")
+    for index, labels, expected_row, actual_row in differences:
+        row = actual_row or expected_row or {}
+        name = row.get("title") or row.get("template_id") or "unknown"
+        lines.extend(
+            [
+                "",
+                f"## {index}. {name} ({', '.join(labels)})",
+                "",
+                "Expected:",
+                "```json",
+                json.dumps(expected_row, indent=2, sort_keys=True),
+                "```",
+                "",
+                "Actual:",
+                "```json",
+                json.dumps(actual_row, indent=2, sort_keys=True),
+                "```",
+            ]
+        )
+    return "\n".join(lines)
+
+
+def _routine_exercise_differences(
+    expected: list[dict[str, Any]],
+    actual: list[dict[str, Any]],
+    *,
+    include_low_signal: bool,
+) -> list[tuple[int, list[str], dict[str, Any] | None, dict[str, Any] | None]]:
+    differences = []
+    for index in range(max(len(expected), len(actual))):
+        if index >= len(expected):
+            differences.append((index + 1, ["added_remote_exercise"], None, actual[index]))
+            continue
+        if index >= len(actual):
+            differences.append((index + 1, ["missing_remote_exercise"], expected[index], None))
+            continue
+        expected_row = expected[index]
+        actual_row = actual[index]
+        labels = _routine_exercise_difference_labels(expected_row, actual_row)
+        if labels == ["low_signal_sets"] and not include_low_signal:
+            continue
+        if labels:
+            differences.append((index + 1, labels, expected_row, actual_row))
+    return differences
+
+
+def _routine_exercise_difference_labels(
+    expected: dict[str, Any],
+    actual: dict[str, Any],
+) -> list[str]:
+    labels = [
+        key
+        for key in ("template_id", "superset_id", "notes", "rest_seconds")
+        if expected.get(key) != actual.get(key)
+    ]
+    if expected.get("sets") != actual.get("sets"):
+        labels.append(_set_difference_label(expected.get("sets") or [], actual.get("sets") or []))
+    return labels
+
+
+def _set_difference_label(expected: list[dict[str, Any]], actual: list[dict[str, Any]]) -> str:
+    if len(expected) != len(actual):
+        return "sets"
+    expected_types = [set_row.get("type") for set_row in expected]
+    actual_types = [set_row.get("type") for set_row in actual]
+    if expected_types != actual_types:
+        return "sets"
+    if _only_low_signal_set_values_changed(expected, actual):
+        return "low_signal_sets"
+    return "sets"
+
+
+def _only_low_signal_set_values_changed(
+    expected: list[dict[str, Any]],
+    actual: list[dict[str, Any]],
+) -> bool:
+    low_signal_keys = {"weight_kg", "reps", "duration_seconds"}
+    for expected_set, actual_set in zip(expected, actual, strict=True):
+        changed_keys = {
+            key
+            for key in set(expected_set) | set(actual_set)
+            if expected_set.get(key) != actual_set.get(key)
+        }
+        if not changed_keys:
+            continue
+        if not changed_keys <= low_signal_keys:
+            return False
+        if "duration_seconds" in changed_keys and expected_set.get("distance_meters") is None:
+            return False
+    return True
+
+
+def _normalized_routine_exercise(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "template_id": row.get("exercise_template_id"),
+        "title": row.get("title"),
+        "superset_id": row.get("superset_id"),
+        "notes": row.get("notes") or "",
+        "rest_seconds": row.get("rest_seconds") or 0,
+        "sets": [_normalized_routine_set(set_row) for set_row in row.get("sets") or []],
+    }
+
+
+def _normalized_routine_set(row: dict[str, Any]) -> dict[str, Any]:
+    keys = ("type", "weight_kg", "reps", "distance_meters", "duration_seconds", "custom_metric")
+    return {key: row[key] for key in keys if row.get(key) is not None or key == "type"}
 
 
 def _print_sync_review_summary(plan_path: Path) -> None:
