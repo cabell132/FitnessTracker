@@ -25,6 +25,10 @@ class HevyToTrueCoachResultReviewError(Exception):
     """Raised when a Hevy to True Coach result review cannot be produced."""
 
 
+class HevyToTrueCoachResultApplyError(Exception):
+    """Raised when reviewed Hevy results cannot be applied safely."""
+
+
 @dataclass(frozen=True)
 class HevyToTrueCoachResultReviewBundle:
     """Paths written for one Hevy to True Coach result sync review."""
@@ -34,6 +38,16 @@ class HevyToTrueCoachResultReviewBundle:
     plan_path: Path
     decisions_path: Path
     decision_validation_path: Path
+
+
+@dataclass(frozen=True)
+class HevyToTrueCoachResultApplyResult:
+    """Paths and request body written for a dry-run True Coach result apply."""
+
+    review_bundle: HevyToTrueCoachResultReviewBundle
+    request_path: Path
+    request: dict[str, Any]
+    action: str
 
 
 @dataclass(frozen=True)
@@ -53,6 +67,16 @@ class DecisionValidationState:
     target_items: dict[int, dict[str, Any]]
     used_hevy_item_ids: dict[int, int]
     used_target_ids: dict[int, int]
+
+
+@dataclass(frozen=True)
+class RequestableSyncContext:
+    """Inputs for deciding whether one reviewed item should be in the request."""
+
+    item: dict[str, Any]
+    decision: dict[str, Any]
+    targets: dict[int, dict[str, Any]]
+    allow_partial: bool
 
 
 class HevyToTrueCoachResultReviewService:
@@ -119,6 +143,35 @@ class HevyToTrueCoachResultReviewService:
             ),
         )
 
+    def write_apply_request(
+        self,
+        hevy_workout_id: str,
+        decisions_path: Path | None = None,
+    ) -> HevyToTrueCoachResultApplyResult:
+        """Write the exact True Coach update request for a reviewed dry-run apply.
+
+        Args:
+            hevy_workout_id (str): Hevy Workout primary key to apply from review.
+            decisions_path (Path | None): Optional editable decisions JSON to apply.
+
+        Returns:
+            HevyToTrueCoachResultApplyResult: Dry-run request artifact details.
+        """
+        bundle = self.write_review(hevy_workout_id, decisions_path=decisions_path)
+        plan = _load_json_file(bundle.plan_path)
+        decisions = _load_json_file(bundle.decisions_path)
+        validation = _load_json_file(bundle.decision_validation_path)
+        _validate_apply_request(validation, decisions)
+        request = _build_true_coach_update_request(plan, decisions)
+        request_path = bundle.directory / "truecoach-update-request.json"
+        _write_json(request_path, request)
+        return HevyToTrueCoachResultApplyResult(
+            review_bundle=bundle,
+            request_path=request_path,
+            request=request,
+            action="dry_run",
+        )
+
 
 def _write_bundle(
     output_root: Path,
@@ -171,6 +224,10 @@ def _load_decisions(decisions_path: Path) -> dict[str, Any]:
         msg = f"Decisions file {decisions_path} must contain a JSON object"
         raise HevyToTrueCoachResultReviewError(msg)
     return data
+
+
+def _load_json_file(path: Path) -> dict[str, Any]:
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _plan_item(
@@ -428,6 +485,108 @@ def _decision_validation(plan: dict[str, Any], decisions: dict[str, Any]) -> dic
     return {"blockers": blockers, "warnings": list(plan["warnings"])}
 
 
+def _validate_apply_request(validation: dict[str, Any], decisions: dict[str, Any]) -> None:
+    blockers = validation.get("blockers", [])
+    if blockers and not decisions.get("allow_partial_apply"):
+        raise HevyToTrueCoachResultApplyError("; ".join(str(blocker) for blocker in blockers))
+
+
+def _build_true_coach_update_request(
+    plan: dict[str, Any],
+    decisions: dict[str, Any],
+) -> dict[str, Any]:
+    decision_items = _decision_items_by_hevy_id(decisions)
+    targets = _target_items_by_id(plan)
+    updates = [
+        _true_coach_update_operation(
+            item,
+            decision_items.get(item["hevy_workout_item_id"], {}),
+            targets,
+        )
+        for item in plan["items"]
+        if _is_requestable_sync_item(
+            RequestableSyncContext(
+                item=item,
+                decision=decision_items.get(item["hevy_workout_item_id"], {}),
+                targets=targets,
+                allow_partial=bool(decisions.get("allow_partial_apply")),
+            )
+        )
+    ]
+    return {
+        "workout_id": plan["workout"]["true_coach_workout_id"],
+        "hevy_workout_id": plan["workout"]["hevy_workout_id"],
+        "mark_workout_completed": bool(
+            decisions.get("approve_completion") and not decisions.get("allow_partial_apply")
+        ),
+        "update_workout_items": updates,
+    }
+
+
+def _is_requestable_sync_item(context: RequestableSyncContext) -> bool:
+    if (
+        context.decision.get("action", "sync") != "sync"
+        or context.item.get("proposed_result_text") is None
+    ):
+        return False
+    if not context.allow_partial:
+        return True
+    target_id = _effective_target_id(context.item, context.decision)
+    unresolved_item_blockers = [
+        blocker for blocker in context.item["blockers"] if not _is_target_mapping_blocker(blocker)
+    ]
+    return target_id in context.targets and not unresolved_item_blockers
+
+
+def _true_coach_update_operation(
+    item: dict[str, Any],
+    decision: dict[str, Any],
+    targets: dict[int, dict[str, Any]],
+) -> dict[str, Any]:
+    target_id = _effective_target_id(item, decision)
+    if target_id is None:
+        msg = f"Hevy item {item['hevy_workout_item_id']} has no True Coach target"
+        raise HevyToTrueCoachResultApplyError(msg)
+    target = targets[target_id]
+    return {
+        "method": "PUT",
+        "endpoint": f"workout_items/{target_id}",
+        "body": {"workout_item": _true_coach_workout_item_payload(target, item, decision)},
+    }
+
+
+def _true_coach_workout_item_payload(
+    target: dict[str, Any],
+    item: dict[str, Any],
+    decision: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "id": target["true_coach_workout_item_id"],
+        "workout_id": target["workout_id"],
+        "name": target["name"],
+        "info": target["info"],
+        "result": _result_text(item, decision),
+        "is_circuit": target["is_circuit"],
+        "state": "completed",
+        "state_event": "mark_as_completed",
+        "position": target["position"] or 0,
+        "assessment_id": target["assessment_id"],
+        "exercise_id": target["exercise_id"],
+    }
+
+
+def _result_text(item: dict[str, Any], decision: dict[str, Any]) -> str:
+    context_lines = []
+    performed_as = str(decision.get("performed_as") or "").strip()
+    if performed_as:
+        context_lines.append(f"Performed as: {performed_as}")
+    order_context = str(decision.get("order_context") or "").strip()
+    if order_context:
+        context_lines.append(f"Order context: {order_context}")
+    context_lines.append(str(item["proposed_result_text"]).strip())
+    return "\n".join(context_lines).strip()
+
+
 def _decision_workout_blockers(
     plan: dict[str, Any],
     decisions: dict[str, Any],
@@ -630,10 +789,14 @@ def _target_to_dict(item: TrueCoachWorkoutItem | None) -> dict[str, Any] | None:
         return None
     return {
         "true_coach_workout_item_id": item.id,
+        "workout_id": item.workout_id,
         "name": item.name,
         "position": item.position,
         "info": item.info or "",
+        "is_circuit": item.is_circuit,
         "state": item.state,
+        "assessment_id": item.assessment_id,
+        "exercise_id": item.exercise_id,
     }
 
 

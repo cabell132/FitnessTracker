@@ -47,6 +47,7 @@ from fitness_tracker.maintenance.hevy_template_ensure import (
 from fitness_tracker.sync.adapters import HevyRoutineWriterAdapter, HevyWorkoutWriterAdapter
 from fitness_tracker.sync.true_coach_tracker.sync import TrueCoachToFitnessTrackerSyncronizer
 from fitness_tracker.sync_review import (
+    HevyToTrueCoachResultApplyError,
     HevyToTrueCoachResultReviewError,
     HevyToTrueCoachResultReviewService,
     SyncApplyError,
@@ -121,6 +122,8 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0911, PLR0912,
         return _sync_review_truecoach_workout_backfill_diff(args)
     if args.command == "sync-apply" and args.sync_apply_command == "truecoach-to-hevy":
         return _sync_apply_truecoach_to_hevy(args)
+    if args.command == "sync-apply" and args.sync_apply_command == "hevy-to-truecoach-results":
+        return _sync_apply_hevy_to_truecoach_results(args)
     if args.command == "sync-apply" and args.sync_apply_command == "truecoach-workout-backfill":
         return _sync_apply_truecoach_workout_backfill(args)
     if (
@@ -388,6 +391,25 @@ def _add_sync_apply_parser(  # noqa: PLR0915
 ) -> None:
     sync_apply = subparsers.add_parser("sync-apply")
     sync_apply_subparsers = sync_apply.add_subparsers(dest="sync_apply_command")
+
+    hevy_to_truecoach_results = sync_apply_subparsers.add_parser("hevy-to-truecoach-results")
+    hevy_to_truecoach_results.add_argument("--workout-id", required=True)
+    hevy_to_truecoach_results.add_argument(
+        "--db", help="SQLite database path. Prefer --database-url."
+    )
+    hevy_to_truecoach_results.add_argument(
+        "--database-url", help="SQLAlchemy database URL. Defaults to DATABASE_URL."
+    )
+    hevy_to_truecoach_results.add_argument(
+        "--output-dir",
+        default="reports",
+        help="Report root. Defaults to reports.",
+    )
+    hevy_to_truecoach_results.add_argument(
+        "--decisions",
+        help="Editable Hevy to True Coach result decisions JSON to apply to the request.",
+    )
+    hevy_to_truecoach_results.add_argument("--dry-run", action="store_true")
 
     truecoach_to_hevy = sync_apply_subparsers.add_parser("truecoach-to-hevy")
     truecoach_to_hevy.add_argument("--workout-id", type=int, required=True)
@@ -916,6 +938,24 @@ def _sync_review_hevy_to_truecoach_results(args: argparse.Namespace) -> int:
         _emit(f"Error: {exc}")
         return 2
     _emit(f"Wrote Hevy to True Coach result review: {bundle.directory}")
+    return 0
+
+
+def _sync_apply_hevy_to_truecoach_results(args: argparse.Namespace) -> int:
+    if not args.dry_run:
+        _emit("Error: Hevy to True Coach result apply currently requires --dry-run")
+        return 2
+    store = Store(_engine_from_args(args))
+    service = HevyToTrueCoachResultReviewService(store=store, output_root=Path(args.output_dir))
+    try:
+        result = service.write_apply_request(
+            args.workout_id,
+            decisions_path=Path(args.decisions) if args.decisions else None,
+        )
+    except (HevyToTrueCoachResultReviewError, HevyToTrueCoachResultApplyError) as exc:
+        _emit(f"Error: {exc}")
+        return 2
+    _emit(f"Wrote Hevy to True Coach result update request dry-run: {result.request_path}")
     return 0
 
 

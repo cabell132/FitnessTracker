@@ -4,6 +4,7 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
 from sqlalchemy import create_engine
 
 from fitness_tracker.cli import main
@@ -23,6 +24,10 @@ from fitness_tracker.database.models.true_coach import (
     TrueCoachExercise,
     TrueCoachWorkout,
     TrueCoachWorkoutItem,
+)
+from fitness_tracker.sync_review import (
+    HevyToTrueCoachResultApplyError,
+    HevyToTrueCoachResultReviewService,
 )
 
 
@@ -356,6 +361,215 @@ def test_hevy_to_truecoach_result_review_blocks_unsafe_completion(tmp_path: Path
     )
 
 
+def test_hevy_to_truecoach_result_apply_dry_run_writes_update_request(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_result_review_workout(store)
+    decisions_path = tmp_path / "decisions.json"
+    decisions_path.write_text(
+        json.dumps(
+            {
+                "hevy_workout_id": "hevy-result-1",
+                "allow_partial_apply": False,
+                "approve_completion": False,
+                "items": [
+                    {"hevy_workout_item_id": 1, "action": "sync"},
+                    {
+                        "hevy_workout_item_id": 2,
+                        "action": "omit",
+                        "omit_reason": "Unsupported custom metric result.",
+                    },
+                    {
+                        "hevy_workout_item_id": 3,
+                        "action": "sync",
+                        "override_true_coach_workout_item_id": 9103,
+                    },
+                    {
+                        "hevy_workout_item_id": 4,
+                        "action": "omit",
+                        "omit_reason": "Accidental extra Hevy block.",
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    service = HevyToTrueCoachResultReviewService(store=store, output_root=tmp_path / "reports")
+
+    dry_run = service.write_apply_request("hevy-result-1", decisions_path=decisions_path)
+
+    request = json.loads(dry_run.request_path.read_text(encoding="utf-8"))
+    assert dry_run.action == "dry_run"
+    assert request["workout_id"] == 9001
+    assert request["mark_workout_completed"] is False
+    assert request["update_workout_items"][0] == {
+        "method": "PUT",
+        "endpoint": "workout_items/9101",
+        "body": {
+            "workout_item": {
+                "id": 9101,
+                "workout_id": 9001,
+                "name": "Bench Press",
+                "info": "2 x 8",
+                "result": "8 x 80.0 kg\n7 x 80.0 kg",
+                "is_circuit": False,
+                "state": "completed",
+                "state_event": "mark_as_completed",
+                "position": 1,
+                "assessment_id": None,
+                "exercise_id": 701,
+            }
+        },
+    }
+
+
+def test_hevy_to_truecoach_result_apply_wraps_replacement_and_order_context(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_result_review_workout(store)
+    decisions_path = tmp_path / "decisions.json"
+    decisions_path.write_text(
+        json.dumps(
+            {
+                "hevy_workout_id": "hevy-result-1",
+                "allow_partial_apply": False,
+                "items": [
+                    {"hevy_workout_item_id": 1, "action": "sync"},
+                    {
+                        "hevy_workout_item_id": 2,
+                        "action": "omit",
+                        "omit_reason": "Unsupported custom metric result.",
+                    },
+                    {
+                        "hevy_workout_item_id": 3,
+                        "action": "sync",
+                        "override_true_coach_workout_item_id": 9103,
+                        "performed_as": "Chest Supported Row instead of cable row",
+                        "order_context": "Performed after bench due to equipment availability.",
+                    },
+                    {
+                        "hevy_workout_item_id": 4,
+                        "action": "omit",
+                        "omit_reason": "Accidental extra Hevy block.",
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    service = HevyToTrueCoachResultReviewService(store=store, output_root=tmp_path / "reports")
+
+    dry_run = service.write_apply_request("hevy-result-1", decisions_path=decisions_path)
+
+    request = json.loads(dry_run.request_path.read_text(encoding="utf-8"))
+    row_result = request["update_workout_items"][1]["body"]["workout_item"]["result"]
+    assert row_result == (
+        "Performed as: Chest Supported Row instead of cable row\n"
+        "Order context: Performed after bench due to equipment availability.\n"
+        "10 x 55.0 kg"
+    )
+
+
+def test_hevy_to_truecoach_result_apply_refuses_unresolved_blockers(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_result_review_workout(store)
+    service = HevyToTrueCoachResultReviewService(store=store, output_root=tmp_path / "reports")
+
+    with pytest.raises(HevyToTrueCoachResultApplyError, match="Unsupported Hevy exercise type"):
+        service.write_apply_request("hevy-result-1")
+
+
+def test_hevy_to_truecoach_result_apply_allows_partial_apply_for_resolved_items(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_result_review_workout(store)
+    decisions_path = tmp_path / "decisions.json"
+    decisions_path.write_text(
+        json.dumps(
+            {
+                "hevy_workout_id": "hevy-result-1",
+                "allow_partial_apply": True,
+                "approve_completion": True,
+                "items": [
+                    {"hevy_workout_item_id": 1, "action": "sync"},
+                    {
+                        "hevy_workout_item_id": 2,
+                        "action": "omit",
+                        "omit_reason": "Unsupported custom metric result.",
+                    },
+                    {
+                        "hevy_workout_item_id": 3,
+                        "action": "sync",
+                        "override_true_coach_workout_item_id": 9103,
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    service = HevyToTrueCoachResultReviewService(store=store, output_root=tmp_path / "reports")
+
+    dry_run = service.write_apply_request("hevy-result-1", decisions_path=decisions_path)
+
+    request = json.loads(dry_run.request_path.read_text(encoding="utf-8"))
+    assert request["mark_workout_completed"] is False
+    assert [update["body"]["workout_item"]["id"] for update in request["update_workout_items"]] == [
+        9101,
+        9103,
+    ]
+
+
+def test_hevy_to_truecoach_result_apply_dry_run_cli_writes_request(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_result_review_workout(store)
+    decisions_path = _write_safe_apply_decisions(tmp_path)
+
+    exit_code = main(
+        [
+            "sync-apply",
+            "hevy-to-truecoach-results",
+            "--workout-id",
+            "hevy-result-1",
+            "--database-url",
+            f"sqlite:///{db_path}",
+            "--output-dir",
+            str(tmp_path / "reports"),
+            "--decisions",
+            str(decisions_path),
+            "--dry-run",
+        ]
+    )
+
+    request_path = (
+        tmp_path
+        / "reports"
+        / "sync-review"
+        / "hevy-to-truecoach-results"
+        / "hevy-result-1"
+        / "truecoach-update-request.json"
+    )
+    request = json.loads(request_path.read_text(encoding="utf-8"))
+    assert exit_code == 0
+    assert request["update_workout_items"][0]["endpoint"] == "workout_items/9101"
+
+
 def _write_review_with_decisions(
     tmp_path: Path,
     db_path: Path,
@@ -384,6 +598,39 @@ def _write_review_with_decisions(
         tmp_path / "reports" / "sync-review" / "hevy-to-truecoach-results" / "hevy-result-1"
     )
     return json.loads((bundle_dir / "decision-validation.json").read_text(encoding="utf-8"))
+
+
+def _write_safe_apply_decisions(tmp_path: Path) -> Path:
+    decisions_path = tmp_path / "decisions.json"
+    decisions_path.write_text(
+        json.dumps(
+            {
+                "hevy_workout_id": "hevy-result-1",
+                "allow_partial_apply": False,
+                "approve_completion": False,
+                "items": [
+                    {"hevy_workout_item_id": 1, "action": "sync"},
+                    {
+                        "hevy_workout_item_id": 2,
+                        "action": "omit",
+                        "omit_reason": "Unsupported custom metric result.",
+                    },
+                    {
+                        "hevy_workout_item_id": 3,
+                        "action": "sync",
+                        "override_true_coach_workout_item_id": 9103,
+                    },
+                    {
+                        "hevy_workout_item_id": 4,
+                        "action": "omit",
+                        "omit_reason": "Accidental extra Hevy block.",
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return decisions_path
 
 
 def _replace_row_work_with_repeated_warmup_and_main(store: Store, *, ambiguous: bool) -> None:
