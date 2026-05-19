@@ -161,6 +161,7 @@ def plan_parsed_split_circuit(
             resolve_template=resolve_template,
         )
         for movement in parsed_block.movements
+        if not _is_round_count_instruction(movement.source_text)
     )
     return SplitCircuitPlan(
         kind=parsed_block.kind,
@@ -220,6 +221,10 @@ def _exercise_plan(
             ),
         ),
     )
+
+
+def _is_round_count_instruction(source_text: str) -> bool:
+    return re.fullmatch(r"\d+\s*rounds?", source_text.strip(), re.IGNORECASE) is not None
 
 
 def _warnings(
