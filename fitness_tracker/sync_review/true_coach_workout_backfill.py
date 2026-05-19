@@ -120,6 +120,8 @@ class BackfillReviewItem:
     choice_decision_reason: str | None = None
     circuit_template_candidate_ids: list[str] | None = None
     circuit_decision_reason: str | None = None
+    replacement_for_movement_name: str | None = None
+    replacement_source_comment: str | None = None
 
 
 @dataclass(frozen=True)
@@ -812,21 +814,34 @@ def _circuit_review_items(context: CircuitReviewContext) -> list[BackfillReviewI
     completed_round_count = _completed_round_count(context.comment, context.parsed_block)
     round_time_lines = _round_time_lines(context.comment)
     omitted_movements = _omitted_movement_names(context.comment)
+    replacement_movements = _replacement_movement_names(context.comment)
     review_items: list[BackfillReviewItem] = []
     for offset, exercise in enumerate(split_plan.exercises):
-        matches = _matching_choice_templates(exercise.name, context.templates)
-        template = _hevy_template_for_split_exercise(context.templates, exercise)
+        replacement = _matching_replacement(exercise.name, replacement_movements)
+        review_name = replacement.name if replacement is not None else exercise.name
+        matches = _matching_choice_templates(review_name, context.templates)
+        template = (
+            None
+            if replacement is not None
+            else _hevy_template_for_split_exercise(context.templates, exercise)
+        )
         omission_comment = _matching_omission_comment(exercise.name, omitted_movements)
         base_sets = [_workout_set_from_split_row(set_row) for set_row in exercise.set_rows]
         sets = (
             []
-            if omission_comment is not None
+            if omission_comment is not None and replacement is None
             else _repeat_sets(base_sets, count=completed_round_count or 1)
         )
         warnings: list[str] = []
         blockers: list[str] = []
         circuit_decision_reason: str | None = None
-        if omission_comment is not None:
+        if replacement is not None:
+            blockers.append(
+                f"Circuit Workout Item {context.source_id} {exercise.name} "
+                f"replacement requires Agent decision: {replacement.name}"
+            )
+            circuit_decision_reason = "replacement_exercise"
+        elif omission_comment is not None:
             warnings.append(f"Athlete comment omits Circuit movement: {omission_comment}")
         elif not matches:
             blockers.append(
@@ -850,7 +865,7 @@ def _circuit_review_items(context: CircuitReviewContext) -> list[BackfillReviewI
                 tracker_workout_item_id=context.item.id,
                 position=context.position + offset,
                 superset_id=context.superset_id,
-                name=exercise.name,
+                name=review_name,
                 info=context.info,
                 comment=context.comment,
                 selected_hevy_template=template,
@@ -871,6 +886,10 @@ def _circuit_review_items(context: CircuitReviewContext) -> list[BackfillReviewI
                 completed_round_count=completed_round_count,
                 circuit_template_candidate_ids=[template.id for template in matches],
                 circuit_decision_reason=circuit_decision_reason,
+                replacement_for_movement_name=(exercise.name if replacement is not None else None),
+                replacement_source_comment=(
+                    replacement.source_text if replacement is not None else None
+                ),
             )
         )
     return review_items
@@ -988,6 +1007,68 @@ def _omitted_movement_names(comment: str) -> dict[str, str]:
         name = match.group("name").strip()
         omitted[_normalize_choice_text(name)] = segment
     return omitted
+
+
+@dataclass(frozen=True)
+class ReplacementMovement:
+    """A named performed replacement from an Athlete backfill comment."""
+
+    omitted_name: str
+    name: str
+    source_text: str
+
+
+def _replacement_movement_names(comment: str) -> list[ReplacementMovement]:
+    replacements: list[ReplacementMovement] = []
+    for segment in _replacement_comment_segments(comment):
+        replacement = _replacement_movement_name(segment)
+        if replacement is not None:
+            replacements.append(replacement)
+    return replacements
+
+
+def _replacement_comment_segments(comment: str) -> list[str]:
+    return [segment.strip() for segment in re.split(r"\n|;", comment) if segment.strip()]
+
+
+def _replacement_movement_name(segment: str) -> ReplacementMovement | None:
+    patterns = [
+        r"(?:w/o|without|no)\s+(?P<omitted>.+?)\s+(?:replaced\s+with|instead\s+of|subbed\s+with|swapped\s+for)\s+(?P<replacement>.+)",
+        r"(?:w/o|without|no)\s+(?P<omitted>.+?),?\s+(?P<replacement>.+?)\s+instead",
+    ]
+    for pattern in patterns:
+        match = re.fullmatch(pattern, segment.strip(), flags=re.IGNORECASE)
+        if match is None:
+            continue
+        omitted_name = _clean_replacement_name(match.group("omitted"))
+        replacement_name = _clean_replacement_name(match.group("replacement"))
+        if omitted_name and replacement_name:
+            return ReplacementMovement(
+                omitted_name=omitted_name,
+                name=replacement_name,
+                source_text=segment,
+            )
+    return None
+
+
+def _clean_replacement_name(value: str) -> str:
+    return re.sub(r"^(?:a|an|the)\s+", "", value.strip(" .,-/"), flags=re.IGNORECASE)
+
+
+def _matching_replacement(
+    movement_name: str,
+    replacement_movements: list[ReplacementMovement],
+) -> ReplacementMovement | None:
+    normalized_name = _normalize_choice_text(movement_name)
+    for replacement in replacement_movements:
+        omitted_name = _normalize_choice_text(replacement.omitted_name)
+        if (
+            omitted_name == normalized_name
+            or omitted_name in normalized_name
+            or normalized_name in omitted_name
+        ):
+            return replacement
+    return None
 
 
 def _matching_omission_comment(
@@ -1384,6 +1465,10 @@ def _plan_item(item: BackfillReviewItem) -> dict[str, Any]:
     if item.circuit_decision_reason is not None:
         plan["circuit_template_candidates"] = item.circuit_template_candidate_ids or []
         plan["circuit_decision_reason"] = item.circuit_decision_reason
+    if item.replacement_for_movement_name is not None:
+        plan["replacement_for_movement_name"] = item.replacement_for_movement_name
+    if item.replacement_source_comment is not None:
+        plan["replacement_source_comment"] = item.replacement_source_comment
     return plan
 
 
@@ -1517,17 +1602,23 @@ def _choice_decision_templates(plan: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _circuit_decision_templates(plan: dict[str, Any]) -> list[dict[str, Any]]:
-    return [
-        {
+    templates = []
+    for item in plan["items"]:
+        if item.get("circuit_decision_reason") is None:
+            continue
+        decision = {
             "source_id": item["source_id"],
             "movement_name": item["name"],
             "selected_hevy_template_id": None,
             "candidate_template_ids": item["circuit_template_candidates"],
             "reason": item["circuit_decision_reason"],
         }
-        for item in plan["items"]
-        if item.get("circuit_decision_reason") is not None
-    ]
+        if "replacement_for_movement_name" in item:
+            decision["replacement_for_movement_name"] = item["replacement_for_movement_name"]
+        if "replacement_source_comment" in item:
+            decision["replacement_source_comment"] = item["replacement_source_comment"]
+        templates.append(decision)
+    return templates
 
 
 def _validate_decisions(
@@ -2080,6 +2171,12 @@ def _report_item(index: int, item: dict[str, Any]) -> list[str]:
     ]
     if item.get("movement_target") is not None:
         details.append(f"Movement target: {item['movement_target'] or 'none'}")
+    if item.get("replacement_for_movement_name") is not None:
+        details.append(
+            f"Replacement for generated movement: {item['replacement_for_movement_name']}"
+        )
+    if item.get("replacement_source_comment") is not None:
+        details.append(f"Replacement source comment: {item['replacement_source_comment']}")
     if item.get("completed_round_count") is not None:
         details.append(f"Completed rounds: {item['completed_round_count']}")
     lines = [

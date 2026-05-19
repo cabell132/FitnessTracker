@@ -1047,6 +1047,156 @@ def test_workout_backfill_circuit_item_missing_template_writes_required_decision
     ]
 
 
+def test_workout_backfill_circuit_replacement_requires_explicit_decision(  # noqa: PLR0915
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    _add_choice_templates(
+        store,
+        [
+            ("hevy-bike", "Bike"),
+            ("hevy-burpees", "Burpees"),
+            ("hevy-ski-erg", "Ski Erg"),
+        ],
+    )
+    _add_circuit_backfill_item(
+        store,
+        info="2 Rounds\n10 Burpees\n15 Bike",
+        comment="2 Rounds\nW/o Bike, Ski Erg instead",
+    )
+
+    bundle_dir = _write_backfill_review(db_path, tmp_path)
+    plan = json.loads((bundle_dir / "plan.json").read_text(encoding="utf-8"))
+    request = json.loads((bundle_dir / "hevy-workout-request.json").read_text(encoding="utf-8"))
+    decisions = json.loads((bundle_dir / "backfill-decisions.json").read_text(encoding="utf-8"))
+    validation = json.loads((bundle_dir / "decision-validation.json").read_text(encoding="utf-8"))
+    report = (bundle_dir / "report.md").read_text(encoding="utf-8")
+
+    replacement_item = plan["items"][3]
+    assert replacement_item["name"] == "Ski Erg"
+    assert replacement_item["selected_hevy_template"] is None
+    assert replacement_item["replacement_for_movement_name"] == "Bike"
+    assert replacement_item["replacement_source_comment"] == "W/o Bike, Ski Erg instead"
+    assert replacement_item["circuit_template_candidates"] == ["hevy-ski-erg"]
+    assert replacement_item["circuit_decision_reason"] == "replacement_exercise"
+    assert replacement_item["blockers"] == [
+        "Circuit Workout Item 8106 Bike replacement requires Agent decision: Ski Erg"
+    ]
+    assert replacement_item["sets"] == [
+        {"type": "normal", "reps": 15},
+        {"type": "normal", "reps": 15},
+    ]
+    assert decisions["circuit_items"] == [
+        {
+            "source_id": 8106,
+            "movement_name": "Ski Erg",
+            "selected_hevy_template_id": None,
+            "candidate_template_ids": ["hevy-ski-erg"],
+            "reason": "replacement_exercise",
+            "replacement_for_movement_name": "Bike",
+            "replacement_source_comment": "W/o Bike, Ski Erg instead",
+        }
+    ]
+    assert validation["blockers"] == [
+        "Missing required decision: selected Workout timestamps",
+        "Missing required decision: Circuit Workout Item 8106 Ski Erg template",
+    ]
+    assert [exercise["exercise_template_id"] for exercise in request["workout"]["exercises"]] == [
+        "hevy-bench",
+        "hevy-row",
+        "hevy-burpees",
+    ]
+    assert "Replacement for generated movement: Bike" in report
+    assert "Replacement source comment: W/o Bike, Ski Erg instead" in report
+
+    service = TrueCoachWorkoutBackfillReviewService(store=store, output_root=tmp_path / "reports")
+    with pytest.raises(
+        WorkoutBackfillApplyError,
+        match="Missing required decision: Circuit Workout Item 8106 Ski Erg template",
+    ):
+        service.write_apply_request(455045484)
+
+
+def test_workout_backfill_circuit_replacement_applies_explicit_decision(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    _add_choice_templates(
+        store,
+        [
+            ("hevy-bike", "Bike"),
+            ("hevy-burpees", "Burpees"),
+            ("hevy-ski-erg", "Ski Erg"),
+        ],
+    )
+    _add_circuit_backfill_item(
+        store,
+        info="2 Rounds\n10 Burpees\n15 Bike",
+        comment="2 Rounds\nW/o Bike, Ski Erg instead",
+    )
+    decisions_path = tmp_path / "decisions.json"
+    decisions_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "workout": {
+                    "id": 455045484,
+                    "selected_start_time": "2024-04-10T17:05:00Z",
+                    "selected_end_time": "2024-04-10T18:02:00Z",
+                },
+                "circuit_items": [
+                    {
+                        "source_id": 8106,
+                        "movement_name": "Ski Erg",
+                        "selected_hevy_template_id": "hevy-ski-erg",
+                    }
+                ],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    exit_code = _run_backfill_review(tmp_path, 455045484, decisions_path)
+
+    assert exit_code == 0
+    bundle_dir = tmp_path / "reports" / "sync-review" / "truecoach-workout-backfill" / "455045484"
+    request = json.loads((bundle_dir / "hevy-workout-request.json").read_text(encoding="utf-8"))
+    validation = json.loads((bundle_dir / "decision-validation.json").read_text(encoding="utf-8"))
+
+    assert validation == {"blockers": [], "warnings": []}
+    assert [exercise["exercise_template_id"] for exercise in request["workout"]["exercises"]] == [
+        "hevy-bench",
+        "hevy-row",
+        "hevy-burpees",
+        "hevy-ski-erg",
+    ]
+    assert request["workout"]["exercises"][3]["sets"] == [
+        {
+            "type": "normal",
+            "weight_kg": None,
+            "reps": 15,
+            "distance_meters": None,
+            "duration_seconds": None,
+            "rpe": None,
+        },
+        {
+            "type": "normal",
+            "weight_kg": None,
+            "reps": 15,
+            "distance_meters": None,
+            "duration_seconds": None,
+            "rpe": None,
+        },
+    ]
+
+
 def test_workout_backfill_choice_item_missing_template_writes_required_decision(
     tmp_path: Path,
 ) -> None:
