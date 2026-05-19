@@ -44,6 +44,27 @@ def test_inspect_raw_returns_vendor_payload() -> None:
     }
 
 
+def test_inspect_workout_item_fetches_single_workout_item_endpoint() -> None:
+    session = FakeWorkoutItemSession()
+    client = TrueCoachWorkouts(session=session)
+
+    response = client.inspect_workout_item(-1393788898)
+
+    assert session.calls == [{"method": "GET", "endpoint": "workout_items/-1393788898"}]
+    assert response is not None
+    assert response.id == -1393788898
+    assert response.result == "8 x 80 kg"
+
+
+def test_inspect_workout_item_raw_returns_vendor_payload() -> None:
+    session = FakeWorkoutItemSession()
+    client = TrueCoachWorkouts(session=session)
+
+    response = client.inspect_workout_item_raw(-1393788898)
+
+    assert response == {"workout_item": _workout_item_payload()}
+
+
 def _workout_payload() -> dict[str, Any]:
     return {
         "id": 599821297,
@@ -70,4 +91,33 @@ def _workout_payload() -> dict[str, Any]:
         "note_id": None,
         "program_id": None,
         "workout_item_ids": [],
+    }
+
+
+class FakeWorkoutItemSession:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    def make_request(self, **kwargs: Any) -> dict[str, Any]:
+        self.calls.append(kwargs)
+        return {"workout_item": _workout_item_payload()}
+
+
+def _workout_item_payload() -> dict[str, Any]:
+    return {
+        "id": -1393788898,
+        "workout_id": 599821297,
+        "name": "Hip Adductor Med Ball Squeeze",
+        "info": "2 x 2 with an 8s squeeze",
+        "result": "8 x 80 kg",
+        "is_circuit": False,
+        "state": "completed",
+        "selected_exercises": [],
+        "linked": False,
+        "position": 8,
+        "assessment_id": None,
+        "created_at": "2026-05-18T00:00:00.000000Z",
+        "attachments": [],
+        "exercise_id": 16369167,
+        "request_video": False,
     }

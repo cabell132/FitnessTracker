@@ -7,6 +7,7 @@ from fitness_tracker.apis.session import APISession
 from fitness_tracker.apis.true_coach.types import (
     PutWorkoutItemRequest,
     PutWorkoutItemResponse,
+    WorkoutItem,
     WorkoutResponse,
 )
 
@@ -72,6 +73,33 @@ class TrueCoachWorkouts:
             dict[str, Any] | None: Parsed vendor JSON body when present.
         """
         endpoint = f"{self.endpoint}/{workout_id}"
+        return self._session.make_request(method="GET", endpoint=endpoint)
+
+    def inspect_workout_item(self, workout_item_id: int) -> WorkoutItem | None:
+        """Fetch a single workout item as a normalized payload.
+
+        Args:
+            workout_item_id (int): True Coach workout item id.
+
+        Returns:
+            WorkoutItem | None: Workout item payload, or ``None`` when empty.
+        """
+        data = self.inspect_workout_item_raw(workout_item_id)
+        if data is None:
+            return None
+        payload = data.get("workout_item", data)
+        return parse_response(payload, WorkoutItem)
+
+    def inspect_workout_item_raw(self, workout_item_id: int) -> dict[str, Any] | None:
+        """Fetch a single workout item and return the raw vendor payload.
+
+        Args:
+            workout_item_id (int): True Coach workout item id.
+
+        Returns:
+            dict[str, Any] | None: Parsed vendor JSON body when present.
+        """
+        endpoint = f"workout_items/{workout_item_id}"
         return self._session.make_request(method="GET", endpoint=endpoint)
 
     def update_workout_item(
