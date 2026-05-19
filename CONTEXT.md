@@ -79,6 +79,35 @@ fields, the raw text is preserved in Hevy exercise notes.
 Exercise notes should preserve non-structured context and Athlete feedback, not
 duplicate values already represented in structured Hevy set rows.
 
+**Result sync review**:
+An Agent-reviewed Hevy to True Coach sync step that prepares Coach-facing result
+text from linked Hevy Workout data before mutating True Coach. Hevy remains the
+source of truth for performed results; the Agent may review item mappings, omit
+noise, and adjust readable result text, but must not invent performed set
+outcomes that are not present in Hevy evidence.
+
+**Performed exercise replacement**:
+An Athlete change during a Hevy Workout where the performed exercise differs
+from the Coach-authored True Coach Workout Item. During Result sync review, the
+performed Hevy exercise may still map to the original True Coach item, but the
+Coach-facing result text should explain what exercise was actually performed
+because True Coach exercise definitions cannot be patched as part of sync.
+
+**Performed order change**:
+An Athlete change during a Hevy Workout where exercises are performed in a
+different order from the Coach-authored True Coach Workout Item order. During
+Result sync review, the Agent should preserve the mapping to the intended True
+Coach items when possible and mention meaningful order changes because fatigue
+context may explain different performance.
+
+**Repeated performed exercise**:
+The same Hevy exercise template appearing more than once in one Workout for
+different roles, such as warmup work and later main work. During Result sync
+review, repeated exercises should be mapped by local context such as set type,
+load, position, nearby True Coach items, and notes rather than by template name
+alone. If the role remains ambiguous, the Agent should ask the Athlete before
+syncing the affected items.
+
 **Choice Workout Item**:
 A Coach-authored Workout Item where the Coach offers multiple movement options
 and the Athlete's result text identifies which option was performed. During

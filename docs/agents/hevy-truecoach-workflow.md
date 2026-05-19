@@ -1,0 +1,199 @@
+# Hevy and True Coach Sync Workflow
+
+This guide documents the automatic workflow started by `main.py`. The script is
+small because the real workflow lives in `SyncService.run()` and its directional
+syncers.
+
+`main.py` does four things:
+
+1. Loads runtime configuration from environment variables.
+2. Creates the SQLAlchemy engine for the local tracker database.
+3. Builds concrete sync dependencies with `SyncDeps.from_config()`.
+4. Runs `SyncService.run()`.
+
+## System roles
+
+- True Coach is the Coach-authored prescription source.
+- Hevy is the Athlete logging and performed-results source.
+- Apple Health is an evidence source for local tracker metrics and workout
+  timing context.
+- The local tracker database is the bridge. It stores platform snapshots,
+  cross-platform links, metric rows, set rows, and sync state.
+
+Use the terms from `CONTEXT.md`: a Routine is a planned prescription, and a
+Workout is a completed training session.
+
+## Full sync order
+
+`SyncService.run()` executes one full sync in this order:
+
+1. Import Apple Health metrics and workouts into the local tracker.
+2. Fetch recent True Coach Workouts from the True Coach API.
+3. Persist those True Coach Workouts and Workout Items locally.
+4. Read the Hevy workout-events checkpoint.
+5. Fetch Hevy workout events since that checkpoint.
+6. Sync updated or deleted Hevy Workouts into the local tracker.
+7. For each updated Hevy Workout, push linked performed results back to True
+   Coach.
+8. Write the new Hevy checkpoint.
+9. Push tracker assessment metrics to True Coach assessments.
+10. Delete existing Hevy Routine drafts.
+11. Fetch recent True Coach Workouts again.
+12. Persist the fresh True Coach snapshot again.
+13. Find True Coach Workouts due today or earlier.
+14. Create a Hevy Routine for each due True Coach Workout.
+
+The second True Coach fetch matters: earlier Hevy-to-True-Coach updates may have
+changed remote Workout Item state, so Routine creation should use a fresh local
+snapshot.
+
+## Directional sync responsibilities
+
+The service hides the individual syncers from callers, but the workflow depends
+on these directional responsibilities:
+
+- Apple Health to tracker imports health metrics and workout evidence from
+  Dropbox.
+- True Coach to tracker stores Coach-authored Workout and Workout Item
+  snapshots locally.
+- Hevy to tracker stores performed or deleted Hevy Workouts locally, extracts
+  the True Coach Workout id from the Hevy Workout title, links matching tracker
+  rows, and refreshes local performed set data.
+- Hevy to True Coach formats linked Hevy performed sets into True Coach result
+  text, updates matching True Coach Workout Items, and marks the True Coach
+  Workout completed.
+- Tracker to True Coach pushes local metric rows into True Coach assessments.
+- True Coach to Hevy converts due True Coach Workouts into Hevy Routines.
+
+## Hevy checkpoint behavior
+
+The Hevy workout-events checkpoint controls incremental Hevy sync. The service
+reads the previous checkpoint before fetching Hevy events, then writes the
+current run timestamp after the event sync.
+
+The default lower bound is `2025-01-01T00:00:00Z` when no checkpoint exists.
+
+## Hevy Workout to True Coach result flow
+
+When a Hevy updated-workout event is received:
+
+1. The Hevy Workout is stored locally.
+2. The syncer tries to parse the True Coach Workout id from the Hevy title.
+3. If the local tracker has that True Coach Workout, the tracker row is linked
+   to the Hevy Workout id and start/end timestamps.
+4. Hevy exercise blocks are linked to True Coach Workout Items by deterministic
+   SQL first, then LLM-assisted linking for remaining unmatched items.
+5. Local tracker exercises and sets are updated from the linked Hevy rows.
+6. The Hevy-to-True-Coach syncer formats each linked Hevy item into True Coach
+   result text and updates the matching True Coach Workout Item.
+7. The True Coach Workout is marked completed.
+
+If the True Coach API returns a stale-item `404`, the syncer refreshes the
+latest True Coach Workout snapshot and retries the item update when possible.
+
+## Agentic Hevy to True Coach review
+
+The current automatic path writes linked Hevy results to True Coach immediately.
+The Agentic path should split this into review and apply steps:
+
+1. Generate a Hevy to True Coach result sync review for one Hevy Workout.
+2. Show linked Hevy exercise blocks, matched True Coach Workout Items, proposed
+   Coach-facing result text, skipped items, unsupported formatters, and whether
+   the True Coach Workout can be marked completed.
+3. Let the Agent review mappings and result text without inventing performed set
+   outcomes that are not present in Hevy evidence.
+4. Apply only a reviewed plan.
+
+Unlinked, ambiguously linked, or unsupported performed Hevy items are blockers
+by default. A reviewed partial apply may update confidently linked True Coach
+Workout Items, but it must not mark the whole True Coach Workout completed while
+known performed items remain unmapped.
+
+Review artifacts should separate deterministic evidence from judgement:
+
+- `report.md` summarizes the proposed sync for the Agent.
+- `plan.json` records linked Hevy data, candidate True Coach targets, proposed
+  result text, blockers, and warnings.
+- `result-decisions.json` stores editable Agent decisions.
+- `decision-validation.json` records blockers and warnings after decisions.
+- `truecoach-update-request.json` records the exact True Coach mutations that
+  apply would send.
+
+The first Agentic implementation should target one explicit Hevy Workout id:
+
+```bash
+uv run fitness-tracker sync-review hevy-to-truecoach --hevy-workout-id HEVY_ID
+uv run fitness-tracker sync-apply hevy-to-truecoach --hevy-workout-id HEVY_ID --decisions reports/sync-review/hevy-to-truecoach/HEVY_ID/result-decisions.json
+```
+
+Candidate discovery can be added later after the single-Workout review and
+apply flow is reliable.
+
+Appropriate Agent decisions include mapping overrides, explicit omissions with
+reasons, readable result-text adjustments that preserve the same performed
+values, partial-apply approval, and whether to mark the True Coach Workout
+completed when all performed items are mapped.
+
+The deterministic formatter remains responsible for set result text. The Agent
+primarily reconciles Hevy exercise blocks with the intended True Coach Workout
+Items. If the Athlete replaced an exercise during the Hevy Workout, the Agent
+should map the performed Hevy item to the intended True Coach item and add an
+item-scoped context line such as `Performed as: Chest Supported Row instead of
+Seated Cable Row`. If the Athlete moved exercises around, the Agent should add
+an item-scoped order note when the changed fatigue context is meaningful. These
+context lines wrap the formatter output; they should not rewrite performed set
+values.
+
+Repeated Hevy exercise templates in the same Workout are not automatically
+duplicates. They may represent different roles, especially warmup work followed
+by main work. The Agent should use set type, load, position, nearby True Coach
+items, notes, and the surrounding Workout structure to map repeated exercises.
+If the role remains unclear, the affected items should stay blocked until the
+Athlete answers.
+
+The Agent should prompt the Athlete instead of deciding when:
+
+- the same exercise is repeated and order plus sets/reps do not identify which
+  True Coach item each block represents;
+- a performed replacement could map to more than one True Coach Workout Item;
+- applying would duplicate the same performed work into multiple True Coach
+  items;
+- a Hevy item would be omitted without a clear reason;
+- completion status depends on a questionable mapping.
+
+## True Coach to Hevy Routine flow
+
+After Hevy results and assessments have been processed, the service deletes
+existing Hevy Routine drafts and recreates Routines for due True Coach Workouts.
+
+For each due Workout:
+
+1. The True Coach Workout is mirrored into the tracker.
+2. True Coach Workout Items are sorted by position.
+3. The Workout order and superset groups are parsed from the True Coach short
+   description.
+4. Each Workout Item is mapped to a Hevy exercise template through its True
+   Coach exercise link, a tracker exercise name match, or a placeholder.
+5. Sets are parsed from the True Coach prescription, using the LLM parser for
+   known Hevy templates and deterministic fallback parsing otherwise.
+6. A Hevy Routine request is built with a title containing the due date, Workout
+   title, and True Coach Workout id.
+7. The Routine is created in Hevy.
+8. True Coach Workout Items are inserted into tracker linking tables.
+
+This automatic path may use placeholders and broad parsing fallbacks. For
+nuanced Routine creation, Agents should prefer the review-first command workflow
+before writing to Hevy.
+
+## Agent review workflows
+
+The automatic workflow explains what the production sync does. When an Agent is
+asked to make a nuanced Hevy write, use the command recipes instead:
+
+- Upcoming Coach prescription to Hevy Routine:
+  `.agents/commands/create-hevy-routine.md`
+- Historical completed True Coach Workout to logged Hevy Workout:
+  `.agents/commands/tc-backfill-workout.md`
+
+Those workflows generate review artifacts, expose blockers, and keep heuristic
+judgement explicit before applying remote writes.
