@@ -52,6 +52,8 @@ from fitness_tracker.sync.adapters import (
 from fitness_tracker.sync.true_coach_tracker.sync import TrueCoachToFitnessTrackerSyncronizer
 from fitness_tracker.sync_review import (
     HevyToTrueCoachResultApplyError,
+    HevyToTrueCoachResultApplyResult,
+    HevyToTrueCoachResultReviewBundle,
     HevyToTrueCoachResultReviewError,
     HevyToTrueCoachResultReviewService,
     SyncApplyError,
@@ -937,7 +939,7 @@ def _sync_review_hevy_to_truecoach_results(args: argparse.Namespace) -> int:
     try:
         bundle = service.write_review(
             args.workout_id,
-            decisions_path=Path(args.decisions) if args.decisions else None,
+            decisions_path=_decisions_path_from_args(args),
         )
     except HevyToTrueCoachResultReviewError as exc:
         _emit(f"Error: {exc}")
@@ -952,7 +954,7 @@ def _sync_apply_hevy_to_truecoach_results(args: argparse.Namespace) -> int:
         return 2
     store = Store(_engine_from_args(args))
     service = HevyToTrueCoachResultReviewService(store=store, output_root=Path(args.output_dir))
-    decisions_path = Path(args.decisions) if args.decisions else None
+    decisions_path = _decisions_path_from_args(args)
     try:
         if args.dry_run:
             result = service.write_apply_request(
@@ -961,15 +963,9 @@ def _sync_apply_hevy_to_truecoach_results(args: argparse.Namespace) -> int:
             )
         else:
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-            cfg = Config.from_env()
             result = service.apply(
                 args.workout_id,
-                workout_item_writer=TrueCoachWorkoutItemWriterAdapter(
-                    TrueCoachClient(
-                        email=cfg.email,
-                        password=cfg.truecoach_password.get_secret_value(),
-                    )
-                ),
+                workout_item_writer=_truecoach_workout_item_writer_from_config(),
                 decisions_path=decisions_path,
             )
     except (HevyToTrueCoachResultReviewError, HevyToTrueCoachResultApplyError) as exc:
@@ -980,7 +976,7 @@ def _sync_apply_hevy_to_truecoach_results(args: argparse.Namespace) -> int:
 
 
 def _print_hevy_to_truecoach_result_review_summary(
-    bundle: Any,
+    bundle: HevyToTrueCoachResultReviewBundle,
 ) -> None:
     validation = _read_json(bundle.decision_validation_path)
     _emit(f"review_dir: {bundle.directory}")
@@ -992,7 +988,9 @@ def _print_hevy_to_truecoach_result_review_summary(
     _emit(f"warnings: {len(validation.get('warnings', []))}")
 
 
-def _print_hevy_to_truecoach_result_apply_summary(result: Any) -> None:
+def _print_hevy_to_truecoach_result_apply_summary(
+    result: HevyToTrueCoachResultApplyResult,
+) -> None:
     _print_hevy_to_truecoach_result_review_summary(result.review_bundle)
     _emit(f"request: {result.request_path}")
     _emit(f"action: {result.action}")
@@ -1000,6 +998,22 @@ def _print_hevy_to_truecoach_result_apply_summary(result: Any) -> None:
     _emit(f"omitted_hevy_workout_item_ids: {result.omitted_hevy_workout_item_ids}")
     _emit(f"unresolved_hevy_workout_item_ids: {result.unresolved_hevy_workout_item_ids}")
     _emit(f"completion_status: {result.completion_status}")
+
+
+def _decisions_path_from_args(args: argparse.Namespace) -> Path | None:
+    if not args.decisions:
+        return None
+    return Path(args.decisions)
+
+
+def _truecoach_workout_item_writer_from_config() -> TrueCoachWorkoutItemWriterAdapter:
+    cfg = Config.from_env()
+    return TrueCoachWorkoutItemWriterAdapter(
+        TrueCoachClient(
+            email=cfg.email,
+            password=cfg.truecoach_password.get_secret_value(),
+        )
+    )
 
 
 def _sync_review_truecoach_workout_backfill_candidates(args: argparse.Namespace) -> int:
