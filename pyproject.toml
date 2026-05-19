@@ -17,7 +17,7 @@ include = [
 
 [project]  # https://packaging.python.org/en/latest/specifications/pyproject-toml/
 name = "fitness_tracker"
-version = "1.1.0"
+version = "1.2.0"
 description = "A package to group all my fitness fitness apps into one place and allow for the syncing between apps"
 authors = [
     {name = "Cameron Bell", email = "cabell132@hotmail.com"}
