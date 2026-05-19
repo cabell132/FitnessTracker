@@ -8,3 +8,6 @@ change-python-version:
 update-schema:
 	alembic revision --autogenerate
 	alembic upgrade head
+
+sandcastle:
+	caffeinate -dimsu -- npx tsx .sandcastle/main.mts
