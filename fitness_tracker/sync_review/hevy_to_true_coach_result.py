@@ -17,7 +17,7 @@ from fitness_tracker.database.models.hevy_app import (
 )
 from fitness_tracker.database.models.tracker import Workout as TrackerWorkout
 from fitness_tracker.database.models.true_coach import TrueCoachWorkout, TrueCoachWorkoutItem
-from fitness_tracker.sync.hevy_true_coach.utils import mapping
+from fitness_tracker.sync.hevy_true_coach.utils import mapping as result_formatters
 
 
 class HevyToTrueCoachResultReviewError(Exception):
@@ -33,27 +33,6 @@ class HevyToTrueCoachResultReviewBundle:
     plan_path: Path
     decisions_path: Path
     decision_validation_path: Path
-
-
-@dataclass(frozen=True)
-class CandidateTargetContext:
-    """Inputs used to find local True Coach candidates for an unlinked Hevy item."""
-
-    item: HevyAppWorkoutItem
-    target: TrueCoachWorkoutItem | None
-    true_coach_workout: TrueCoachWorkout | None
-    tracker_workout: TrackerWorkout | None
-
-
-@dataclass(frozen=True)
-class BlockerContext:
-    """Inputs used to classify one performed Hevy item's review blockers."""
-
-    exercise: HevyAppExercise | None
-    formatter_name: str | None
-    target: TrueCoachWorkoutItem | None
-    candidates: list[TrueCoachWorkoutItem]
-    true_coach_workout: TrueCoachWorkout | None
 
 
 @dataclass(frozen=True)
@@ -143,15 +122,9 @@ def _write_bundle(
     decisions_path = bundle_dir / "result-decisions.json"
     validation_path = bundle_dir / "decision-validation.json"
     report_path = bundle_dir / "report.md"
-    plan_path.write_text(
-        json.dumps(artifacts.plan, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
-    decisions_path.write_text(
-        json.dumps(artifacts.decisions, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
-    validation_path.write_text(
-        json.dumps(artifacts.validation, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
+    _write_json(plan_path, artifacts.plan)
+    _write_json(decisions_path, artifacts.decisions)
+    _write_json(validation_path, artifacts.validation)
     report_path.write_text(artifacts.report, encoding="utf-8")
     return HevyToTrueCoachResultReviewBundle(
         directory=bundle_dir,
@@ -162,6 +135,10 @@ def _write_bundle(
     )
 
 
+def _write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
 def _plan_item(
     item: HevyAppWorkoutItem,
     true_coach_workout: TrueCoachWorkout | None,
@@ -170,23 +147,12 @@ def _plan_item(
     exercise = item.exercise if isinstance(item.exercise, HevyAppExercise) else None
     formatter_name = cast(str | None, exercise.type if exercise is not None else None)
     target = item.true_coach if isinstance(item.true_coach, TrueCoachWorkoutItem) else None
-    candidates = _candidate_targets(
-        CandidateTargetContext(
-            item=item,
-            target=target,
-            true_coach_workout=true_coach_workout,
-            tracker_workout=tracker_workout,
-        )
-    )
-    blockers = _item_blockers(
-        BlockerContext(
-            exercise=exercise,
-            formatter_name=formatter_name,
-            target=target,
-            candidates=candidates,
-            true_coach_workout=true_coach_workout,
-        )
-    )
+    if target is None:
+        candidates = _candidate_targets(item, true_coach_workout, tracker_workout)
+    else:
+        candidates = []
+    blockers = _item_blockers(exercise, formatter_name, true_coach_workout)
+    blockers.extend(_target_blockers(target, candidates))
     warnings = _item_warnings(target, candidates)
     return {
         "hevy_workout_item_id": item.id,
@@ -196,7 +162,7 @@ def _plan_item(
         "superset_id": item.superset_id,
         "exercise": _hevy_exercise_to_dict(exercise),
         "sets": [_set_to_dict(set_) for set_ in sorted(item.sets, key=lambda row: row.index)],
-        "formatter": formatter_name if formatter_name in mapping else None,
+        "formatter": formatter_name if formatter_name in result_formatters else None,
         "proposed_result_text": _proposed_result_text(item, formatter_name),
         "target": _target_to_dict(target),
         "candidates": [_target_to_dict(candidate) for candidate in candidates],
@@ -205,18 +171,20 @@ def _plan_item(
     }
 
 
-def _candidate_targets(context: CandidateTargetContext) -> list[TrueCoachWorkoutItem]:
-    if context.target is not None or context.true_coach_workout is None:
+def _candidate_targets(
+    item: HevyAppWorkoutItem,
+    true_coach_workout: TrueCoachWorkout | None,
+    tracker_workout: TrackerWorkout | None,
+) -> list[TrueCoachWorkoutItem]:
+    if true_coach_workout is None:
         return []
-    exercise = context.item.exercise if isinstance(context.item.exercise, HevyAppExercise) else None
+    exercise = item.exercise if isinstance(item.exercise, HevyAppExercise) else None
     if exercise is None:
         return []
 
-    candidates = _tracker_candidate_targets(context.tracker_workout, exercise)
+    candidates = _tracker_candidate_targets(tracker_workout, exercise)
     if not candidates:
-        candidates = _true_coach_candidate_targets(
-            context.true_coach_workout, context.item, exercise
-        )
+        candidates = _true_coach_candidate_targets(true_coach_workout, item, exercise)
     return _sort_targets(candidates)
 
 
@@ -245,35 +213,50 @@ def _true_coach_candidate_targets(
     return [
         tc_item
         for tc_item in true_coach_workout.workout_items
-        if (tc_item.exercise is not None and tc_item.exercise.hevy_app is exercise)
-        or tc_item.name == item.name
+        if _is_same_hevy_exercise(tc_item, exercise) or tc_item.name == item.name
     ]
+
+
+def _is_same_hevy_exercise(
+    true_coach_item: TrueCoachWorkoutItem,
+    exercise: HevyAppExercise,
+) -> bool:
+    return true_coach_item.exercise is not None and true_coach_item.exercise.hevy_app is exercise
 
 
 def _sort_targets(candidates: list[TrueCoachWorkoutItem]) -> list[TrueCoachWorkoutItem]:
     return sorted(candidates, key=lambda row: (row.position is None, row.position or 0, row.id))
 
 
-def _item_blockers(context: BlockerContext) -> list[str]:
+def _item_blockers(
+    exercise: HevyAppExercise | None,
+    formatter_name: str | None,
+    true_coach_workout: TrueCoachWorkout | None,
+) -> list[str]:
     blockers: list[str] = []
-    if context.true_coach_workout is None:
+    if true_coach_workout is None:
         blockers.append("Missing True Coach Workout link for Hevy Workout")
-    if context.exercise is None:
+    if exercise is None:
         blockers.append("Missing Hevy exercise template for performed Hevy item")
-    elif context.formatter_name not in mapping:
+    elif formatter_name not in result_formatters:
         blockers.append(
-            "Unsupported Hevy exercise type for True Coach result formatting: "
-            f"{context.formatter_name}"
+            f"Unsupported Hevy exercise type for True Coach result formatting: {formatter_name}"
         )
-    if context.target is None:
-        if len(context.candidates) > 1:
-            blockers.append(
-                f"Ambiguous True Coach target for unlinked performed Hevy item: "
-                f"{len(context.candidates)} candidates"
-            )
-        else:
-            blockers.append("Missing True Coach Workout Item link for performed Hevy item")
     return blockers
+
+
+def _target_blockers(
+    target: TrueCoachWorkoutItem | None,
+    candidates: list[TrueCoachWorkoutItem],
+) -> list[str]:
+    if target is not None:
+        return []
+    if len(candidates) > 1:
+        return [
+            f"Ambiguous True Coach target for unlinked performed Hevy item: "
+            f"{len(candidates)} candidates"
+        ]
+    return ["Missing True Coach Workout Item link for performed Hevy item"]
 
 
 def _item_warnings(
@@ -286,9 +269,9 @@ def _item_warnings(
 
 
 def _proposed_result_text(item: HevyAppWorkoutItem, formatter_name: str | None) -> str | None:
-    if formatter_name not in mapping:
+    if formatter_name not in result_formatters:
         return None
-    formatter = mapping[formatter_name]
+    formatter = result_formatters[formatter_name]
     return formatter(cast(list[HevySet], sorted(item.sets, key=lambda row: row.index))).strip()
 
 
