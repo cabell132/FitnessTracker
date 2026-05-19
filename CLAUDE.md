@@ -6,6 +6,14 @@ Guidance for AI agents and engineering skills working in this repository.
 
 Configuration for the engineering skills installed under `.agents/skills/`. Each subsection links to a file under `docs/agents/` with the full conventions.
 
+### Sandcastle
+
+Run
+
+```bash
+caffeinate -dimsu -- npx tsx .sandcastle/main.mts
+```
+
 ### Issue tracker
 
 Issues and PRDs live in GitHub Issues (`cabell132/FitnessTracker`), managed with the `gh` CLI. See `docs/agents/issue-tracker.md`.
@@ -17,3 +25,7 @@ Default vocabulary — `needs-triage`, `needs-info`, `ready-for-agent`, `ready-f
 ### Domain docs
 
 Single-context — one `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
+### Hevy and True Coach workflow
+
+The automatic sync workflow started by `main.py` is documented in `docs/agents/hevy-truecoach-workflow.md`.
