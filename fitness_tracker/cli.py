@@ -44,6 +44,7 @@ from fitness_tracker.maintenance.hevy_exercise_migration import (
 )
 from fitness_tracker.maintenance.hevy_template_ensure import (
     HevyTemplateEnsureService,
+    RequiredTemplate,
     TemplateEnsureError,
     TemplateEnsureResult,
 )
@@ -181,6 +182,7 @@ def _add_hevy_parser(subparsers: Any) -> None:  # noqa: PLR0915
 
     inspect = routine_subparsers.add_parser("inspect")
     inspect.add_argument("routine_id")
+    inspect.add_argument("--raw", action="store_true")
     _add_json_output_argument(inspect)
 
     delete = routine_subparsers.add_parser("delete")
@@ -215,6 +217,7 @@ def _add_hevy_parser(subparsers: Any) -> None:  # noqa: PLR0915
 
     workout_inspect = workout_subparsers.add_parser("inspect")
     workout_inspect.add_argument("workout_id")
+    workout_inspect.add_argument("--raw", action="store_true")
     _add_json_output_argument(workout_inspect)
 
     folders = hevy_subparsers.add_parser("routine-folders")
@@ -248,6 +251,7 @@ def _add_hevy_exercise_templates_parser(subparsers: Any) -> None:  # noqa: PLR09
     mode = ensure.add_mutually_exclusive_group(required=True)
     mode.add_argument("--dry-run", action="store_true")
     mode.add_argument("--yes", action="store_true")
+    _add_json_output_argument(ensure)
 
     create = exercise_template_subparsers.add_parser("create")
     create.add_argument("--title", required=True)
@@ -277,14 +281,17 @@ def _add_hevy_exercise_templates_parser(subparsers: Any) -> None:  # noqa: PLR09
     create_mode = create.add_mutually_exclusive_group(required=True)
     create_mode.add_argument("--dry-run", action="store_true")
     create_mode.add_argument("--yes", action="store_true")
+    _add_json_output_argument(create)
 
     find = exercise_template_subparsers.add_parser("find")
     find.add_argument("--title", required=True)
+    _add_json_output_argument(find)
 
     fuzzy_find = exercise_template_subparsers.add_parser("fuzzy-find")
     fuzzy_find.add_argument("--title", required=True)
     fuzzy_find.add_argument("--limit", type=int, default=10)
     fuzzy_find.add_argument("--min-score", type=float, default=55.0)
+    _add_json_output_argument(fuzzy_find)
 
 
 def _hevy_exercise_template_command_handler(
@@ -588,8 +595,12 @@ def _ensure_hevy_templates_from_plan(args: argparse.Namespace) -> int:
     try:
         result = service.ensure_from_plan(Path(args.plan_path), dry_run=args.dry_run)
     except TemplateEnsureError as exc:
+        if args.json:
+            return _emit_error(args, str(exc))
         _emit(f"Error: {exc}")
         return 2
+    if args.json:
+        return _emit_json_result(_template_ensure_result_payload(result))
     _print_template_ensure_result(result)
     return 0
 
@@ -611,8 +622,12 @@ def _create_hevy_template(args: argparse.Namespace) -> int:
             dry_run=args.dry_run,
         )
     except TemplateEnsureError as exc:
+        if args.json:
+            return _emit_error(args, str(exc))
         _emit(f"Error: {exc}")
         return 2
+    if args.json:
+        return _emit_json_result(_template_ensure_result_payload(result))
     _print_template_ensure_result(result)
     return 0
 
@@ -625,8 +640,12 @@ def _find_hevy_templates(args: argparse.Namespace) -> int:
         _emit(f"Error: {exc}")
         return 2
     if not templates:
+        if args.json:
+            return _emit_json_result({"ok": True, "exercise_templates": [], "warnings": []})
         _emit("No matching Hevy templates.")
         return 0
+    if args.json:
+        return _emit_json_result({"ok": True, "exercise_templates": templates, "warnings": []})
     for template in templates:
         _emit(
             " | ".join(
@@ -651,13 +670,26 @@ def _fuzzy_find_hevy_templates(args: argparse.Namespace) -> int:
         return 2
     by_title = {str(template.get("title", "")): template for template in templates}
     matches = process.extract(args.title, by_title.keys(), scorer=fuzz.WRatio, limit=args.limit)
+    ranked_matches = [
+        (float(score), by_title[title])
+        for title, score, _ in matches
+        if float(score) >= args.min_score
+    ]
+    if args.json:
+        return _emit_json_result(
+            {
+                "ok": True,
+                "matches": [
+                    {"score": score, "exercise_template": template}
+                    for score, template in ranked_matches
+                ],
+                "warnings": [],
+            }
+        )
     emitted = False
-    for title, score, _ in matches:
-        if float(score) < args.min_score:
-            continue
-        template = by_title[title]
+    for score, template in ranked_matches:
         _emit(
-            f"{float(score):.1f} | {template.get('id')} | {title} | "
+            f"{score:.1f} | {template.get('id')} | {template.get('title')} | "
             f"{template.get('type')} | {template.get('equipment')} | "
             f"{template.get('primary_muscle_group')}"
         )
@@ -977,6 +1009,8 @@ def _find_hevy_routines(args: argparse.Namespace) -> int:
 
 def _inspect_hevy_routine(args: argparse.Namespace) -> int:
     routine = _hevy_api_json("GET", f"/routines/{args.routine_id}")
+    if args.raw:
+        return _emit_json_result({"ok": True, "raw": routine, "warnings": []})
     routine_data = _unwrap_routine(routine)
     exercises = routine_data.get("exercises", [])
     empty_set_blocks = _empty_set_block_positions(exercises)
@@ -1027,6 +1061,8 @@ def _routine_inspect_payload(routine_data: dict[str, Any]) -> dict[str, Any]:
 
 def _inspect_hevy_workout(args: argparse.Namespace) -> int:
     workout = _hevy_api_json("GET", f"/workouts/{args.workout_id}")
+    if args.raw:
+        return _emit_json_result({"ok": True, "raw": workout, "warnings": []})
     workout_data = _unwrap_workout(workout)
     exercises = workout_data.get("exercises", [])
     empty_set_blocks = _empty_set_block_positions(exercises)
@@ -2091,6 +2127,30 @@ def _print_template_ensure_result(result: TemplateEnsureResult) -> None:
         _emit(f"Created Hevy template: {template.title}")
     if not (result.existing or result.would_create or result.created):
         _emit("No Hevy templates to create.")
+
+
+def _template_ensure_result_payload(result: TemplateEnsureResult) -> dict[str, Any]:
+    return {
+        "ok": True,
+        "created": [_required_template_payload(template) for template in result.created],
+        "would_create": [_required_template_payload(template) for template in result.would_create],
+        "existing": [_required_template_payload(template) for template in result.existing],
+        "ambiguous": [_required_template_payload(template) for template in result.ambiguous],
+        "warnings": [],
+    }
+
+
+def _required_template_payload(template: RequiredTemplate) -> dict[str, Any]:
+    return {
+        "title": template.title,
+        "expected_type": template.expected_type,
+        "equipment_category": template.equipment_category,
+        "muscle_group": template.muscle_group,
+        "other_muscles": list(template.other_muscles),
+        "status": template.status,
+        "source_workout_item_ids": list(template.source_workout_item_ids),
+        "matching_template_ids": list(template.matching_template_ids),
+    }
 
 
 def _emit_json_result(

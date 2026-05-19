@@ -470,6 +470,40 @@ def test_hevy_routines_inspect_json_keeps_stdout_parseable_and_warnings_on_stder
     assert captured.err == "Warning: Routine has empty set blocks: [2]\n"
 
 
+def test_hevy_routines_inspect_json_raw_returns_vendor_payload(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        cli,
+        "_hevy_api_json",
+        lambda *args, **kwargs: {
+            "routine": {
+                "id": "routine-1",
+                "title": "18 May 2026\nLower Body\n123",
+                "vendor_only": {"debug": True},
+            }
+        },
+    )
+
+    exit_code = cli.main(["hevy", "routines", "inspect", "routine-1", "--json", "--raw"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert json.loads(captured.out) == {
+        "ok": True,
+        "raw": {
+            "routine": {
+                "id": "routine-1",
+                "title": "18 May 2026\nLower Body\n123",
+                "vendor_only": {"debug": True},
+            }
+        },
+        "warnings": [],
+    }
+    assert captured.err == ""
+
+
 def test_hevy_workouts_inspect_prints_compact_summary(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -511,6 +545,96 @@ def test_hevy_workouts_inspect_prints_compact_summary(
     assert "exercises: 2" in output
     assert "superset_ids: [0, None]" in output
     assert "empty_set_blocks: [2]" in output
+
+
+def test_hevy_workouts_inspect_json_returns_normalized_payload(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        cli,
+        "_hevy_api_json",
+        lambda *args, **kwargs: {
+            "workout": {
+                "id": "workout-1",
+                "title": "2024-04-10 Upper",
+                "start_time": "2024-04-10T06:43:00Z",
+                "end_time": "2024-04-10T08:30:00Z",
+                "exercises": [
+                    {
+                        "exercise_template_id": "template-a",
+                        "superset_id": 0,
+                        "name": "Row",
+                        "notes": "",
+                        "sets": [{"type": "normal", "distance_meters": 500}],
+                    }
+                ],
+            }
+        },
+    )
+
+    exit_code = cli.main(["hevy", "workouts", "inspect", "workout-1", "--json"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert json.loads(captured.out) == {
+        "ok": True,
+        "workout": {
+            "id": "workout-1",
+            "title": "2024-04-10 Upper",
+            "start_time": "2024-04-10T06:43:00Z",
+            "end_time": "2024-04-10T08:30:00Z",
+            "exercise_count": 1,
+            "superset_ids": [0],
+            "empty_set_blocks": [],
+            "exercises": [
+                {
+                    "position": 1,
+                    "superset_id": 0,
+                    "exercise_template_id": "template-a",
+                    "name": "Row",
+                    "notes": "",
+                    "set_count": 1,
+                }
+            ],
+        },
+        "warnings": [],
+    }
+    assert captured.err == ""
+
+
+def test_hevy_workouts_inspect_json_raw_returns_vendor_payload(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        cli,
+        "_hevy_api_json",
+        lambda *args, **kwargs: {
+            "workout": {
+                "id": "workout-1",
+                "title": "2024-04-10 Upper",
+                "vendor_only": {"debug": True},
+            }
+        },
+    )
+
+    exit_code = cli.main(["hevy", "workouts", "inspect", "workout-1", "--json", "--raw"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert json.loads(captured.out) == {
+        "ok": True,
+        "raw": {
+            "workout": {
+                "id": "workout-1",
+                "title": "2024-04-10 Upper",
+                "vendor_only": {"debug": True},
+            }
+        },
+        "warnings": [],
+    }
+    assert captured.err == ""
 
 
 def test_hevy_routines_create_from_json_validates_and_writes_response(
@@ -849,6 +973,57 @@ def test_hevy_exercise_templates_fuzzy_find_prints_ranked_matches(
     assert "old | Cuban Press (Dumbbell)" in output
 
 
+def test_hevy_exercise_templates_fuzzy_find_json_returns_ranked_matches(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        cli,
+        "_hevy_api_pages",
+        lambda *args, **kwargs: [
+            {
+                "id": "old",
+                "title": "Cuban Press (Dumbbell)",
+                "type": "weight_reps",
+                "equipment": "dumbbell",
+                "primary_muscle_group": "shoulders",
+            }
+        ],
+    )
+
+    exit_code = cli.main(
+        [
+            "hevy",
+            "exercise-templates",
+            "fuzzy-find",
+            "--title",
+            "Dumbbell Cuban Press",
+            "--limit",
+            "1",
+            "--json",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    payload = json.loads(captured.out)
+    assert payload["ok"] is True
+    assert payload["matches"] == [
+        {
+            "score": pytest.approx(95.0, abs=5.0),
+            "exercise_template": {
+                "id": "old",
+                "title": "Cuban Press (Dumbbell)",
+                "type": "weight_reps",
+                "equipment": "dumbbell",
+                "primary_muscle_group": "shoulders",
+            },
+        }
+    ]
+    assert payload["warnings"] == []
+    assert captured.err == ""
+
+
 def test_hevy_exercise_templates_find_prints_exact_matches(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -874,6 +1049,46 @@ def test_hevy_exercise_templates_find_prints_exact_matches(
         "template-1 | Dumbbell Cuban Press | weight_reps | dumbbell | shoulders"
         in capsys.readouterr().out
     )
+
+
+def test_hevy_exercise_templates_find_json_returns_parseable_matches(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        cli,
+        "_find_remote_hevy_templates",
+        lambda title: [
+            {
+                "id": "template-1",
+                "title": title,
+                "type": "weight_reps",
+                "equipment": "dumbbell",
+                "primary_muscle_group": "shoulders",
+            }
+        ],
+    )
+
+    exit_code = cli.main(
+        ["hevy", "exercise-templates", "find", "--title", "Dumbbell Cuban Press", "--json"]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert json.loads(captured.out) == {
+        "ok": True,
+        "exercise_templates": [
+            {
+                "id": "template-1",
+                "title": "Dumbbell Cuban Press",
+                "type": "weight_reps",
+                "equipment": "dumbbell",
+                "primary_muscle_group": "shoulders",
+            }
+        ],
+        "warnings": [],
+    }
+    assert captured.err == ""
 
 
 def test_hevy_exercise_templates_create_dry_run_reports_template(
@@ -905,6 +1120,58 @@ def test_hevy_exercise_templates_create_dry_run_reports_template(
 
     assert exit_code == 0
     assert "Would create Hevy template: Dumbbell Cuban Press" in capsys.readouterr().out
+
+
+def test_hevy_exercise_templates_create_json_returns_result_without_prose(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    db_url = f"sqlite:///{db_path}"
+    Store(create_engine(db_url)).init_db()
+
+    exit_code = cli.main(
+        [
+            "hevy",
+            "exercise-templates",
+            "create",
+            "--title",
+            "Dumbbell Cuban Press",
+            "--type",
+            "weight_reps",
+            "--equipment",
+            "dumbbell",
+            "--muscle-group",
+            "shoulders",
+            "--database-url",
+            db_url,
+            "--dry-run",
+            "--json",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert json.loads(captured.out) == {
+        "ok": True,
+        "created": [],
+        "would_create": [
+            {
+                "title": "Dumbbell Cuban Press",
+                "expected_type": "weight_reps",
+                "equipment_category": "dumbbell",
+                "muscle_group": "shoulders",
+                "other_muscles": [],
+                "status": "missing",
+                "source_workout_item_ids": [],
+                "matching_template_ids": [],
+            }
+        ],
+        "existing": [],
+        "ambiguous": [],
+        "warnings": [],
+    }
+    assert captured.err == ""
 
 
 def test_hevy_templates_namespace_is_not_available(

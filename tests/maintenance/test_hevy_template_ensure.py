@@ -56,6 +56,49 @@ def test_ensure_from_plan_dry_run_reports_missing_templates_without_writes(
         assert uow.session.get_all(HevyAppExercise) == []
 
 
+def test_ensure_from_plan_json_reports_missing_templates_without_prose(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    plan_path = _write_plan(tmp_path, [_missing_template("Single-Leg Isometric Calf Raise")])
+    store, db_url = _store(tmp_path)
+    fake_client = FakeHevyClient()
+    monkeypatch.setattr(cli, "_hevy_client_from_config", lambda: fake_client)
+
+    exit_code = cli.main(
+        [
+            "hevy",
+            "exercise-templates",
+            "ensure-from-plan",
+            str(plan_path),
+            "--database-url",
+            db_url,
+            "--dry-run",
+            "--json",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert json.loads(captured.out)["would_create"] == [
+        {
+            "title": "Single-Leg Isometric Calf Raise",
+            "expected_type": "duration",
+            "equipment_category": "bodyweight",
+            "muscle_group": "calves",
+            "other_muscles": [],
+            "status": "missing",
+            "source_workout_item_ids": [1003],
+            "matching_template_ids": [],
+        }
+    ]
+    assert captured.err == ""
+    assert fake_client.exercises.created == []
+    with store.unit_of_work() as uow:
+        assert uow.session.get_all(HevyAppExercise) == []
+
+
 def test_ensure_from_plan_yes_creates_and_persists_missing_template(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
