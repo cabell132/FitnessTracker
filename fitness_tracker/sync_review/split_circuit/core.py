@@ -103,8 +103,8 @@ class _BlockerContext:
     requirements: list[SplitCircuitTemplateRequirement]
     movement_name: str
     agent_decision_reason: str | None
-    target: str
     set_rows: list[SetRow]
+    notes_only: bool
 
 
 TemplateResolver = Callable[
@@ -198,7 +198,7 @@ def _exercise_plan(
     movement_source_text = movement.source_text
     selected_template, requirements = resolve_template(movement_name, movement_source_text)
     set_rows = _set_rows_for_target(movement_target)
-    notes_only = _is_notes_only(target=movement_target, set_rows=set_rows)
+    notes_only = _is_notes_only_generated_exercise(target=movement_target, set_rows=set_rows)
     return SplitCircuitExercisePlan(
         name=movement_name,
         target=movement_target,
@@ -222,14 +222,14 @@ def _exercise_plan(
                     if parsed_block.requires_agent_decision
                     else None
                 ),
-                target=movement_target,
                 set_rows=set_rows,
+                notes_only=notes_only,
             ),
         ),
     )
 
 
-def _is_notes_only(*, target: str, set_rows: list[SetRow]) -> bool:
+def _is_notes_only_generated_exercise(*, target: str, set_rows: list[SetRow]) -> bool:
     return bool(target.strip()) and not set_rows
 
 
@@ -261,11 +261,7 @@ def _blockers(context: _BlockerContext) -> tuple[str, ...]:
             "Circuit block requires Agent decision: "
             f"{context.agent_decision_reason or 'unspecified'}"
         )
-    if (
-        context.agent_decision_reason is None
-        and not context.target.strip()
-        and not context.set_rows
-    ):
+    if context.agent_decision_reason is None and not context.set_rows and not context.notes_only:
         blockers.append(
             "Generated Circuit exercise has no deterministic sets or target details: "
             f"{context.movement_name}"
