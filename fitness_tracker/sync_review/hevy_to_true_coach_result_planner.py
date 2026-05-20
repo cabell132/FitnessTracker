@@ -51,7 +51,8 @@ def _plan_item(
     tracker_workout: TrackerWorkout | None,
 ) -> dict[str, Any]:
     exercise = item.exercise if isinstance(item.exercise, HevyAppExercise) else None
-    formatter_name = cast(str | None, exercise.type if exercise is not None else None)
+    exercise_type = _exercise_type(exercise)
+    formatter_name = _formatter_name(exercise_type)
     target = item.true_coach if isinstance(item.true_coach, TrueCoachWorkoutItem) else None
     if target is None:
         candidates = _candidate_targets(item, true_coach_workout, tracker_workout)
@@ -60,7 +61,7 @@ def _plan_item(
     target_inferred_from_sets_reps = (
         target is None and len(candidates) == 1 and _is_repeated_performed_exercise(item)
     )
-    blockers = _item_blockers(exercise, formatter_name, true_coach_workout)
+    blockers = _item_blockers(exercise, exercise_type, true_coach_workout)
     blockers.extend(_target_blockers(target, candidates, target_inferred_from_sets_reps))
     warnings = _item_warnings(target, candidates)
     return {
@@ -71,7 +72,7 @@ def _plan_item(
         "superset_id": item.superset_id,
         "exercise": _hevy_exercise_to_dict(exercise),
         "sets": [_set_to_dict(set_) for set_ in _sort_sets(item)],
-        "formatter": formatter_name if formatter_name in RESULT_FORMATTERS else None,
+        "formatter": formatter_name,
         "proposed_result_text": _proposed_result_text(item, formatter_name),
         "target": _target_to_dict(target) if target is not None else None,
         "candidates": [_target_to_dict(candidate) for candidate in candidates],
@@ -197,9 +198,21 @@ def _prescribed_sets_reps_signature(info: str) -> tuple[int, int] | None:
     return (int(match.group(1)), int(match.group(2)))
 
 
+def _exercise_type(exercise: HevyAppExercise | None) -> str | None:
+    if exercise is None:
+        return None
+    return cast(str, exercise.type)
+
+
+def _formatter_name(exercise_type: str | None) -> str | None:
+    if exercise_type in RESULT_FORMATTERS:
+        return exercise_type
+    return None
+
+
 def _item_blockers(
     exercise: HevyAppExercise | None,
-    formatter_name: str | None,
+    exercise_type: str | None,
     true_coach_workout: TrueCoachWorkout | None,
 ) -> list[str]:
     blockers: list[str] = []
@@ -207,9 +220,9 @@ def _item_blockers(
         blockers.append("Missing True Coach Workout link for Hevy Workout")
     if exercise is None:
         blockers.append("Missing Hevy exercise template for performed Hevy item")
-    elif formatter_name not in RESULT_FORMATTERS:
+    elif _formatter_name(exercise_type) is None:
         blockers.append(
-            f"Unsupported Hevy exercise type for True Coach result formatting: {formatter_name}"
+            f"Unsupported Hevy exercise type for True Coach result formatting: {exercise_type}"
         )
     return blockers
 
@@ -241,7 +254,7 @@ def _item_warnings(
 
 
 def _proposed_result_text(item: HevyAppWorkoutItem, formatter_name: str | None) -> str | None:
-    if formatter_name not in RESULT_FORMATTERS:
+    if formatter_name is None:
         return None
     formatter = RESULT_FORMATTERS[formatter_name]
     return formatter(cast(list[HevySet], _sort_sets(item))).strip()

@@ -7,6 +7,10 @@ from fitness_tracker.apis.hevy_app.types import Set
 SetFormatter = Callable[[list[Set]], str]
 
 
+def _result_text(lines: list[str]) -> str:
+    return "".join(f"{line}\n" for line in lines)
+
+
 def format_duration(seconds: int) -> str:
     """Format a duration in seconds as hours, minutes, and seconds.
 
@@ -41,14 +45,16 @@ def format_reps_only_result(sets: list[Set]) -> str:
     Returns:
         str: Lines suitable for True Coach ``result`` text.
     """
-    result = ""
+    lines: list[str] = []
     for set_ in sets:
         if set_.type == "dropset":
-            result = result[:-1]
-            result += f" > {set_.reps}\n"
+            if lines:
+                lines[-1] = f"{lines[-1]} > {set_.reps}"
+            else:
+                lines.append(f" > {set_.reps}")
         else:
-            result += f"{set_.reps} reps\n"
-    return result
+            lines.append(f"{set_.reps} reps")
+    return _result_text(lines)
 
 
 def format_distance_duration_result(sets: list[Set]) -> str:
@@ -60,13 +66,13 @@ def format_distance_duration_result(sets: list[Set]) -> str:
     Returns:
         str: One line per set with meters, duration, and pace.
     """
-    result = ""
+    lines: list[str] = []
     for set_ in sets:
         dist = set_.distance_meters or 0
         dur = set_.duration_seconds or 0
         pace = calculate_pace(dist, dur)
-        result += f"{dist}m in {format_duration(dur)} @{pace}\n"
-    return result
+        lines.append(f"{dist}m in {format_duration(dur)} @{pace}")
+    return _result_text(lines)
 
 
 def calculate_pace(distance_meters: int, duration_seconds: int) -> str:
@@ -99,16 +105,18 @@ def format_weight_reps_result(sets: list[Set]) -> str:
     Returns:
         str: Human-readable lines per set.
     """
-    result = ""
+    lines: list[str] = []
     for set_ in sets:
         if set_.type == "dropset":
-            result = result[:-1]
-            result += f" > {set_.reps} x {set_.weight_kg} kg\n"
+            if lines:
+                lines[-1] = f"{lines[-1]} > {set_.reps} x {set_.weight_kg} kg"
+            else:
+                lines.append(f" > {set_.reps} x {set_.weight_kg} kg")
         elif set_.type == "warmup":
-            result += f"Warmup Set: {set_.reps} x {set_.weight_kg} kg\n"
+            lines.append(f"Warmup Set: {set_.reps} x {set_.weight_kg} kg")
         else:
-            result += f"{set_.reps} x {set_.weight_kg} kg\n"
-    return result
+            lines.append(f"{set_.reps} x {set_.weight_kg} kg")
+    return _result_text(lines)
 
 
 def format_bodyweight_assisted_result(sets: list[Set]) -> str:
@@ -132,14 +140,14 @@ def format_bodyweight_weighted_result(sets: list[Set]) -> str:
     Returns:
         str: Reps-only or weight x reps lines.
     """
-    result = ""
+    lines: list[str] = []
     for set_ in sets:
         w = set_.weight_kg or 0
         if w > 0:
-            result += f"{set_.reps} x {set_.weight_kg} kg\n"
+            lines.append(f"{set_.reps} x {set_.weight_kg} kg")
         else:
-            result += f"{set_.reps} reps\n"
-    return result
+            lines.append(f"{set_.reps} reps")
+    return _result_text(lines)
 
 
 def format_duration_result(sets: list[Set]) -> str:
@@ -151,11 +159,11 @@ def format_duration_result(sets: list[Set]) -> str:
     Returns:
         str: One formatted duration per line.
     """
-    result = ""
+    lines: list[str] = []
     for set_ in sets:
         sec = set_.duration_seconds or 0
-        result += f"{format_duration(sec)}\n"
-    return result
+        lines.append(format_duration(sec))
+    return _result_text(lines)
 
 
 def format_weight_duration_result(sets: list[Set]) -> str:
@@ -167,12 +175,12 @@ def format_weight_duration_result(sets: list[Set]) -> str:
     Returns:
         str: One line per set describing load and time held.
     """
-    result = ""
+    lines: list[str] = []
     for set_ in sets:
         sec = set_.duration_seconds or 0
         kg = set_.weight_kg or 0
-        result += f"{kg} kg for {format_duration(sec)}\n"
-    return result
+        lines.append(f"{kg} kg for {format_duration(sec)}")
+    return _result_text(lines)
 
 
 def format_short_distance_weight_result(sets: list[Set]) -> str:
@@ -184,10 +192,7 @@ def format_short_distance_weight_result(sets: list[Set]) -> str:
     Returns:
         str: One line per set.
     """
-    result = ""
-    for set_ in sets:
-        result += f"{set_.weight_kg} kg for {set_.distance_meters}m\n"
-    return result
+    return _result_text([f"{set_.weight_kg} kg for {set_.distance_meters}m" for set_ in sets])
 
 
 RESULT_FORMATTERS: dict[str, SetFormatter] = {
