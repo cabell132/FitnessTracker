@@ -75,7 +75,6 @@ from fitness_tracker.sync_review import (
     SyncApplyError,
     SyncReviewError,
     TrueCoachToHevyReviewService,
-    TrueCoachWorkoutBackfillDiscoveryService,
     TrueCoachWorkoutBackfillReviewService,
     WorkoutBackfillApplyError,
     WorkoutBackfillInspectResult,
@@ -123,6 +122,8 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0911, PLR0912,
         return _truecoach_workout_items(args)
     if args.command == "exercise-links" and args.exercise_links_command == "set":
         return _set_exercise_link(args)
+    if args.command == "workout-backfill" and args.workout_backfill_command == "candidates":
+        return _workout_backfill_candidates(args)
     if args.command == "workout-backfill" and args.workout_backfill_command == "review":
         return _workout_backfill_review(args)
     if args.command == "workout-backfill" and args.workout_backfill_command == "write-request":
@@ -447,6 +448,17 @@ def _add_exercise_links_parser(subparsers: Any) -> None:
 def _add_workout_backfill_parser(subparsers: Any) -> None:
     workout_backfill = subparsers.add_parser("workout-backfill")
     workout_backfill_subparsers = workout_backfill.add_subparsers(dest="workout_backfill_command")
+
+    candidates = workout_backfill_subparsers.add_parser("candidates")
+    candidates.add_argument("--db", help="SQLite database path. Prefer --database-url.")
+    candidates.add_argument(
+        "--database-url", help="SQLAlchemy database URL. Defaults to DATABASE_URL."
+    )
+    candidates.add_argument(
+        "--output-dir",
+        default="reports",
+        help="Report root. Defaults to reports.",
+    )
 
     review = workout_backfill_subparsers.add_parser("review")
     review.add_argument("--workout-id", type=int, required=True)
@@ -1774,13 +1786,17 @@ def _truecoach_workout_item_writer_from_config() -> TrueCoachWorkoutItemWriterAd
 
 
 def _sync_review_truecoach_workout_backfill_candidates(args: argparse.Namespace) -> int:
-    store = Store(_engine_from_args(args))
-    service = TrueCoachWorkoutBackfillDiscoveryService(
-        store=store,
+    return _workout_backfill_candidates(args)
+
+
+def _workout_backfill_candidates(args: argparse.Namespace) -> int:
+    pipeline = WorkoutBackfillPipeline(
+        store=Store(_engine_from_args(args)),
         output_root=Path(args.output_dir),
     )
-    bundle = service.write_report()
-    _emit(f"Wrote backfill candidate report: {bundle.report_path}")
+    result = pipeline.candidates()
+    _emit(f"Wrote Workout backfill candidates: {result.directory}")
+    _emit(f"Candidate count: {result.candidate_count}")
     return 0
 
 

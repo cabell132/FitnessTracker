@@ -7,6 +7,7 @@ from fitness_tracker.sync_review.true_coach_to_hevy import (
 )
 from fitness_tracker.sync_review.true_coach_workout_backfill_discovery import (
     BackfillCandidate,
+    BackfillCandidatesResult,
     BackfillDiscoveryBundle,
     TrueCoachWorkoutBackfillDiscoveryService,
 )
@@ -36,6 +37,7 @@ from fitness_tracker.sync_review.hevy_to_true_coach_result_workflow import (
 
 __all__ = [
     "BackfillCandidate",
+    "BackfillCandidatesResult",
     "BackfillDiscoveryBundle",
     "HevyToTrueCoachResultApplyError",
     "HevyToTrueCoachResultApplyResult",

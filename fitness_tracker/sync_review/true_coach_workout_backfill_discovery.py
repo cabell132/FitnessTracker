@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -18,6 +19,11 @@ from fitness_tracker.database.models.tracker import (
 from fitness_tracker.database.models.true_coach import TrueCoachWorkout
 
 CandidateStatus = Literal["structured-results", "placeholder-or-no-results"]
+BACKFILL_CANDIDATES_DIR = Path("workout-backfill") / "candidates"
+BACKFILL_CANDIDATES_REPORT = "report.md"
+BACKFILL_CANDIDATES_JSON = "candidates.json"
+BACKFILL_CANDIDATES_MANIFEST = "candidates-manifest.json"
+BACKFILL_CANDIDATES_WORKFLOW = "workout-backfill-candidates"
 
 
 @dataclass(frozen=True)
@@ -34,12 +40,19 @@ class BackfillCandidate:
 
 
 @dataclass(frozen=True)
-class BackfillDiscoveryBundle:
-    """Paths written for a backfill discovery report."""
+class BackfillCandidatesResult:
+    """CLI-neutral result for Workout backfill candidate artifact generation."""
 
     directory: Path
     report_path: Path
     candidates_path: Path
+    manifest_path: Path
+    candidate_count: int
+
+
+@dataclass(frozen=True)
+class BackfillDiscoveryBundle(BackfillCandidatesResult):
+    """Paths written for the legacy backfill discovery report API."""
 
 
 class TrueCoachWorkoutBackfillDiscoveryService:
@@ -106,20 +119,36 @@ class TrueCoachWorkoutBackfillDiscoveryService:
         Returns:
             BackfillDiscoveryBundle: Paths written by the service.
         """
-        candidates = self.discover()
-        bundle_dir = self._output_root / "sync-review" / "truecoach-workout-backfill-candidates"
-        bundle_dir.mkdir(parents=True, exist_ok=True)
-        report_path = bundle_dir / "report.md"
-        candidates_path = bundle_dir / "candidates.json"
-        report_path.write_text(_render_report(candidates), encoding="utf-8")
-        candidates_path.write_text(
-            json.dumps([asdict(candidate) for candidate in candidates], indent=2) + "\n",
-            encoding="utf-8",
-        )
+        result = self.write_candidates()
         return BackfillDiscoveryBundle(
+            directory=result.directory,
+            report_path=result.report_path,
+            candidates_path=result.candidates_path,
+            manifest_path=result.manifest_path,
+            candidate_count=result.candidate_count,
+        )
+
+    def write_candidates(self) -> BackfillCandidatesResult:
+        """Write candidate discovery artifacts and manifest.
+
+        Returns:
+            BackfillCandidatesResult: Paths and summary data for the generated artifacts.
+        """
+        candidates = self.discover()
+        bundle_dir = self._output_root / BACKFILL_CANDIDATES_DIR
+        bundle_dir.mkdir(parents=True, exist_ok=True)
+        report_path = bundle_dir / BACKFILL_CANDIDATES_REPORT
+        candidates_path = bundle_dir / BACKFILL_CANDIDATES_JSON
+        manifest_path = bundle_dir / BACKFILL_CANDIDATES_MANIFEST
+        report_path.write_text(_render_report(candidates), encoding="utf-8")
+        _write_json(candidates_path, [asdict(candidate) for candidate in candidates])
+        _write_json(manifest_path, _candidates_manifest(), sort_keys=True)
+        return BackfillCandidatesResult(
             directory=bundle_dir,
             report_path=report_path,
             candidates_path=candidates_path,
+            manifest_path=manifest_path,
+            candidate_count=len(candidates),
         )
 
 
@@ -152,3 +181,19 @@ def _render_report(candidates: list[BackfillCandidate]) -> str:
     if not candidates:
         lines.append("| none | none | none | none | 0 | 0 | placeholder-or-no-results |")
     return "\n".join(lines) + "\n"
+
+
+def _write_json(path: Path, payload: object, *, sort_keys: bool = False) -> None:
+    path.write_text(json.dumps(payload, indent=2, sort_keys=sort_keys) + "\n", encoding="utf-8")
+
+
+def _candidates_manifest() -> dict[str, object]:
+    return {
+        "workflow": BACKFILL_CANDIDATES_WORKFLOW,
+        "schema_version": 1,
+        "generated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        "artifacts": {
+            "report": BACKFILL_CANDIDATES_REPORT,
+            "candidates": BACKFILL_CANDIDATES_JSON,
+        },
+    }
