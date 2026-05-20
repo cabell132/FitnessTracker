@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 
 from fitness_tracker.apis.hevy_app.types import (
     Exercise as HevyWorkoutExercise,
@@ -33,7 +33,10 @@ from fitness_tracker.database.models.true_coach import TrueCoachWorkout, TrueCoa
 from fitness_tracker.sync_review.true_coach_workout_backfill import (
     WorkoutBackfillApplyError,
     TrueCoachWorkoutBackfillReviewService,
+)
+from fitness_tracker.sync_review.workout_backfill_performed_work import (
     _omitted_movement_names,
+    plan_performed_work_items,
 )
 
 
@@ -773,6 +776,47 @@ def test_workout_backfill_choice_item_converts_single_performed_modality(
             }
         ],
     }
+
+
+def test_performed_work_planner_converts_choice_item_without_review_service(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    _add_choice_templates(store, [("hevy-cycle", "Cycle")])
+    _add_choice_backfill_item(
+        store,
+        info="Cycle, Cross Trainer, Stairmaster or a Combination",
+        comment="Cycle 20mins, 150 calories",
+    )
+
+    with store.unit_of_work() as uow:
+        workout = uow.true_coach.get_workout(id=455045484)
+        assert isinstance(workout.tracker, TrackerWorkout)
+        tracker_items = sorted(
+            workout.tracker.workout_items,
+            key=lambda item: (item.position, item.id),
+        )
+        templates = list(
+            uow.session.execute(select(HevyAppExercise).order_by(HevyAppExercise.name)).scalars()
+        )
+
+        items = plan_performed_work_items(
+            tracker_items,
+            templates,
+            superset_ids_by_position={},
+        )
+
+    choice_item = items[2]
+    assert choice_item.name == "Cycle"
+    assert choice_item.selected_hevy_template is not None
+    assert choice_item.selected_hevy_template.id == "hevy-cycle"
+    assert [set_row.model_dump(exclude_none=True) for set_row in choice_item.sets] == [
+        {"type": "normal", "duration_seconds": 1200}
+    ]
+    assert choice_item.notes == "Athlete comment: 150 calories"
 
 
 def test_workout_backfill_choice_item_splits_multiple_performed_modalities(
