@@ -1,5 +1,7 @@
 """Public package export regression tests."""
 
+import importlib.util
+
 from fitness_tracker import llm, sync
 from fitness_tracker.llm.fitness_llm import FitnessLLM
 from fitness_tracker.sync import SyncDeps, SyncRunResult, SyncService
@@ -12,6 +14,11 @@ def test_sync_package_should_export_current_public_entrypoints_only() -> None:
     assert sync.SyncRunResult is SyncRunResult
     assert sync.SyncService is SyncService
     assert not hasattr(sync, "Syncronizer")
+
+
+def test_legacy_hevy_to_truecoach_sync_package_should_be_retired() -> None:
+    """The automatic Hevy Result path must not expose the legacy direct syncer."""
+    assert importlib.util.find_spec("fitness_tracker.sync.hevy_true_coach") is None
 
 
 def test_llm_package_should_export_domain_llm() -> None:

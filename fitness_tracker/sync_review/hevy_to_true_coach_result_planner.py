@@ -14,7 +14,7 @@ from fitness_tracker.database.models.hevy_app import (
 )
 from fitness_tracker.database.models.tracker import Workout as TrackerWorkout
 from fitness_tracker.database.models.true_coach import TrueCoachWorkout, TrueCoachWorkoutItem
-from fitness_tracker.sync.hevy_true_coach.utils import mapping as result_formatters
+from fitness_tracker.sync_review.hevy_to_true_coach_result_formatters import RESULT_FORMATTERS
 
 PRESCRIBED_SETS_REPS_PATTERN = re.compile(r"\b(\d+)\s*x\s*(\d+)\b", flags=re.IGNORECASE)
 
@@ -71,7 +71,7 @@ def _plan_item(
         "superset_id": item.superset_id,
         "exercise": _hevy_exercise_to_dict(exercise),
         "sets": [_set_to_dict(set_) for set_ in _sort_sets(item)],
-        "formatter": formatter_name if formatter_name in result_formatters else None,
+        "formatter": formatter_name if formatter_name in RESULT_FORMATTERS else None,
         "proposed_result_text": _proposed_result_text(item, formatter_name),
         "target": _target_to_dict(target) if target is not None else None,
         "candidates": [_target_to_dict(candidate) for candidate in candidates],
@@ -207,7 +207,7 @@ def _item_blockers(
         blockers.append("Missing True Coach Workout link for Hevy Workout")
     if exercise is None:
         blockers.append("Missing Hevy exercise template for performed Hevy item")
-    elif formatter_name not in result_formatters:
+    elif formatter_name not in RESULT_FORMATTERS:
         blockers.append(
             f"Unsupported Hevy exercise type for True Coach result formatting: {formatter_name}"
         )
@@ -241,9 +241,9 @@ def _item_warnings(
 
 
 def _proposed_result_text(item: HevyAppWorkoutItem, formatter_name: str | None) -> str | None:
-    if formatter_name not in result_formatters:
+    if formatter_name not in RESULT_FORMATTERS:
         return None
-    formatter = result_formatters[formatter_name]
+    formatter = RESULT_FORMATTERS[formatter_name]
     return formatter(cast(list[HevySet], _sort_sets(item))).strip()
 
 

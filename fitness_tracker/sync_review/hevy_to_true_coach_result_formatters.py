@@ -190,7 +190,7 @@ def format_short_distance_weight_result(sets: list[Set]) -> str:
     return result
 
 
-mapping: dict[str, SetFormatter] = {
+RESULT_FORMATTERS: dict[str, SetFormatter] = {
     "reps_only": format_reps_only_result,
     "bodyweight_assisted": format_bodyweight_assisted_result,
     "short_distance_weight": format_short_distance_weight_result,
