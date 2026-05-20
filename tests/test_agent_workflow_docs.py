@@ -67,5 +67,11 @@ def test_platform_primitive_agent_docs_use_canonical_command_surface() -> None:
     for contract_string in WORKFLOW_CONTRACT_STRINGS:
         assert contract_string in normalized_workflow_doc
 
+
+def test_agent_review_workflow_docs_describe_module_shape() -> None:
+    """Agent docs should describe the shared review workflow module shape."""
+    workflow_doc = read_text(HEVY_TRUECOACH_WORKFLOW_DOC)
+    normalized_workflow_doc = normalize_whitespace(workflow_doc)
+
     for contract_string in REVIEW_MODULE_SHAPE_STRINGS:
         assert contract_string in normalized_workflow_doc

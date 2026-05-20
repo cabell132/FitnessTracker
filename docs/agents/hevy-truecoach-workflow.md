@@ -234,7 +234,7 @@ Result sync review is the performed Hevy Workout to True Coach result path.
 mapping evidence, and `hevy_to_true_coach_result_decisions.py` owns editable
 Agent decisions plus the `truecoach-update-request.json` apply request.
 Result sync review artifacts include `plan.json`, `result-decisions.json`,
-`decision-validation.json`, and `report.md`.
+`decision-validation.json`, `truecoach-update-request.json`, and `report.md`.
 
 Deterministic plan data is evidence: source Workout or Routine identifiers,
 platform snapshot fields, parsed sets, Split Circuit plans, candidate mappings,
