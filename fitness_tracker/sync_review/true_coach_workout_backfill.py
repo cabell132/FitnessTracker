@@ -99,6 +99,18 @@ class WorkoutBackfillInspectResult:
 
 
 @dataclass(frozen=True)
+class WorkoutBackfillPipelinePaths:
+    """Artifact paths for one pipeline review directory."""
+
+    manifest: Path
+    plan: Path
+    decisions: Path
+    decision_validation: Path
+    apple_health_evidence: Path
+    report: Path
+
+
+@dataclass(frozen=True)
 class WorkoutBackfillReviewArtifacts:
     """Rendered artifacts for one Workout backfill review."""
 
@@ -128,6 +140,18 @@ class BackfillReportContext:
     plan: dict[str, Any]
     apple_health_evidence: dict[str, Any]
     decision_validation: dict[str, list[str]]
+
+
+PIPELINE_REVIEW_DIRNAME = "workout-backfill"
+PIPELINE_MANIFEST_FILENAME = "review-manifest.json"
+PIPELINE_ARTIFACT_FILENAMES = {
+    "plan": "plan.json",
+    "decisions": "decisions.json",
+    "decision_validation": "decision-validation.json",
+    "apple_health_evidence": "apple-health-evidence.json",
+    "report": "report.md",
+}
+PIPELINE_REQUEST_FILENAMES = ("hevy-workout-request.json", "request-manifest.json")
 
 
 class TrueCoachWorkoutBackfillReviewService:
@@ -410,7 +434,7 @@ class WorkoutBackfillPipeline:
             WorkoutBackfillPipelineReview: Paths written for the review.
         """
         options = options or WorkoutBackfillReviewOptions()
-        review_dir = self._output_root / "workout-backfill" / str(workout_id)
+        review_dir = self._output_root / PIPELINE_REVIEW_DIRNAME / str(workout_id)
         decisions_path = review_dir / "decisions.json"
         _validate_pipeline_review_write(review_dir, decisions_path, options)
         decisions = _load_pipeline_review_decisions(decisions_path, options)
@@ -420,12 +444,12 @@ class WorkoutBackfillPipeline:
         _write_pipeline_review_artifacts(paths, workout_id, artifacts)
         return WorkoutBackfillPipelineReview(
             directory=review_dir,
-            manifest_path=paths["manifest"],
-            plan_path=paths["plan"],
-            decisions_path=paths["decisions"],
-            decision_validation_path=paths["decision_validation"],
-            apple_health_evidence_path=paths["apple_health_evidence"],
-            report_path=paths["report"],
+            manifest_path=paths.manifest,
+            plan_path=paths.plan,
+            decisions_path=paths.decisions,
+            decision_validation_path=paths.decision_validation,
+            apple_health_evidence_path=paths.apple_health_evidence,
+            report_path=paths.report,
         )
 
     def inspect(self, review_dir: Path) -> WorkoutBackfillInspectResult:
@@ -440,7 +464,7 @@ class WorkoutBackfillPipeline:
         Raises:
             WorkoutBackfillReviewError: If the manifest does not list required artifacts.
         """
-        manifest_path = review_dir / "review-manifest.json"
+        manifest_path = review_dir / PIPELINE_MANIFEST_FILENAME
         manifest = read_json_object(manifest_path)
         artifacts = manifest.get("artifacts")
         if not isinstance(artifacts, dict):
@@ -474,15 +498,15 @@ def _bundle_paths(
     )
 
 
-def _pipeline_review_paths(review_dir: Path) -> dict[str, Path]:
-    return {
-        "manifest": review_dir / "review-manifest.json",
-        "plan": review_dir / "plan.json",
-        "decisions": review_dir / "decisions.json",
-        "decision_validation": review_dir / "decision-validation.json",
-        "apple_health_evidence": review_dir / "apple-health-evidence.json",
-        "report": review_dir / "report.md",
-    }
+def _pipeline_review_paths(review_dir: Path) -> WorkoutBackfillPipelinePaths:
+    return WorkoutBackfillPipelinePaths(
+        manifest=review_dir / PIPELINE_MANIFEST_FILENAME,
+        plan=review_dir / PIPELINE_ARTIFACT_FILENAMES["plan"],
+        decisions=review_dir / PIPELINE_ARTIFACT_FILENAMES["decisions"],
+        decision_validation=review_dir / PIPELINE_ARTIFACT_FILENAMES["decision_validation"],
+        apple_health_evidence=review_dir / PIPELINE_ARTIFACT_FILENAMES["apple_health_evidence"],
+        report=review_dir / PIPELINE_ARTIFACT_FILENAMES["report"],
+    )
 
 
 def _validate_pipeline_review_write(
@@ -519,17 +543,17 @@ def _load_pipeline_review_decisions(
 
 
 def _write_pipeline_review_artifacts(
-    paths: dict[str, Path],
+    paths: WorkoutBackfillPipelinePaths,
     workout_id: int,
     artifacts: WorkoutBackfillReviewArtifacts,
 ) -> None:
-    _remove_request_artifacts(paths["manifest"].parent)
-    write_json_artifact(paths["manifest"], _pipeline_review_manifest(workout_id))
-    write_json_artifact(paths["plan"], artifacts.plan)
-    write_json_artifact(paths["decisions"], artifacts.decisions)
-    write_json_artifact(paths["decision_validation"], artifacts.decision_validation)
-    write_json_artifact(paths["apple_health_evidence"], artifacts.apple_health_evidence)
-    paths["report"].write_text(artifacts.report, encoding="utf-8")
+    _remove_request_artifacts(paths.manifest.parent)
+    write_json_artifact(paths.manifest, _pipeline_review_manifest(workout_id))
+    write_json_artifact(paths.plan, artifacts.plan)
+    write_json_artifact(paths.decisions, artifacts.decisions)
+    write_json_artifact(paths.decision_validation, artifacts.decision_validation)
+    write_json_artifact(paths.apple_health_evidence, artifacts.apple_health_evidence)
+    paths.report.write_text(artifacts.report, encoding="utf-8")
 
 
 def _pipeline_review_manifest(workout_id: int) -> dict[str, Any]:
@@ -537,19 +561,13 @@ def _pipeline_review_manifest(workout_id: int) -> dict[str, Any]:
         "version": 1,
         "kind": "workout-backfill-review",
         "workout_id": workout_id,
-        "artifacts": {
-            "plan": "plan.json",
-            "decisions": "decisions.json",
-            "decision_validation": "decision-validation.json",
-            "apple_health_evidence": "apple-health-evidence.json",
-            "report": "report.md",
-        },
+        "artifacts": dict(PIPELINE_ARTIFACT_FILENAMES),
         "request_status": "not-written",
     }
 
 
 def _remove_request_artifacts(review_dir: Path) -> None:
-    for filename in ("hevy-workout-request.json", "request-manifest.json"):
+    for filename in PIPELINE_REQUEST_FILENAMES:
         path = review_dir / filename
         if path.exists():
             path.unlink()
@@ -557,7 +575,7 @@ def _remove_request_artifacts(review_dir: Path) -> None:
 
 def _manifest_artifact_path(
     review_dir: Path,
-    artifacts: dict[Any, Any],
+    artifacts: dict[str, Any],
     artifact_name: str,
 ) -> Path:
     artifact_path = artifacts.get(artifact_name)
