@@ -16,6 +16,7 @@ from fitness_tracker.database.models.tracker import (
     WorkoutItem as TrackerWorkoutItem,
 )
 from fitness_tracker.database.models.true_coach import TrueCoachWorkout, TrueCoachWorkoutItem
+from fitness_tracker.sync_review import WorkoutBackfillPipeline
 
 
 def test_backfill_discovery_cli_reports_unlinked_completed_workout_candidates(
@@ -38,9 +39,7 @@ def test_backfill_discovery_cli_reports_unlinked_completed_workout_candidates(
     )
 
     assert exit_code == 0
-    report_path = (
-        tmp_path / "reports" / "sync-review" / "truecoach-workout-backfill-candidates" / "report.md"
-    )
+    report_path = tmp_path / "reports" / "workout-backfill" / "candidates" / "report.md"
     json_path = report_path.with_name("candidates.json")
 
     report = report_path.read_text(encoding="utf-8")
@@ -76,6 +75,68 @@ def test_backfill_discovery_cli_reports_unlinked_completed_workout_candidates(
     assert "455047509" not in report
     assert "455047510" not in report
     assert "455047511" not in report
+
+
+def test_workout_backfill_candidates_pipeline_writes_manifest_contents(tmp_path: Path) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_candidates(store)
+    pipeline = WorkoutBackfillPipeline(store=store, output_root=tmp_path / "reports")
+
+    result = pipeline.candidates()
+
+    manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
+    assert result.directory == tmp_path / "reports" / "workout-backfill" / "candidates"
+    assert result.report_path == result.directory / "report.md"
+    assert result.candidates_path == result.directory / "candidates.json"
+    assert result.manifest_path == result.directory / "candidates-manifest.json"
+    assert result.candidate_count == 2
+    assert manifest["workflow"] == "workout-backfill-candidates"
+    assert manifest["schema_version"] == 1
+    assert manifest["artifacts"] == {
+        "report": "report.md",
+        "candidates": "candidates.json",
+    }
+
+
+def test_workout_backfill_candidates_cli_writes_default_artifacts_and_manifest(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_candidates(store)
+    monkeypatch.chdir(tmp_path)
+
+    exit_code = main(
+        [
+            "workout-backfill",
+            "candidates",
+            "--database-url",
+            f"sqlite:///{db_path}",
+        ]
+    )
+
+    assert exit_code == 0
+    candidates_dir = tmp_path / "reports" / "workout-backfill" / "candidates"
+    manifest = json.loads((candidates_dir / "candidates-manifest.json").read_text(encoding="utf-8"))
+    candidates = json.loads((candidates_dir / "candidates.json").read_text(encoding="utf-8"))
+    report = (candidates_dir / "report.md").read_text(encoding="utf-8")
+
+    assert manifest == {
+        "workflow": "workout-backfill-candidates",
+        "schema_version": 1,
+        "generated_at": manifest["generated_at"],
+        "artifacts": {
+            "report": "report.md",
+            "candidates": "candidates.json",
+        },
+    }
+    assert isinstance(manifest["generated_at"], str)
+    assert [candidate["true_coach_id"] for candidate in candidates] == [455045484, 455047508]
+    assert "| 455045484 | 2024-04-10T00:00:00 | Upper |" in report
 
 
 def _seed_backfill_candidates(store: Store) -> None:  # noqa: PLR0915

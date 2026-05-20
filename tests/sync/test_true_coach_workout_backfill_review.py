@@ -2148,13 +2148,7 @@ def _run_backfill_review(
 
 
 def _assert_discovered_workout_ids(tmp_path: Path, expected_ids: list[int]) -> None:
-    candidates_path = (
-        tmp_path
-        / "reports"
-        / "sync-review"
-        / "truecoach-workout-backfill-candidates"
-        / "candidates.json"
-    )
+    candidates_path = tmp_path / "reports" / "workout-backfill" / "candidates" / "candidates.json"
     candidates = json.loads(candidates_path.read_text(encoding="utf-8"))
     assert [candidate["true_coach_id"] for candidate in candidates] == expected_ids
 

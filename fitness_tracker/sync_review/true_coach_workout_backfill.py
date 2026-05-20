@@ -25,6 +25,10 @@ from fitness_tracker.database.models.tracker import (
 from fitness_tracker.database.models.true_coach import TrueCoachWorkout
 from fitness_tracker.sync._true_coach_html import build_superset_index, parse_workout_order
 from fitness_tracker.sync.ports import HevyWorkoutWriter
+from fitness_tracker.sync_review.true_coach_workout_backfill_discovery import (
+    BackfillCandidatesResult,
+    TrueCoachWorkoutBackfillDiscoveryService,
+)
 from fitness_tracker.sync_review.workout_backfill_request import (
     WorkoutBackfillApplyValidationContext,
     build_hevy_workout_backfill_request,
@@ -417,7 +421,19 @@ class WorkoutBackfillPipeline:
             store=store,
             output_root=output_root,
         )
+        self._candidates_service = TrueCoachWorkoutBackfillDiscoveryService(
+            store=store,
+            output_root=output_root,
+        )
         self._output_root = output_root
+
+    def candidates(self) -> BackfillCandidatesResult:
+        """Write Workout backfill candidate artifacts.
+
+        Returns:
+            BackfillCandidatesResult: Paths and summary data for generated candidate artifacts.
+        """
+        return self._candidates_service.write_candidates()
 
     def review(
         self,
