@@ -12,6 +12,10 @@ RETIRED_COMMAND_STRINGS = (
     "hevy-templates",
     "fitness-tracker truecoach import-recent",
     "fitness-tracker truecoach due",
+    "sync-review truecoach-workout-backfill",
+    "sync-apply truecoach-workout-backfill",
+    "reports/sync-review/truecoach-workout-backfill",
+    "backfill-decisions.json",
 )
 CREATE_HEVY_ROUTINE_COMMAND_STRINGS = (
     "fitness-tracker hevy exercise-templates",
@@ -40,6 +44,15 @@ REVIEW_MODULE_SHAPE_STRINGS = (
     "Apply modules perform platform mutations",
     "not a reintroduction of broad sync-layer port wiring",
 )
+WORKOUT_BACKFILL_COMMAND_STRINGS = (
+    "fitness-tracker workout-backfill review",
+    "fitness-tracker workout-backfill inspect",
+    "fitness-tracker workout-backfill write-request",
+    "fitness-tracker workout-backfill diff",
+    "fitness-tracker workout-backfill apply",
+    "fitness-tracker workout-backfill link-workout",
+    "reports/workout-backfill/WORKOUT_ID/decisions.json",
+)
 
 
 def read_text(path: Path) -> str:
@@ -66,6 +79,10 @@ def test_platform_primitive_agent_docs_use_canonical_command_surface() -> None:
 
     for contract_string in WORKFLOW_CONTRACT_STRINGS:
         assert contract_string in normalized_workflow_doc
+
+    backfill_doc = command_docs["tc-backfill-workout.md"]
+    for command_string in WORKOUT_BACKFILL_COMMAND_STRINGS:
+        assert command_string in backfill_doc
 
 
 def test_agent_review_workflow_docs_describe_module_shape() -> None:

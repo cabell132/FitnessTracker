@@ -79,6 +79,24 @@ def _truecoach_api_workout_item() -> WorkoutItem:
     )
 
 
+def test_old_workout_backfill_cli_paths_are_not_advertised(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main(["sync-review", "--help"])
+
+    assert exc_info.value.code == 0
+    sync_review_help = capsys.readouterr().out
+    assert "truecoach-workout-backfill" not in sync_review_help
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main(["sync-apply", "--help"])
+
+    assert exc_info.value.code == 0
+    sync_apply_help = capsys.readouterr().out
+    assert "truecoach-workout-backfill" not in sync_apply_help
+
+
 def test_truecoach_due_reads_configured_database(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],

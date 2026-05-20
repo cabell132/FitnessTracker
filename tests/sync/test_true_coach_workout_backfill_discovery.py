@@ -29,8 +29,8 @@ def test_backfill_discovery_cli_reports_unlinked_completed_workout_candidates(
 
     exit_code = main(
         [
-            "sync-review",
-            "truecoach-workout-backfill-candidates",
+            "workout-backfill",
+            "candidates",
             "--database-url",
             f"sqlite:///{db_path}",
             "--output-dir",

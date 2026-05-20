@@ -150,39 +150,10 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0911, PLR0912,
         return _sync_review_truecoach_to_hevy(args)
     if args.command == "sync-review" and args.sync_review_command == "hevy-to-truecoach-results":
         return _sync_review_hevy_to_truecoach_results(args)
-    if (
-        args.command == "sync-review"
-        and args.sync_review_command == "truecoach-workout-backfill-candidates"
-    ):
-        return _sync_review_truecoach_workout_backfill_candidates(args)
-    if args.command == "sync-review" and args.sync_review_command == "truecoach-workout-backfill":
-        return _sync_review_truecoach_workout_backfill(args)
-    if (
-        args.command == "sync-review"
-        and args.sync_review_command == "truecoach-workout-backfill-inspect"
-    ):
-        return _sync_review_truecoach_workout_backfill_inspect(args)
-    if (
-        args.command == "sync-review"
-        and args.sync_review_command == "truecoach-workout-backfill-evidence"
-    ):
-        return _sync_review_truecoach_workout_backfill_evidence(args)
-    if (
-        args.command == "sync-review"
-        and args.sync_review_command == "truecoach-workout-backfill-diff"
-    ):
-        return _sync_review_truecoach_workout_backfill_diff(args)
     if args.command == "sync-apply" and args.sync_apply_command == "truecoach-to-hevy":
         return _sync_apply_truecoach_to_hevy(args)
     if args.command == "sync-apply" and args.sync_apply_command == "hevy-to-truecoach-results":
         return _sync_apply_hevy_to_truecoach_results(args)
-    if args.command == "sync-apply" and args.sync_apply_command == "truecoach-workout-backfill":
-        return _sync_apply_truecoach_workout_backfill(args)
-    if (
-        args.command == "sync-apply"
-        and args.sync_apply_command == "truecoach-workout-backfill-repair"
-    ):
-        return _sync_apply_truecoach_workout_backfill_repair(args)
     parser.print_help()
     return 1
 
@@ -542,7 +513,7 @@ def _add_workout_backfill_apply_manual_parser(subparsers: Any) -> None:
     apply_manual.add_argument("--request-path", type=Path, required=True)
 
 
-def _add_sync_review_parser(  # noqa: PLR0915
+def _add_sync_review_parser(
     subparsers: Any,
 ) -> None:
     sync_review = subparsers.add_parser("sync-review")
@@ -579,56 +550,8 @@ def _add_sync_review_parser(  # noqa: PLR0915
         help="Editable Hevy to True Coach result decisions JSON to validate.",
     )
 
-    backfill_candidates = sync_review_subparsers.add_parser("truecoach-workout-backfill-candidates")
-    backfill_candidates.add_argument("--db", help="SQLite database path. Prefer --database-url.")
-    backfill_candidates.add_argument(
-        "--database-url", help="SQLAlchemy database URL. Defaults to DATABASE_URL."
-    )
-    backfill_candidates.add_argument(
-        "--output-dir",
-        default="reports",
-        help="Report root. Defaults to reports.",
-    )
 
-    backfill_review = sync_review_subparsers.add_parser("truecoach-workout-backfill")
-    backfill_review.add_argument("--workout-id", type=int, required=True)
-    backfill_review.add_argument("--db", help="SQLite database path. Prefer --database-url.")
-    backfill_review.add_argument(
-        "--database-url", help="SQLAlchemy database URL. Defaults to DATABASE_URL."
-    )
-    backfill_review.add_argument(
-        "--output-dir",
-        default="reports",
-        help="Report root. Defaults to reports.",
-    )
-    backfill_review.add_argument(
-        "--decisions",
-        help="Editable Workout backfill decisions JSON to validate and apply to the draft request.",
-    )
-
-    for command in (
-        "truecoach-workout-backfill-inspect",
-        "truecoach-workout-backfill-evidence",
-        "truecoach-workout-backfill-diff",
-    ):
-        helper = sync_review_subparsers.add_parser(command)
-        helper.add_argument("--workout-id", type=int, required=True)
-        helper.add_argument("--db", help="SQLite database path. Prefer --database-url.")
-        helper.add_argument(
-            "--database-url", help="SQLAlchemy database URL. Defaults to DATABASE_URL."
-        )
-        helper.add_argument(
-            "--output-dir",
-            default="reports",
-            help="Report root. Defaults to reports.",
-        )
-        helper.add_argument(
-            "--decisions",
-            help="Editable Workout backfill decisions JSON to validate and apply.",
-        )
-
-
-def _add_sync_apply_parser(  # noqa: PLR0915
+def _add_sync_apply_parser(
     subparsers: Any,
 ) -> None:
     sync_apply = subparsers.add_parser("sync-apply")
@@ -676,42 +599,6 @@ def _add_sync_apply_parser(  # noqa: PLR0915
     truecoach_to_hevy.add_argument(
         "--folder-id",
         help="Routine folder id to include when creating or writing the Hevy request.",
-    )
-
-    workout_backfill = sync_apply_subparsers.add_parser("truecoach-workout-backfill")
-    workout_backfill.add_argument("--workout-id", type=int, required=True)
-    workout_backfill.add_argument("--db", help="SQLite database path. Prefer --database-url.")
-    workout_backfill.add_argument(
-        "--database-url", help="SQLAlchemy database URL. Defaults to DATABASE_URL."
-    )
-    workout_backfill.add_argument(
-        "--output-dir",
-        default="reports",
-        help="Report root. Defaults to reports.",
-    )
-    workout_backfill.add_argument(
-        "--decisions",
-        help="Editable Workout backfill decisions JSON to validate and apply to the request.",
-    )
-    workout_backfill.add_argument("--dry-run", action="store_true")
-    workout_backfill.add_argument("--manual-request")
-
-    workout_backfill_repair = sync_apply_subparsers.add_parser("truecoach-workout-backfill-repair")
-    workout_backfill_repair.add_argument("--workout-id", type=int, required=True)
-    workout_backfill_repair.add_argument(
-        "--db", help="SQLite database path. Prefer --database-url."
-    )
-    workout_backfill_repair.add_argument(
-        "--database-url", help="SQLAlchemy database URL. Defaults to DATABASE_URL."
-    )
-    workout_backfill_repair.add_argument(
-        "--output-dir",
-        default="reports",
-        help="Report root. Defaults to reports.",
-    )
-    workout_backfill_repair.add_argument(
-        "--decisions",
-        help="Editable Workout backfill decisions JSON to validate and apply to the request.",
     )
 
 

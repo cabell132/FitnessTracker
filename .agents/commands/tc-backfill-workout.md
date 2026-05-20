@@ -25,7 +25,8 @@ Also accept a plain True Coach Workout id if the user invokes this command with 
 3. Generate and inspect the deterministic backfill review.
 
    ```bash
-   uv run fitness-tracker sync-review truecoach-workout-backfill-inspect --workout-id WORKOUT_ID
+   uv run fitness-tracker workout-backfill review --workout-id WORKOUT_ID
+   uv run fitness-tracker workout-backfill inspect --review-dir reports/workout-backfill/WORKOUT_ID
    ```
 
    If there are blockers, stop and summarize them. Do not apply while blockers remain.
@@ -33,7 +34,7 @@ Also accept a plain True Coach Workout id if the user invokes this command with 
 4. Inspect Apple Health evidence.
 
    ```bash
-   uv run fitness-tracker sync-review truecoach-workout-backfill-evidence --workout-id WORKOUT_ID
+   sed -n '1,260p' reports/workout-backfill/WORKOUT_ID/apple-health-evidence.json
    ```
 
    Use Apple Health as evidence, not as an automatic source of truth. Walking to/from the gym may show as Outdoor Walk intervals around the workout. Cycling, elliptical, or elevated heart-rate blocks may indicate warmup, cooldown, commute, or workout activity depending on the True Coach content and timing.
@@ -41,14 +42,14 @@ Also accept a plain True Coach Workout id if the user invokes this command with 
 5. Read the generated artifacts when needed.
 
    ```bash
-   sed -n '1,260p' reports/sync-review/truecoach-workout-backfill/WORKOUT_ID/report.md
-   sed -n '1,260p' reports/sync-review/truecoach-workout-backfill/WORKOUT_ID/backfill-decisions.json
-   sed -n '1,260p' reports/sync-review/truecoach-workout-backfill/WORKOUT_ID/hevy-workout-request.json
+   sed -n '1,260p' reports/workout-backfill/WORKOUT_ID/report.md
+   sed -n '1,260p' reports/workout-backfill/WORKOUT_ID/decisions.json
+   sed -n '1,260p' reports/workout-backfill/WORKOUT_ID/decision-validation.json
    ```
 
 6. Make Agent decisions only where judgement is needed.
 
-   Edit `reports/sync-review/truecoach-workout-backfill/WORKOUT_ID/backfill-decisions.json` if needed.
+   Edit `reports/workout-backfill/WORKOUT_ID/decisions.json` if needed.
 
    Appropriate Agent decisions:
    - Set `selected_start_time` and `selected_end_time` from Apple Health, True Coach timing, and workout structure.
@@ -86,10 +87,11 @@ Also accept a plain True Coach Workout id if the user invokes this command with 
      explicit decisions or existing tracker-linked templates over fuzzy guesses
      for names like `PullUps`, `Push Ups`, `Row`, or `DB Push Press`.
 
-7. Regenerate the review after editing decisions.
+7. Write the reviewed Hevy Workout request after editing decisions.
 
    ```bash
-   uv run fitness-tracker sync-review truecoach-workout-backfill-inspect --workout-id WORKOUT_ID --decisions reports/sync-review/truecoach-workout-backfill/WORKOUT_ID/backfill-decisions.json
+   uv run fitness-tracker workout-backfill write-request --review-dir reports/workout-backfill/WORKOUT_ID --force
+   uv run fitness-tracker workout-backfill inspect --review-dir reports/workout-backfill/WORKOUT_ID
    ```
 
    Re-check blockers, warnings, request exercise count, notes, and supersets.
@@ -97,7 +99,7 @@ Also accept a plain True Coach Workout id if the user invokes this command with 
 8. Diff the request against the linked local Hevy cache.
 
    ```bash
-   uv run fitness-tracker sync-review truecoach-workout-backfill-diff --workout-id WORKOUT_ID --decisions reports/sync-review/truecoach-workout-backfill/WORKOUT_ID/backfill-decisions.json
+   uv run fitness-tracker workout-backfill diff --review-dir reports/workout-backfill/WORKOUT_ID
    ```
 
    If the workout is already linked and the diff is clean, do not create another Hevy Workout. Report that the local cache matches the generated request.
@@ -107,19 +109,19 @@ Also accept a plain True Coach Workout id if the user invokes this command with 
    If no linked local Hevy Workout exists and the request is ready:
 
    ```bash
-   uv run fitness-tracker sync-apply truecoach-workout-backfill --workout-id WORKOUT_ID --decisions reports/sync-review/truecoach-workout-backfill/WORKOUT_ID/backfill-decisions.json
+   uv run fitness-tracker workout-backfill apply --review-dir reports/workout-backfill/WORKOUT_ID
    ```
 
    If a remote Hevy Workout already exists or local links are incomplete, repair local links instead of creating a duplicate:
 
    ```bash
-   uv run fitness-tracker sync-apply truecoach-workout-backfill-repair --workout-id WORKOUT_ID --decisions reports/sync-review/truecoach-workout-backfill/WORKOUT_ID/backfill-decisions.json
+   uv run fitness-tracker workout-backfill link-workout --review-dir reports/workout-backfill/WORKOUT_ID
    ```
 
 10. Verify after applying or repairing.
 
    ```bash
-   uv run fitness-tracker sync-review truecoach-workout-backfill-diff --workout-id WORKOUT_ID --decisions reports/sync-review/truecoach-workout-backfill/WORKOUT_ID/backfill-decisions.json
+   uv run fitness-tracker workout-backfill diff --review-dir reports/workout-backfill/WORKOUT_ID
    ```
 
    If a Hevy Workout id was created or discovered, inspect the remote workout:

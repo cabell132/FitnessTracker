@@ -230,8 +230,8 @@ completed True Coach Workout into a logged Hevy Workout.
 Workout request shape. `workout_backfill_apply.py` performs platform mutation,
 idempotency checks, remote repair, and local tracker link repair. Its artifacts
 separate `plan.json`, `apple-health-evidence.json`,
-`backfill-decisions.json`, `decision-validation.json`, and
-`hevy-workout-request.json`.
+`decisions.json`, `decision-validation.json`, and, after
+`workout-backfill write-request`, `hevy-workout-request.json`.
 
 Result sync review is the performed Hevy Workout to True Coach result path.
 `hevy_to_true_coach_result.py` is the workflow shell,

@@ -11,11 +11,13 @@ should not duplicate structured set values in notes; notes are reserved for
 non-structured context, Athlete feedback, and values Hevy cannot represent in
 set fields.
 
-The workflow separates deterministic evidence from judgement. Review commands
-write an audit trail from local data, including a deterministic plan, a draft
-Hevy Workout request, Apple Health timing evidence, and a report. Agent or
-Athlete judgement belongs in editable request or decision artifacts, not by
-rewriting the deterministic plan.
+The workflow separates deterministic evidence from judgement. The
+`workout-backfill review` command writes an audit trail from local data,
+including a deterministic plan, editable decisions, Apple Health timing
+evidence, validation, and a report. `workout-backfill write-request` then
+converts valid decisions into the Hevy Workout request artifact. Agent or
+Athlete judgement belongs in editable decision artifacts, not by rewriting the
+deterministic plan.
 
 Timing is inferred only through review. Helper scripts may surface Apple Health
 workout intervals, heart-rate patterns, and candidate workout windows, but the
@@ -29,10 +31,11 @@ into multiple Hevy exercise blocks when the Athlete performed multiple
 modalities.
 
 Apply is responsible for idempotency and local linkage. Backfilled Hevy
-Workouts include the source True Coach Workout id as a remote marker. Before
-creating anything, apply checks whether the local tracker row is already linked
-or whether a remote Hevy Workout with that marker already exists. After remote
-creation, apply syncs/fetches the Hevy Workout and links the created Hevy rows
-back to the existing local tracker rows. If remote creation succeeds but local
-linking fails, the command must leave enough recovery information to repair the
-link instead of creating a duplicate on retry.
+Workouts include the source True Coach Workout id as a remote marker.
+`workout-backfill apply` checks whether the local tracker row is already linked
+or whether a remote Hevy Workout with that marker already exists before
+creating anything. After remote creation, apply syncs/fetches the Hevy Workout
+and links the created Hevy rows back to the existing local tracker rows. If
+remote creation succeeds but local linking fails, the command must leave enough
+recovery information for `workout-backfill link-workout` to repair the link
+instead of creating a duplicate on retry.

@@ -55,8 +55,8 @@ def test_workout_backfill_review_cli_writes_deterministic_bundle_for_455045484(
 
     exit_code = main(
         [
-            "sync-review",
-            "truecoach-workout-backfill",
+            "workout-backfill",
+            "review",
             "--workout-id",
             "455045484",
             "--database-url",
@@ -67,9 +67,8 @@ def test_workout_backfill_review_cli_writes_deterministic_bundle_for_455045484(
     )
 
     assert exit_code == 0
-    bundle_dir = tmp_path / "reports" / "sync-review" / "truecoach-workout-backfill" / "455045484"
+    bundle_dir = tmp_path / "reports" / "workout-backfill" / "455045484"
     plan = json.loads((bundle_dir / "plan.json").read_text(encoding="utf-8"))
-    request = json.loads((bundle_dir / "hevy-workout-request.json").read_text(encoding="utf-8"))
     report = (bundle_dir / "report.md").read_text(encoding="utf-8")
 
     assert plan == {
@@ -131,75 +130,11 @@ def test_workout_backfill_review_cli_writes_deterministic_bundle_for_455045484(
             },
         ],
     }
-    assert request == {
-        "workout": {
-            "title": "2024-04-10 Upper",
-            "description": "Backfill from True Coach Workout 455045484",
-            "start_time": None,
-            "end_time": None,
-            "is_private": False,
-            "exercises": [
-                {
-                    "exercise_template_id": "hevy-bench",
-                    "superset_id": 0,
-                    "notes": None,
-                    "sets": [
-                        {
-                            "type": "normal",
-                            "weight_kg": 80.0,
-                            "reps": 8,
-                            "distance_meters": None,
-                            "duration_seconds": None,
-                            "rpe": None,
-                        },
-                        {
-                            "type": "normal",
-                            "weight_kg": 80.0,
-                            "reps": 8,
-                            "distance_meters": None,
-                            "duration_seconds": None,
-                            "rpe": None,
-                        },
-                        {
-                            "type": "normal",
-                            "weight_kg": 80.0,
-                            "reps": 8,
-                            "distance_meters": None,
-                            "duration_seconds": None,
-                            "rpe": None,
-                        },
-                    ],
-                },
-                {
-                    "exercise_template_id": "hevy-row",
-                    "superset_id": 0,
-                    "notes": "Athlete comment: smooth reps",
-                    "sets": [
-                        {
-                            "type": "normal",
-                            "weight_kg": 55.0,
-                            "reps": 10,
-                            "distance_meters": None,
-                            "duration_seconds": None,
-                            "rpe": None,
-                        },
-                        {
-                            "type": "normal",
-                            "weight_kg": 55.0,
-                            "reps": 10,
-                            "distance_meters": None,
-                            "duration_seconds": None,
-                            "rpe": None,
-                        },
-                    ],
-                },
-            ],
-        }
-    }
     assert "# True Coach Workout Backfill Review: 455045484" in report
-    assert "Draft Hevy Workout request: hevy-workout-request.json" in report
+    assert "Hevy Workout request: not written" in report
     assert "Athlete comment: 80kg x 8, 80kg x 8, 80kg x 8" in report
     assert "Blockers: none" in report
+    assert not (bundle_dir / "hevy-workout-request.json").exists()
 
 
 def test_workout_backfill_pipeline_review_writes_manifest_layout_without_request(
@@ -932,21 +867,7 @@ def test_workout_backfill_review_reports_missing_hevy_template_mapping(
         assert exercise is not None
         exercise.hevy_app_id = None
 
-    exit_code = main(
-        [
-            "sync-review",
-            "truecoach-workout-backfill",
-            "--workout-id",
-            "455045484",
-            "--database-url",
-            f"sqlite:///{db_path}",
-            "--output-dir",
-            str(tmp_path / "reports"),
-        ]
-    )
-
-    assert exit_code == 0
-    bundle_dir = tmp_path / "reports" / "sync-review" / "truecoach-workout-backfill" / "455045484"
+    bundle_dir = _write_backfill_review(db_path, tmp_path)
     plan = json.loads((bundle_dir / "plan.json").read_text(encoding="utf-8"))
     request = json.loads((bundle_dir / "hevy-workout-request.json").read_text(encoding="utf-8"))
     report = (bundle_dir / "report.md").read_text(encoding="utf-8")
@@ -972,21 +893,7 @@ def test_workout_backfill_review_omits_placeholder_rest_without_blocking(
     _seed_backfill_review_workout(store)
     _add_empty_backfill_item(store, {"name": "Rest", "info": "Rest"})
 
-    exit_code = main(
-        [
-            "sync-review",
-            "truecoach-workout-backfill",
-            "--workout-id",
-            "455045484",
-            "--database-url",
-            f"sqlite:///{db_path}",
-            "--output-dir",
-            str(tmp_path / "reports"),
-        ]
-    )
-
-    assert exit_code == 0
-    bundle_dir = tmp_path / "reports" / "sync-review" / "truecoach-workout-backfill" / "455045484"
+    bundle_dir = _write_backfill_review(db_path, tmp_path)
     plan = json.loads((bundle_dir / "plan.json").read_text(encoding="utf-8"))
     request = json.loads((bundle_dir / "hevy-workout-request.json").read_text(encoding="utf-8"))
     report = (bundle_dir / "report.md").read_text(encoding="utf-8")
@@ -1028,21 +935,7 @@ def test_workout_backfill_review_defaults_down_regulate_to_duration_set(
         {"name": "Down Regulate", "info": "Down regulate", "hevy_app_id": "hevy-down-regulate"},
     )
 
-    exit_code = main(
-        [
-            "sync-review",
-            "truecoach-workout-backfill",
-            "--workout-id",
-            "455045484",
-            "--database-url",
-            f"sqlite:///{db_path}",
-            "--output-dir",
-            str(tmp_path / "reports"),
-        ]
-    )
-
-    assert exit_code == 0
-    bundle_dir = tmp_path / "reports" / "sync-review" / "truecoach-workout-backfill" / "455045484"
+    bundle_dir = _write_backfill_review(db_path, tmp_path)
     plan = json.loads((bundle_dir / "plan.json").read_text(encoding="utf-8"))
     request = json.loads((bundle_dir / "hevy-workout-request.json").read_text(encoding="utf-8"))
     report = (bundle_dir / "report.md").read_text(encoding="utf-8")
@@ -1087,21 +980,7 @@ def test_workout_backfill_duration_item_uses_athlete_comment_when_sets_are_missi
         },
     )
 
-    exit_code = main(
-        [
-            "sync-review",
-            "truecoach-workout-backfill",
-            "--workout-id",
-            "455045484",
-            "--database-url",
-            f"sqlite:///{db_path}",
-            "--output-dir",
-            str(tmp_path / "reports"),
-        ]
-    )
-
-    assert exit_code == 0
-    bundle_dir = tmp_path / "reports" / "sync-review" / "truecoach-workout-backfill" / "455045484"
+    bundle_dir = _write_backfill_review(db_path, tmp_path)
     plan = json.loads((bundle_dir / "plan.json").read_text(encoding="utf-8"))
     request = json.loads((bundle_dir / "hevy-workout-request.json").read_text(encoding="utf-8"))
 
@@ -1134,21 +1013,7 @@ def test_workout_backfill_distance_items_keep_app_visible_prescription_notes(
     _seed_backfill_review_workout(store)
     _add_distance_backfill_item(store)
 
-    exit_code = main(
-        [
-            "sync-review",
-            "truecoach-workout-backfill",
-            "--workout-id",
-            "455045484",
-            "--database-url",
-            f"sqlite:///{db_path}",
-            "--output-dir",
-            str(tmp_path / "reports"),
-        ]
-    )
-
-    assert exit_code == 0
-    bundle_dir = tmp_path / "reports" / "sync-review" / "truecoach-workout-backfill" / "455045484"
+    bundle_dir = _write_backfill_review(db_path, tmp_path)
     request = json.loads((bundle_dir / "hevy-workout-request.json").read_text(encoding="utf-8"))
 
     assert request["workout"]["exercises"][2]["notes"] == "Coach prescription: 3 x 200m"
@@ -1207,21 +1072,7 @@ def test_workout_backfill_review_writes_apple_health_evidence_for_complete_clust
         ],
     )
 
-    exit_code = main(
-        [
-            "sync-review",
-            "truecoach-workout-backfill",
-            "--workout-id",
-            "455045484",
-            "--database-url",
-            f"sqlite:///{db_path}",
-            "--output-dir",
-            str(tmp_path / "reports"),
-        ]
-    )
-
-    assert exit_code == 0
-    bundle_dir = tmp_path / "reports" / "sync-review" / "truecoach-workout-backfill" / "455045484"
+    bundle_dir = _write_backfill_review(db_path, tmp_path)
     evidence = json.loads((bundle_dir / "apple-health-evidence.json").read_text(encoding="utf-8"))
     request = json.loads((bundle_dir / "hevy-workout-request.json").read_text(encoding="utf-8"))
     report = (bundle_dir / "report.md").read_text(encoding="utf-8")
@@ -1383,7 +1234,7 @@ def test_workout_backfill_review_leaves_no_confidence_timing_unset(
     bundle_dir = _write_backfill_review(db_path, tmp_path)
     evidence = json.loads((bundle_dir / "apple-health-evidence.json").read_text(encoding="utf-8"))
     request = json.loads((bundle_dir / "hevy-workout-request.json").read_text(encoding="utf-8"))
-    decisions = json.loads((bundle_dir / "backfill-decisions.json").read_text(encoding="utf-8"))
+    decisions = json.loads((bundle_dir / "decisions.json").read_text(encoding="utf-8"))
     validation = json.loads((bundle_dir / "decision-validation.json").read_text(encoding="utf-8"))
 
     assert request["workout"]["start_time"] is None
@@ -1427,23 +1278,10 @@ def test_workout_backfill_review_applies_editable_timestamp_decisions(
         encoding="utf-8",
     )
 
-    exit_code = main(
-        [
-            "sync-review",
-            "truecoach-workout-backfill",
-            "--workout-id",
-            "455045484",
-            "--database-url",
-            f"sqlite:///{db_path}",
-            "--output-dir",
-            str(tmp_path / "reports"),
-            "--decisions",
-            str(decisions_path),
-        ]
-    )
+    exit_code = _run_backfill_review(tmp_path, 455045484, decisions_path)
 
     assert exit_code == 0
-    bundle_dir = tmp_path / "reports" / "sync-review" / "truecoach-workout-backfill" / "455045484"
+    bundle_dir = tmp_path / "reports" / "workout-backfill" / "455045484"
     plan = json.loads((bundle_dir / "plan.json").read_text(encoding="utf-8"))
     request = json.loads((bundle_dir / "hevy-workout-request.json").read_text(encoding="utf-8"))
     validation = json.loads((bundle_dir / "decision-validation.json").read_text(encoding="utf-8"))
@@ -1789,7 +1627,7 @@ def test_workout_backfill_circuit_item_missing_template_writes_required_decision
     )
 
     bundle_dir = _write_backfill_review(db_path, tmp_path)
-    decisions = json.loads((bundle_dir / "backfill-decisions.json").read_text(encoding="utf-8"))
+    decisions = json.loads((bundle_dir / "decisions.json").read_text(encoding="utf-8"))
     validation = json.loads((bundle_dir / "decision-validation.json").read_text(encoding="utf-8"))
 
     assert decisions["circuit_items"] == [
@@ -1839,7 +1677,7 @@ def test_workout_backfill_circuit_replacement_requires_explicit_decision(  # noq
     bundle_dir = _write_backfill_review(db_path, tmp_path)
     plan = json.loads((bundle_dir / "plan.json").read_text(encoding="utf-8"))
     request = json.loads((bundle_dir / "hevy-workout-request.json").read_text(encoding="utf-8"))
-    decisions = json.loads((bundle_dir / "backfill-decisions.json").read_text(encoding="utf-8"))
+    decisions = json.loads((bundle_dir / "decisions.json").read_text(encoding="utf-8"))
     validation = json.loads((bundle_dir / "decision-validation.json").read_text(encoding="utf-8"))
     report = (bundle_dir / "report.md").read_text(encoding="utf-8")
 
@@ -1934,7 +1772,7 @@ def test_workout_backfill_circuit_replacement_applies_explicit_decision(
     exit_code = _run_backfill_review(tmp_path, 455045484, decisions_path)
 
     assert exit_code == 0
-    bundle_dir = tmp_path / "reports" / "sync-review" / "truecoach-workout-backfill" / "455045484"
+    bundle_dir = tmp_path / "reports" / "workout-backfill" / "455045484"
     request = json.loads((bundle_dir / "hevy-workout-request.json").read_text(encoding="utf-8"))
     validation = json.loads((bundle_dir / "decision-validation.json").read_text(encoding="utf-8"))
 
@@ -1981,7 +1819,7 @@ def test_workout_backfill_choice_item_missing_template_writes_required_decision(
     bundle_dir = _write_backfill_review(db_path, tmp_path)
     plan = json.loads((bundle_dir / "plan.json").read_text(encoding="utf-8"))
     request = json.loads((bundle_dir / "hevy-workout-request.json").read_text(encoding="utf-8"))
-    decisions = json.loads((bundle_dir / "backfill-decisions.json").read_text(encoding="utf-8"))
+    decisions = json.loads((bundle_dir / "decisions.json").read_text(encoding="utf-8"))
     validation = json.loads((bundle_dir / "decision-validation.json").read_text(encoding="utf-8"))
 
     assert plan["blockers"] == [
@@ -2028,7 +1866,7 @@ def test_workout_backfill_choice_item_ambiguous_template_writes_required_decisio
 
     bundle_dir = _write_backfill_review(db_path, tmp_path)
     plan = json.loads((bundle_dir / "plan.json").read_text(encoding="utf-8"))
-    decisions = json.loads((bundle_dir / "backfill-decisions.json").read_text(encoding="utf-8"))
+    decisions = json.loads((bundle_dir / "decisions.json").read_text(encoding="utf-8"))
     validation = json.loads((bundle_dir / "decision-validation.json").read_text(encoding="utf-8"))
 
     assert plan["blockers"] == [
@@ -2085,23 +1923,10 @@ def test_workout_backfill_choice_item_applies_template_decision_to_request(
         encoding="utf-8",
     )
 
-    exit_code = main(
-        [
-            "sync-review",
-            "truecoach-workout-backfill",
-            "--workout-id",
-            "455045484",
-            "--database-url",
-            f"sqlite:///{db_path}",
-            "--output-dir",
-            str(tmp_path / "reports"),
-            "--decisions",
-            str(decisions_path),
-        ]
-    )
+    exit_code = _run_backfill_review(tmp_path, 455045484, decisions_path)
 
     assert exit_code == 0
-    bundle_dir = tmp_path / "reports" / "sync-review" / "truecoach-workout-backfill" / "455045484"
+    bundle_dir = tmp_path / "reports" / "workout-backfill" / "455045484"
     request = json.loads((bundle_dir / "hevy-workout-request.json").read_text(encoding="utf-8"))
     validation = json.loads((bundle_dir / "decision-validation.json").read_text(encoding="utf-8"))
 
@@ -2368,14 +2193,9 @@ def test_workout_backfill_apply_does_not_create_synthetic_tracker_item_for_inlin
 
     dry_run = service.write_apply_request(455045484, decisions_path=decisions_path)
     plan = json.loads(
-        (
-            tmp_path
-            / "reports"
-            / "sync-review"
-            / "truecoach-workout-backfill"
-            / "455045484"
-            / "plan.json"
-        ).read_text(encoding="utf-8")
+        (tmp_path / "reports" / "workout-backfill" / "455045484" / "plan.json").read_text(
+            encoding="utf-8"
+        )
     )
     service.apply(
         455045484,
@@ -2558,12 +2378,7 @@ def test_workout_backfill_apply_writes_recovery_artifact_when_local_linking_fail
         )
 
     recovery_path = (
-        tmp_path
-        / "reports"
-        / "sync-review"
-        / "truecoach-workout-backfill"
-        / "455045484"
-        / "backfill-recovery.json"
+        tmp_path / "reports" / "workout-backfill" / "455045484" / "backfill-recovery.json"
     )
     recovery = json.loads(recovery_path.read_text(encoding="utf-8"))
     assert recovery["true_coach_workout_id"] == 455045484
@@ -2677,8 +2492,8 @@ def _new_sqlite_store(tmp_path: Path) -> tuple[Path, Store]:
 def _run_backfill_discovery(db_path: Path, tmp_path: Path) -> int:
     return main(
         [
-            "sync-review",
-            "truecoach-workout-backfill-candidates",
+            "workout-backfill",
+            "candidates",
             "--database-url",
             f"sqlite:///{db_path}",
             "--output-dir",
@@ -2692,20 +2507,37 @@ def _run_backfill_review(
     workout_id: int,
     decisions_path: Path,
 ) -> int:
-    return main(
+    review_exit_code = main(
         [
-            "sync-review",
-            "truecoach-workout-backfill",
+            "workout-backfill",
+            "review",
             "--workout-id",
             str(workout_id),
             "--database-url",
             f"sqlite:///{tmp_path / 'tracker.sqlite'}",
             "--output-dir",
             str(tmp_path / "reports"),
-            "--decisions",
-            str(decisions_path),
         ]
     )
+    if review_exit_code != 0:
+        return review_exit_code
+    review_dir = tmp_path / "reports" / "workout-backfill" / str(workout_id)
+    (review_dir / "decisions.json").write_text(
+        decisions_path.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    request_exit_code = main(
+        [
+            "workout-backfill",
+            "write-request",
+            "--review-dir",
+            str(review_dir),
+            "--force",
+        ]
+    )
+    if request_exit_code == 2:
+        return review_exit_code
+    return request_exit_code
 
 
 def _write_requestable_pipeline_decisions(decisions_path: Path) -> None:
@@ -2812,9 +2644,8 @@ def _assert_455045484_local_links(store: Store) -> None:
 
 
 def _assert_placeholder_only_review(tmp_path: Path) -> None:
-    bundle_dir = tmp_path / "reports" / "sync-review" / "truecoach-workout-backfill" / "455047508"
+    bundle_dir = tmp_path / "reports" / "workout-backfill" / "455047508"
     plan = json.loads((bundle_dir / "plan.json").read_text(encoding="utf-8"))
-    request = json.loads((bundle_dir / "hevy-workout-request.json").read_text(encoding="utf-8"))
     report = (bundle_dir / "report.md").read_text(encoding="utf-8")
     validation = json.loads((bundle_dir / "decision-validation.json").read_text(encoding="utf-8"))
 
@@ -2840,10 +2671,11 @@ def _assert_placeholder_only_review(tmp_path: Path) -> None:
             "blockers": [],
         }
     ]
-    assert request["workout"]["title"] == "2024-04-12 Wedding Dancing"
-    assert request["workout"]["description"] == "Backfill from True Coach Workout 455047508"
-    assert request["workout"]["exercises"] == []
-    assert validation == {"blockers": [], "warnings": []}
+    assert not (bundle_dir / "hevy-workout-request.json").exists()
+    assert validation == {
+        "blockers": ["Missing required decision: selected Workout timestamps"],
+        "warnings": [],
+    }
     assert "WARNING: Placeholder rest item has no structured Sets rows" in report
 
 
@@ -3342,20 +3174,12 @@ def _split_circuit_hevy_workout_response(workout_id: str) -> PostWorkoutsRespons
 
 
 def _write_backfill_review(db_path: Path, tmp_path: Path) -> Path:
-    exit_code = main(
-        [
-            "sync-review",
-            "truecoach-workout-backfill",
-            "--workout-id",
-            "455045484",
-            "--database-url",
-            f"sqlite:///{db_path}",
-            "--output-dir",
-            str(tmp_path / "reports"),
-        ]
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    service = TrueCoachWorkoutBackfillReviewService(
+        store=store,
+        output_root=tmp_path / "reports",
     )
-    assert exit_code == 0
-    return tmp_path / "reports" / "sync-review" / "truecoach-workout-backfill" / "455045484"
+    return service.write_review(455045484).directory
 
 
 def _seed_apple_health_evidence(

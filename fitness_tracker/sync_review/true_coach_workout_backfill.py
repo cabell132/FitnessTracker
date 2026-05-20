@@ -49,7 +49,6 @@ from fitness_tracker.sync_review.workout_backfill_performed_work import (
 from fitness_tracker.sync_review.workflow import (
     load_decisions_file,
     read_json_object,
-    review_bundle_dir,
     write_json_artifact,
 )
 from fitness_tracker.sync_review.workout_backfill_apply import (
@@ -204,6 +203,7 @@ class BackfillReportContext:
     plan: dict[str, Any]
     apple_health_evidence: dict[str, Any]
     decision_validation: dict[str, list[str]]
+    request_written: bool = False
 
 
 PIPELINE_REVIEW_DIRNAME = "workout-backfill"
@@ -261,7 +261,7 @@ class TrueCoachWorkoutBackfillReviewService:
             if decisions_path is not None
             else None
         )
-        artifacts = self._build_artifacts(workout_id, decisions)
+        artifacts = self._build_artifacts(workout_id, decisions, request_written=True)
         (
             bundle_dir,
             plan_path,
@@ -425,6 +425,8 @@ class TrueCoachWorkoutBackfillReviewService:
         self,
         workout_id: int,
         decisions: dict[str, Any] | None = None,
+        *,
+        request_written: bool = False,
     ) -> WorkoutBackfillReviewArtifacts:
         with self._store.unit_of_work() as uow:
             workout = uow.true_coach.get_workout(id=workout_id)
@@ -472,6 +474,7 @@ class TrueCoachWorkoutBackfillReviewService:
                         plan=plan,
                         apple_health_evidence=apple_health_evidence,
                         decision_validation=decision_validation,
+                        request_written=request_written,
                     )
                 ),
             )
@@ -766,14 +769,15 @@ def _bundle_paths(
     output_root: Path,
     workout_id: int,
 ) -> tuple[Path, Path, Path, Path, Path, Path, Path]:
-    bundle_dir = review_bundle_dir(output_root, "truecoach-workout-backfill", workout_id)
+    bundle_dir = output_root / "workout-backfill" / str(workout_id)
+    bundle_dir.mkdir(parents=True, exist_ok=True)
     return (
         bundle_dir,
         bundle_dir / "plan.json",
         bundle_dir / "hevy-workout-request.json",
         bundle_dir / "apple-health-evidence.json",
         bundle_dir / "report.md",
-        bundle_dir / "backfill-decisions.json",
+        bundle_dir / "decisions.json",
         bundle_dir / "decision-validation.json",
     )
 
@@ -1580,13 +1584,18 @@ def _block_overlaps_workouts(
 
 def _report(context: BackfillReportContext) -> str:
     workout = context.workout
+    request_line = (
+        "Hevy Workout request: hevy-workout-request.json"
+        if context.request_written
+        else "Hevy Workout request: not written; run workout-backfill write-request --review-dir <dir>"
+    )
     lines = [
         f"# True Coach Workout Backfill Review: {workout.id}",
         "",
         f"Workout: {workout.title or 'Untitled'}",
         f"Due: {workout.due.isoformat() if workout.due else 'unknown'}",
-        "Draft Hevy Workout request: hevy-workout-request.json",
-        "Editable decisions: backfill-decisions.json",
+        request_line,
+        "Editable decisions: decisions.json",
         "Decision validation: decision-validation.json",
         "Apple Health evidence: apple-health-evidence.json",
         "",
