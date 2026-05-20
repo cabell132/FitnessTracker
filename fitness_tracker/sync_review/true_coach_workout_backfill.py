@@ -509,10 +509,7 @@ class WorkoutBackfillPipeline:
         Returns:
             WorkoutBackfillPipelineRequest: Paths written for the request step.
         """
-        manifest_path = review_dir / PIPELINE_MANIFEST_FILENAME
-        manifest = read_json_object(manifest_path)
-        _validate_pipeline_review_manifest(manifest, manifest_path)
-        paths = _pipeline_request_paths(review_dir, manifest)
+        manifest, manifest_path, paths = _load_pipeline_review_request_paths(review_dir)
         _validate_existing_pipeline_request(
             paths.request,
             paths.request_manifest,
@@ -555,10 +552,7 @@ class WorkoutBackfillPipeline:
         Returns:
             WorkoutBackfillApplyResult: Apply result with the performed action.
         """
-        manifest_path = review_dir / PIPELINE_MANIFEST_FILENAME
-        manifest = read_json_object(manifest_path)
-        _validate_pipeline_review_manifest(manifest, manifest_path)
-        paths = _pipeline_request_paths(review_dir, manifest)
+        manifest, _, paths = _load_pipeline_review_request_paths(review_dir)
         request_manifest = read_json_object(paths.request_manifest)
         _validate_pipeline_request_manifest(paths, request_manifest)
         request_body = _load_pipeline_request(paths.request)
@@ -742,6 +736,15 @@ def _pipeline_request_paths(
     )
 
 
+def _load_pipeline_review_request_paths(
+    review_dir: Path,
+) -> tuple[dict[str, Any], Path, WorkoutBackfillPipelineRequestPaths]:
+    manifest_path = review_dir / PIPELINE_MANIFEST_FILENAME
+    manifest = read_json_object(manifest_path)
+    _validate_pipeline_review_manifest(manifest, manifest_path)
+    return manifest, manifest_path, _pipeline_request_paths(review_dir, manifest)
+
+
 def _validate_pipeline_review_manifest(
     manifest: dict[str, Any],
     manifest_path: Path,
@@ -922,18 +925,15 @@ def _pipeline_request_manifest(
         "workflow": PIPELINE_REQUEST_WORKFLOW,
         "schema_version": PIPELINE_REQUEST_SCHEMA_VERSION,
         "generated_at": datetime.now(UTC).isoformat(),
-        "artifacts": {
-            "plan": paths.plan.name,
-            "decisions": paths.decisions.name,
-            "decision_validation": paths.decision_validation.name,
-            "request": paths.request.name,
-        },
-        "sha256": {
-            "plan": _sha256_file(paths.plan),
-            "decisions": _sha256_file(paths.decisions),
-            "decision_validation": _sha256_file(paths.decision_validation),
-            "request": _sha256_file(paths.request),
-        },
+        "artifacts": _expected_pipeline_request_artifacts(paths),
+        "sha256": _pipeline_request_hashes(paths),
+    }
+
+
+def _pipeline_request_hashes(paths: WorkoutBackfillPipelineRequestPaths) -> dict[str, str]:
+    return {
+        artifact_name: _sha256_file(artifact_path)
+        for artifact_name, artifact_path in _expected_pipeline_request_paths(paths).items()
     }
 
 

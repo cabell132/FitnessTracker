@@ -88,6 +88,13 @@ from fitness_tracker.sync_review.true_coach_to_hevy import ApplyResult, _build_h
 TRUECOACH_OPERATIONAL_STATES: tuple[WorkoutState, ...] = ("pending", "completed", "missed")
 LOCAL_TRACKER_CACHE_SOURCE = "local_tracker_cache"
 LOCAL_TRACKER_CACHE_WARNING = f"source={LOCAL_TRACKER_CACHE_SOURCE}; data may be stale"
+WORKOUT_BACKFILL_CLI_ERRORS = (
+    OSError,
+    TypeError,
+    HevyAppAPIError,
+    WorkoutBackfillApplyError,
+    WorkoutBackfillReviewError,
+)
 
 
 def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0911, PLR0912, PLR0915
@@ -1822,10 +1829,7 @@ def _sync_review_truecoach_workout_backfill_candidates(args: argparse.Namespace)
 
 
 def _workout_backfill_candidates(args: argparse.Namespace) -> int:
-    pipeline = WorkoutBackfillPipeline(
-        store=Store(_engine_from_args(args)),
-        output_root=Path(args.output_dir),
-    )
+    pipeline = _workout_backfill_pipeline_from_args(args, output_root=Path(args.output_dir))
     result = pipeline.candidates()
     _emit(f"Wrote Workout backfill candidates: {result.directory}")
     _emit(f"Candidate count: {result.candidate_count}")
@@ -1833,10 +1837,7 @@ def _workout_backfill_candidates(args: argparse.Namespace) -> int:
 
 
 def _workout_backfill_review(args: argparse.Namespace) -> int:
-    pipeline = WorkoutBackfillPipeline(
-        store=Store(_engine_from_args(args)),
-        output_root=Path(args.output_dir),
-    )
+    pipeline = _workout_backfill_pipeline_from_args(args, output_root=Path(args.output_dir))
     try:
         review = pipeline.review(
             args.workout_id,
@@ -1854,19 +1855,10 @@ def _workout_backfill_review(args: argparse.Namespace) -> int:
 
 
 def _workout_backfill_write_request(args: argparse.Namespace) -> int:
-    pipeline = WorkoutBackfillPipeline(
-        store=Store(create_database_engine("sqlite:///:memory:")),
-        output_root=Path("reports"),
-    )
+    pipeline = _manual_workout_backfill_pipeline()
     try:
         result = pipeline.write_request(args.review_dir, force=args.force)
-    except (
-        OSError,
-        TypeError,
-        HevyAppAPIError,
-        WorkoutBackfillApplyError,
-        WorkoutBackfillReviewError,
-    ) as exc:
+    except WORKOUT_BACKFILL_CLI_ERRORS as exc:
         _emit(f"Error: {exc}")
         return 2
     _emit(f"Wrote Workout backfill request: {result.request_path}")
@@ -1875,23 +1867,13 @@ def _workout_backfill_write_request(args: argparse.Namespace) -> int:
 
 
 def _workout_backfill_apply(args: argparse.Namespace) -> int:
-    pipeline = WorkoutBackfillPipeline(
-        store=Store(_engine_from_args(args)),
-        output_root=Path("reports"),
-    )
+    pipeline = _workout_backfill_pipeline_from_args(args)
     try:
-        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         result = pipeline.apply(
             args.review_dir,
-            workout_writer=HevyWorkoutWriterAdapter(_hevy_client_from_config()),
+            workout_writer=_hevy_workout_writer_from_config(),
         )
-    except (
-        OSError,
-        TypeError,
-        HevyAppAPIError,
-        WorkoutBackfillApplyError,
-        WorkoutBackfillReviewError,
-    ) as exc:
+    except WORKOUT_BACKFILL_CLI_ERRORS as exc:
         _emit(f"Error: {exc}")
         return 2
     _emit_workout_backfill_apply_result(result)
@@ -1899,24 +1881,14 @@ def _workout_backfill_apply(args: argparse.Namespace) -> int:
 
 
 def _workout_backfill_apply_manual(args: argparse.Namespace) -> int:
-    pipeline = WorkoutBackfillPipeline(
-        store=Store(create_database_engine("sqlite:///:memory:")),
-        output_root=Path("reports"),
-    )
+    pipeline = _manual_workout_backfill_pipeline()
     try:
-        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         result = pipeline.apply_manual_request(
             args.request_path,
             workout_id=args.workout_id,
-            workout_writer=HevyWorkoutWriterAdapter(_hevy_client_from_config()),
+            workout_writer=_hevy_workout_writer_from_config(),
         )
-    except (
-        OSError,
-        TypeError,
-        HevyAppAPIError,
-        WorkoutBackfillApplyError,
-        WorkoutBackfillReviewError,
-    ) as exc:
+    except WORKOUT_BACKFILL_CLI_ERRORS as exc:
         _emit(f"Error: {exc}")
         return 2
     _emit_workout_backfill_apply_result(result)
@@ -1933,10 +1905,7 @@ def _emit_workout_backfill_apply_result(result: WorkoutBackfillApplyResult) -> N
 
 
 def _workout_backfill_inspect(args: argparse.Namespace) -> int:
-    pipeline = WorkoutBackfillPipeline(
-        store=Store(create_database_engine("sqlite:///:memory:")),
-        output_root=Path("reports"),
-    )
+    pipeline = _manual_workout_backfill_pipeline()
     try:
         result = pipeline.inspect(args.review_dir)
     except (OSError, TypeError, WorkoutBackfillReviewError) as exc:
@@ -2171,11 +2140,10 @@ def _sync_apply_truecoach_workout_backfill(args: argparse.Namespace) -> int:
             if args.dry_run:
                 _emit("Error: --manual-request cannot be combined with --dry-run")
                 return 2
-            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
             result = _workout_backfill_manual_service(args).apply_manual_request(
                 Path(args.manual_request),
                 workout_id=args.workout_id,
-                workout_writer=HevyWorkoutWriterAdapter(_hevy_client_from_config()),
+                workout_writer=_hevy_workout_writer_from_config(),
             )
         elif args.dry_run:
             result = _workout_backfill_review_service(args).write_apply_request(
@@ -2183,10 +2151,9 @@ def _sync_apply_truecoach_workout_backfill(args: argparse.Namespace) -> int:
                 decisions_path=decisions_path,
             )
         else:
-            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
             result = _workout_backfill_review_service(args).apply(
                 args.workout_id,
-                workout_writer=HevyWorkoutWriterAdapter(_hevy_client_from_config()),
+                workout_writer=_hevy_workout_writer_from_config(),
                 decisions_path=decisions_path,
             )
     except (WorkoutBackfillApplyError, WorkoutBackfillReviewError, HevyAppAPIError) as exc:
@@ -2202,10 +2169,9 @@ def _sync_apply_truecoach_workout_backfill(args: argparse.Namespace) -> int:
 def _sync_apply_truecoach_workout_backfill_repair(args: argparse.Namespace) -> int:
     decisions_path = Path(args.decisions) if args.decisions else None
     try:
-        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         result = _workout_backfill_review_service(args).repair_local_links(
             args.workout_id,
-            workout_writer=HevyWorkoutWriterAdapter(_hevy_client_from_config()),
+            workout_writer=_hevy_workout_writer_from_config(),
             decisions_path=decisions_path,
         )
     except (WorkoutBackfillApplyError, WorkoutBackfillReviewError, HevyAppAPIError) as exc:
@@ -2231,6 +2197,29 @@ def _workout_backfill_manual_service(
         store=Store(create_database_engine("sqlite:///:memory:")),
         output_root=Path(args.output_dir),
     )
+
+
+def _workout_backfill_pipeline_from_args(
+    args: argparse.Namespace,
+    *,
+    output_root: Path = Path("reports"),
+) -> WorkoutBackfillPipeline:
+    return WorkoutBackfillPipeline(
+        store=Store(_engine_from_args(args)),
+        output_root=output_root,
+    )
+
+
+def _manual_workout_backfill_pipeline() -> WorkoutBackfillPipeline:
+    return WorkoutBackfillPipeline(
+        store=Store(create_database_engine("sqlite:///:memory:")),
+        output_root=Path("reports"),
+    )
+
+
+def _hevy_workout_writer_from_config() -> HevyWorkoutWriterAdapter:
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    return HevyWorkoutWriterAdapter(_hevy_client_from_config())
 
 
 def _write_workout_backfill_review(args: argparse.Namespace) -> Any:
