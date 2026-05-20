@@ -130,6 +130,8 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0911, PLR0912,
         return _workout_backfill_write_request(args)
     if args.command == "workout-backfill" and args.workout_backfill_command == "inspect":
         return _workout_backfill_inspect(args)
+    if args.command == "workout-backfill" and args.workout_backfill_command == "diff":
+        return _workout_backfill_diff(args)
     if args.command == "sync-review" and args.sync_review_command == "truecoach-to-hevy":
         return _sync_review_truecoach_to_hevy(args)
     if args.command == "sync-review" and args.sync_review_command == "hevy-to-truecoach-results":
@@ -479,6 +481,15 @@ def _add_workout_backfill_parser(subparsers: Any) -> None:
     write_request = workout_backfill_subparsers.add_parser("write-request")
     write_request.add_argument("--review-dir", type=Path, required=True)
     write_request.add_argument("--force", action="store_true")
+
+    _add_workout_backfill_diff_parser(workout_backfill_subparsers)
+
+
+def _add_workout_backfill_diff_parser(workout_backfill_subparsers: Any) -> None:
+    diff = workout_backfill_subparsers.add_parser("diff")
+    diff.add_argument("--review-dir", type=Path, required=True)
+    diff.add_argument("--db", help="SQLite database path. Prefer --database-url.")
+    diff.add_argument("--database-url", help="SQLAlchemy database URL. Defaults to DATABASE_URL.")
 
 
 def _add_sync_review_parser(  # noqa: PLR0915
@@ -1848,6 +1859,27 @@ def _workout_backfill_inspect(args: argparse.Namespace) -> int:
         return 2
     _emit_workout_backfill_inspect_result(result)
     return 0
+
+
+def _workout_backfill_diff(args: argparse.Namespace) -> int:
+    pipeline = WorkoutBackfillPipeline(
+        store=Store(_engine_from_args(args)),
+        output_root=Path("reports"),
+    )
+    try:
+        result = pipeline.diff(args.review_dir)
+    except (OSError, TypeError, WorkoutBackfillReviewError) as exc:
+        _emit(f"Error: {exc}")
+        return 2
+    _emit(f"request: {result.request_path}")
+    _emit(f"local_hevy_workout: {result.local_hevy_workout_id}")
+    if not result.differences:
+        _emit("No differences between request and linked local Hevy Workout cache.")
+        return 0
+    _emit("differences:")
+    for difference in result.differences:
+        _emit(f"- {difference}")
+    return 1
 
 
 def _emit_workout_backfill_inspect_result(result: WorkoutBackfillInspectResult) -> None:

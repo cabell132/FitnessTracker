@@ -23,6 +23,7 @@ from fitness_tracker.database.models.apple_health import (
     AppleHealthWorkoutType,
 )
 from fitness_tracker.database.models.hevy_app import HevyAppExercise
+from fitness_tracker.database.models.hevy_app import HevyAppSets, HevyAppWorkout, HevyAppWorkoutItem
 from fitness_tracker.database.models.tracker import (
     Exercise,
     Sets,
@@ -434,6 +435,92 @@ def test_workout_backfill_pipeline_write_request_requires_workout_backfill_manif
         pipeline.write_request(review_dir)
 
 
+def test_workout_backfill_pipeline_diff_reads_manifest_verified_request(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    pipeline = WorkoutBackfillPipeline(store=store, output_root=tmp_path / "reports")
+    review = pipeline.review(455045484)
+    _write_requestable_pipeline_decisions(review.decisions_path)
+    request = pipeline.write_request(review.directory)
+    _seed_linked_local_hevy_workout(store, title="Edited Upper")
+    original_request = request.request_path.read_text(encoding="utf-8")
+    original_manifest = request.manifest_path.read_text(encoding="utf-8")
+
+    result = pipeline.diff(review.directory)
+
+    assert result.request_path == request.request_path
+    assert result.local_hevy_workout_id == "hevy-linked-455045484"
+    assert result.differences == ["title request='2024-04-10 Upper' local='Edited Upper'"]
+    assert request.request_path.read_text(encoding="utf-8") == original_request
+    assert request.manifest_path.read_text(encoding="utf-8") == original_manifest
+
+
+def test_workout_backfill_pipeline_diff_requires_written_request(tmp_path: Path) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    pipeline = WorkoutBackfillPipeline(store=store, output_root=tmp_path / "reports")
+    review = pipeline.review(455045484)
+
+    with pytest.raises(WorkoutBackfillReviewError, match="write-request --review-dir"):
+        pipeline.diff(review.directory)
+
+
+def test_workout_backfill_pipeline_diff_rejects_stale_request_manifest(tmp_path: Path) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    pipeline = WorkoutBackfillPipeline(store=store, output_root=tmp_path / "reports")
+    review = pipeline.review(455045484)
+    _write_requestable_pipeline_decisions(review.decisions_path)
+    pipeline.write_request(review.directory)
+    plan = json.loads(review.plan_path.read_text(encoding="utf-8"))
+    plan["workout"]["title"] = "Stale Upper"
+    review.plan_path.write_text(json.dumps(plan) + "\n", encoding="utf-8")
+
+    with pytest.raises(WorkoutBackfillReviewError, match="Request artifact is stale"):
+        pipeline.diff(review.directory)
+
+
+def test_workout_backfill_pipeline_diff_rejects_manual_request_edit(tmp_path: Path) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    pipeline = WorkoutBackfillPipeline(store=store, output_root=tmp_path / "reports")
+    review = pipeline.review(455045484)
+    _write_requestable_pipeline_decisions(review.decisions_path)
+    request = pipeline.write_request(review.directory)
+    payload = json.loads(request.request_path.read_text(encoding="utf-8"))
+    payload["workout"]["title"] = "Manual Upper"
+    request.request_path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+
+    with pytest.raises(WorkoutBackfillReviewError, match="manual workflow"):
+        pipeline.diff(review.directory)
+
+
+def test_workout_backfill_pipeline_diff_requires_linked_local_hevy_workout(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    pipeline = WorkoutBackfillPipeline(store=store, output_root=tmp_path / "reports")
+    review = pipeline.review(455045484)
+    _write_requestable_pipeline_decisions(review.decisions_path)
+    pipeline.write_request(review.directory)
+
+    with pytest.raises(WorkoutBackfillReviewError, match="No linked local Hevy Workout"):
+        pipeline.diff(review.directory)
+
+
 def test_workout_backfill_review_and_inspect_cli_smoke(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -503,6 +590,68 @@ def test_workout_backfill_write_request_cli_smoke(
         in output
     )
     assert (review.directory / "request-manifest.json").exists()
+
+
+def test_workout_backfill_diff_cli_reports_differences(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    pipeline = WorkoutBackfillPipeline(store=store, output_root=tmp_path / "reports")
+    review = pipeline.review(455045484)
+    _write_requestable_pipeline_decisions(review.decisions_path)
+    pipeline.write_request(review.directory)
+    _seed_linked_local_hevy_workout(store, title="Edited Upper")
+
+    exit_code = main(
+        [
+            "workout-backfill",
+            "diff",
+            "--review-dir",
+            str(review.directory),
+            "--database-url",
+            f"sqlite:///{db_path}",
+        ]
+    )
+    output = capsys.readouterr().out
+
+    assert exit_code == 1
+    assert f"request: {review.directory / 'hevy-workout-request.json'}" in output
+    assert "local_hevy_workout: hevy-linked-455045484" in output
+    assert "- title request='2024-04-10 Upper' local='Edited Upper'" in output
+
+
+def test_workout_backfill_diff_cli_returns_zero_for_no_differences(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    pipeline = WorkoutBackfillPipeline(store=store, output_root=tmp_path / "reports")
+    review = pipeline.review(455045484)
+    _write_requestable_pipeline_decisions(review.decisions_path)
+    pipeline.write_request(review.directory)
+    _seed_linked_local_hevy_workout(store)
+
+    exit_code = main(
+        [
+            "workout-backfill",
+            "diff",
+            "--review-dir",
+            str(review.directory),
+            "--database-url",
+            f"sqlite:///{db_path}",
+        ]
+    )
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "No differences between request and linked local Hevy Workout cache." in output
 
 
 def test_workout_backfill_review_reports_missing_hevy_template_mapping(
@@ -2298,6 +2447,60 @@ def _write_requestable_pipeline_decisions(decisions_path: Path) -> None:
     decisions["workout"]["selected_start_time"] = "2024-04-10T13:00:00+00:00"
     decisions["workout"]["selected_end_time"] = "2024-04-10T14:00:00+00:00"
     decisions_path.write_text(json.dumps(decisions) + "\n", encoding="utf-8")
+
+
+def _seed_linked_local_hevy_workout(store: Store, *, title: str = "2024-04-10 Upper") -> None:
+    with store.unit_of_work() as uow:
+        workout = uow.session.query(TrackerWorkout).filter_by(true_coach_id=455045484).one()
+        workout.hevy_app_id = "hevy-linked-455045484"
+        hevy_workout = HevyAppWorkout(
+            id="hevy-linked-455045484",
+            title=title,
+            description="Backfill from True Coach Workout 455045484",
+            start_time=datetime(2024, 4, 10, 13, tzinfo=UTC),
+            end_time=datetime(2024, 4, 10, 14, tzinfo=UTC),
+        )
+        uow.session.add(hevy_workout)
+        uow.session.flush()
+        bench_item = HevyAppWorkoutItem(
+            workout_id=hevy_workout.id,
+            index=0,
+            name="Bench Press",
+            notes="",
+            superset_id=0,
+            exercise_id="hevy-bench",
+        )
+        row_item = HevyAppWorkoutItem(
+            workout_id=hevy_workout.id,
+            index=1,
+            name="Chest Supported Row",
+            notes="Athlete comment: smooth reps",
+            superset_id=0,
+            exercise_id="hevy-row",
+        )
+        uow.session.add(bench_item)
+        uow.session.add(row_item)
+        uow.session.flush()
+        for index in range(3):
+            uow.session.add(
+                HevyAppSets(
+                    workout_item_id=bench_item.id,
+                    index=index,
+                    type="normal",
+                    weight_kg=80.0,
+                    reps=8,
+                )
+            )
+        for index in range(2):
+            uow.session.add(
+                HevyAppSets(
+                    workout_item_id=row_item.id,
+                    index=index,
+                    type="normal",
+                    weight_kg=55.0,
+                    reps=10,
+                )
+            )
 
 
 def _assert_discovered_workout_ids(tmp_path: Path, expected_ids: list[int]) -> None:

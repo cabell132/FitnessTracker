@@ -20,6 +20,11 @@ from fitness_tracker.database.models.apple_health import (
     AppleHealthWorkoutType,
 )
 from fitness_tracker.database.models.hevy_app import HevyAppExercise
+from fitness_tracker.database.models.hevy_app import (
+    HevyAppSets,
+    HevyAppWorkout,
+    HevyAppWorkoutItem,
+)
 from fitness_tracker.database.models.tracker import (
     Workout as TrackerWorkout,
 )
@@ -110,6 +115,16 @@ class WorkoutBackfillPipelineRequest:
     review_dir: Path
     request_path: Path
     manifest_path: Path
+
+
+@dataclass(frozen=True)
+class WorkoutBackfillDiffResult:
+    """Manifest-verified request diff against a linked local Hevy Workout."""
+
+    review_dir: Path
+    request_path: Path
+    local_hevy_workout_id: str
+    differences: list[str]
 
 
 @dataclass(frozen=True)
@@ -450,6 +465,7 @@ class WorkoutBackfillPipeline:
             store=store,
             output_root=output_root,
         )
+        self._store = store
         self._output_root = output_root
 
     def candidates(self) -> BackfillCandidatesResult:
@@ -566,6 +582,53 @@ class WorkoutBackfillPipeline:
             manifest=manifest,
             plan=plan,
             decision_validation=decision_validation,
+        )
+
+    def diff(self, review_dir: Path) -> WorkoutBackfillDiffResult:
+        """Compare a manifest-verified request artifact to the local Hevy cache.
+
+        Args:
+            review_dir (Path): Existing review directory containing request artifacts.
+
+        Returns:
+            WorkoutBackfillDiffResult: Linked workout id and normalized differences.
+
+        Raises:
+            WorkoutBackfillReviewError: If required artifacts are missing or stale,
+                or no linked local Hevy Workout exists.
+        """
+        manifest_path = review_dir / PIPELINE_MANIFEST_FILENAME
+        manifest = read_json_object(manifest_path)
+        _validate_pipeline_review_manifest(manifest, manifest_path)
+        request_manifest_path = review_dir / PIPELINE_REQUEST_MANIFEST_FILENAME
+        if not request_manifest_path.exists():
+            msg = (
+                f"Missing Workout backfill request manifest: {request_manifest_path}. "
+                "Run workout-backfill write-request --review-dir <dir>."
+            )
+            raise WorkoutBackfillReviewError(msg)
+        request_manifest = read_json_object(request_manifest_path)
+        paths = _pipeline_request_paths(review_dir, manifest)
+        if not paths.request.exists():
+            msg = (
+                f"Missing Workout backfill request artifact: {paths.request}. "
+                "Run workout-backfill write-request --review-dir <dir>."
+            )
+            raise WorkoutBackfillReviewError(msg)
+        _validate_pipeline_request_manifest(paths, request_manifest, request_manifest_path)
+        request = read_json_object(paths.request)
+        local = _linked_hevy_workout_snapshot(self._store, manifest["workout_id"])
+        if local is None:
+            msg = (
+                f"No linked local Hevy Workout for True Coach Workout {manifest['workout_id']}; "
+                "apply or repair the backfill before running workout-backfill diff."
+            )
+            raise WorkoutBackfillReviewError(msg)
+        return WorkoutBackfillDiffResult(
+            review_dir=review_dir,
+            request_path=paths.request,
+            local_hevy_workout_id=local["id"],
+            differences=_workout_request_local_differences(request, local),
         )
 
 
@@ -704,6 +767,78 @@ def _validate_existing_pipeline_request(
         raise WorkoutBackfillReviewError(msg)
 
 
+def _validate_pipeline_request_manifest(
+    paths: WorkoutBackfillPipelineRequestPaths,
+    manifest: dict[str, Any],
+    manifest_path: Path,
+) -> None:
+    if manifest.get("workflow") != PIPELINE_REQUEST_WORKFLOW:
+        msg = f"Request manifest {manifest_path} is not a Workout backfill request manifest"
+        raise WorkoutBackfillReviewError(msg)
+    if manifest.get("schema_version") != PIPELINE_REQUEST_SCHEMA_VERSION:
+        msg = f"Request manifest {manifest_path} has unsupported schema_version"
+        raise WorkoutBackfillReviewError(msg)
+    artifacts = manifest.get("artifacts")
+    if not isinstance(artifacts, dict):
+        msg = f"Request manifest {manifest_path} must contain an artifacts object"
+        raise WorkoutBackfillReviewError(msg)
+    expected_artifacts = {
+        "plan": paths.plan.name,
+        "decisions": paths.decisions.name,
+        "decision_validation": paths.decision_validation.name,
+        "request": paths.request.name,
+    }
+    if artifacts != expected_artifacts:
+        msg = (
+            f"Request manifest {manifest_path} does not describe the review artifacts; "
+            "run workout-backfill write-request --review-dir <dir>."
+        )
+        raise WorkoutBackfillReviewError(msg)
+    _validate_pipeline_request_hashes(paths, manifest, manifest_path)
+
+
+def _validate_pipeline_request_hashes(
+    paths: WorkoutBackfillPipelineRequestPaths,
+    manifest: dict[str, Any],
+    manifest_path: Path,
+) -> None:
+    hashes = manifest.get("sha256")
+    if not isinstance(hashes, dict):
+        msg = (
+            f"Request manifest {manifest_path} is missing artifact hashes; "
+            "run workout-backfill write-request --review-dir <dir>."
+        )
+        raise WorkoutBackfillReviewError(msg)
+    path_by_artifact = {
+        "plan": paths.plan,
+        "decisions": paths.decisions,
+        "decision_validation": paths.decision_validation,
+        "request": paths.request,
+    }
+    for artifact_name, path in path_by_artifact.items():
+        expected_hash = hashes.get(artifact_name)
+        if not isinstance(expected_hash, str):
+            msg = (
+                f"Request manifest {manifest_path} is missing {artifact_name} hash; "
+                "run workout-backfill write-request --review-dir <dir>."
+            )
+            raise WorkoutBackfillReviewError(msg)
+        actual_hash = _sha256_file(path)
+        if actual_hash != expected_hash:
+            if artifact_name == "request":
+                msg = (
+                    f"Request artifact hash mismatch: {path}. "
+                    "Run workout-backfill write-request --review-dir <dir> --force "
+                    "to regenerate it, or use the manual workflow for edited requests."
+                )
+            else:
+                msg = (
+                    f"Request artifact is stale because {artifact_name} changed: {path}. "
+                    "Run workout-backfill write-request --review-dir <dir>."
+                )
+            raise WorkoutBackfillReviewError(msg)
+
+
 def _request_manifest_hash(
     manifest: dict[str, Any],
     manifest_path: Path,
@@ -785,6 +920,133 @@ def _manifest_artifact_path(
         msg = f"Review manifest is missing artifact path: {artifact_name}"
         raise WorkoutBackfillReviewError(msg)
     return review_dir / artifact_path
+
+
+def _linked_hevy_workout_snapshot(
+    store: Store,
+    true_coach_workout_id: int,
+) -> dict[str, Any] | None:
+    with store.unit_of_work() as uow:
+        tracker_workout = uow.session.get(TrackerWorkout, true_coach_id=true_coach_workout_id)
+        if tracker_workout is None or tracker_workout.hevy_app_id is None:
+            return None
+        hevy_workout = uow.session.get(HevyAppWorkout, id=tracker_workout.hevy_app_id)
+        if hevy_workout is None:
+            return None
+        exercises = (
+            uow.session.query(HevyAppWorkoutItem)
+            .filter_by(workout_id=hevy_workout.id)
+            .order_by(HevyAppWorkoutItem.index)
+            .all()
+        )
+        sets_by_item: dict[int, list[dict[str, Any]]] = {}
+        if exercises:
+            exercise_ids = [exercise.id for exercise in exercises]
+            set_rows = (
+                uow.session.query(HevyAppSets)
+                .filter(HevyAppSets.workout_item_id.in_(exercise_ids))
+                .order_by(HevyAppSets.workout_item_id, HevyAppSets.index)
+                .all()
+            )
+            for set_row in set_rows:
+                sets_by_item.setdefault(set_row.workout_item_id, []).append(
+                    {
+                        "id": set_row.id,
+                        "workout_item_id": set_row.workout_item_id,
+                        "index": set_row.index,
+                        "type": set_row.type,
+                        "weight_kg": set_row.weight_kg,
+                        "reps": set_row.reps,
+                        "distance_meters": set_row.distance_meters,
+                        "duration_seconds": set_row.duration_seconds,
+                        "rpe": set_row.rpe,
+                    }
+                )
+        return {
+            "id": hevy_workout.id,
+            "title": hevy_workout.title,
+            "description": hevy_workout.description,
+            "start_time": _local_datetime_isoformat(hevy_workout.start_time),
+            "end_time": _local_datetime_isoformat(hevy_workout.end_time),
+            "exercises": [
+                {
+                    "id": exercise.id,
+                    "index": exercise.index,
+                    "name": exercise.name,
+                    "notes": exercise.notes,
+                    "superset_id": exercise.superset_id,
+                    "exercise_template_id": exercise.exercise_id,
+                    "sets": sets_by_item.get(exercise.id, []),
+                }
+                for exercise in exercises
+            ],
+        }
+
+
+def _local_datetime_isoformat(value: datetime) -> str:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return value.isoformat()
+
+
+def _workout_request_local_differences(
+    request: dict[str, Any],
+    local: dict[str, Any],
+) -> list[str]:
+    workout = request.get("workout", {})
+    differences: list[str] = []
+    for label in ("title", "description", "start_time", "end_time"):
+        request_value = workout.get(label)
+        local_value = local.get(label)
+        if request_value != local_value:
+            differences.append(f"{label} request={request_value!r} local={local_value!r}")
+    request_exercises = workout.get("exercises", [])
+    local_exercises = local.get("exercises", [])
+    if len(request_exercises) != len(local_exercises):
+        differences.append(
+            f"exercise count request={len(request_exercises)} local={len(local_exercises)}"
+        )
+    for index, request_exercise in enumerate(request_exercises):
+        if index >= len(local_exercises):
+            differences.append(f"exercise {index + 1} missing locally")
+            continue
+        differences.extend(
+            _workout_exercise_differences(
+                index + 1,
+                request_exercise,
+                local_exercises[index],
+            )
+        )
+    return differences
+
+
+def _workout_exercise_differences(
+    position: int,
+    request_exercise: dict[str, Any],
+    local_exercise: dict[str, Any],
+) -> list[str]:
+    differences = []
+    comparisons = (
+        (
+            "template",
+            request_exercise.get("exercise_template_id"),
+            local_exercise.get("exercise_template_id"),
+        ),
+        ("superset", request_exercise.get("superset_id"), local_exercise.get("superset_id")),
+        ("notes", request_exercise.get("notes") or "", local_exercise.get("notes") or ""),
+    )
+    for label, request_value, local_value in comparisons:
+        if request_value != local_value:
+            differences.append(
+                f"exercise {position} {label} request={request_value!r} local={local_value!r}"
+            )
+    request_sets = request_exercise.get("sets") or []
+    local_sets = local_exercise.get("sets") or []
+    if len(request_sets) != len(local_sets):
+        differences.append(
+            f"exercise {position} set count request={len(request_sets)} local={len(local_sets)}"
+        )
+    return differences
 
 
 def _superset_ids_by_position(workout: TrueCoachWorkout) -> dict[int, int]:
