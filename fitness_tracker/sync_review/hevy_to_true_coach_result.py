@@ -91,6 +91,7 @@ class HevyToTrueCoachResultReviewService:
         """
         self._store = store
         self._output_root = output_root
+        self._planner = HevyToTrueCoachResultSyncPlanner()
 
     def write_review(
         self,
@@ -118,7 +119,7 @@ class HevyToTrueCoachResultReviewService:
             tracker_workout = (
                 uow.session.query(TrackerWorkout).filter_by(hevy_app_id=workout.id).one_or_none()
             )
-            plan = HevyToTrueCoachResultSyncPlanner().plan(workout, tracker_workout)
+            plan = self._planner.plan(workout, tracker_workout)
             decisions = (
                 _load_decisions(decisions_path)
                 if decisions_path is not None

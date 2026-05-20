@@ -16,6 +16,8 @@ from fitness_tracker.database.models.tracker import Workout as TrackerWorkout
 from fitness_tracker.database.models.true_coach import TrueCoachWorkout, TrueCoachWorkoutItem
 from fitness_tracker.sync.hevy_true_coach.utils import mapping as result_formatters
 
+PRESCRIBED_SETS_REPS_PATTERN = re.compile(r"\b(\d+)\s*x\s*(\d+)\b", flags=re.IGNORECASE)
+
 
 class HevyToTrueCoachResultSyncPlanner:
     """Build read-only Hevy to True Coach performed-result mapping plans."""
@@ -38,8 +40,7 @@ class HevyToTrueCoachResultSyncPlanner:
             workout.true_coach if isinstance(workout.true_coach, TrueCoachWorkout) else None
         )
         items = [
-            _plan_item(item, true_coach_workout, tracker_workout)
-            for item in sorted(workout.workout_items, key=lambda row: (row.index, row.id))
+            _plan_item(item, true_coach_workout, tracker_workout) for item in _sort_items(workout)
         ]
         return _plan(workout, true_coach_workout, items)
 
@@ -69,10 +70,10 @@ def _plan_item(
         "notes": item.notes,
         "superset_id": item.superset_id,
         "exercise": _hevy_exercise_to_dict(exercise),
-        "sets": [_set_to_dict(set_) for set_ in sorted(item.sets, key=lambda row: row.index)],
+        "sets": [_set_to_dict(set_) for set_ in _sort_sets(item)],
         "formatter": formatter_name if formatter_name in result_formatters else None,
         "proposed_result_text": _proposed_result_text(item, formatter_name),
-        "target": _target_to_dict(target),
+        "target": _target_to_dict(target) if target is not None else None,
         "candidates": [_target_to_dict(candidate) for candidate in candidates],
         "target_inferred_from_sets_reps": target_inferred_from_sets_reps,
         "warnings": warnings,
@@ -95,8 +96,10 @@ def _candidate_targets(
     if not candidates:
         candidates = _true_coach_candidate_targets(true_coach_workout, item, exercise)
     candidates = _sort_targets(candidates)
-    disambiguated = _targets_matching_sets_and_reps(item, candidates)
-    return disambiguated if len(disambiguated) == 1 else candidates
+    matching_sets_reps_candidates = _targets_matching_sets_and_reps(item, candidates)
+    if len(matching_sets_reps_candidates) == 1:
+        return matching_sets_reps_candidates
+    return candidates
 
 
 def _tracker_candidate_targets(
@@ -139,6 +142,14 @@ def _sort_targets(candidates: list[TrueCoachWorkoutItem]) -> list[TrueCoachWorko
     return sorted(candidates, key=lambda row: (row.position is None, row.position or 0, row.id))
 
 
+def _sort_items(workout: HevyAppWorkout) -> list[HevyAppWorkoutItem]:
+    return sorted(workout.workout_items, key=lambda row: (row.index, row.id))
+
+
+def _sort_sets(item: HevyAppWorkoutItem) -> list[HevyAppSets]:
+    return sorted(item.sets, key=lambda row: row.index)
+
+
 def _targets_matching_sets_and_reps(
     item: HevyAppWorkoutItem,
     candidates: list[TrueCoachWorkoutItem],
@@ -170,7 +181,7 @@ def _is_repeated_performed_exercise(item: HevyAppWorkoutItem) -> bool:
 
 
 def _performed_sets_reps_signature(item: HevyAppWorkoutItem) -> tuple[int, int] | None:
-    sets = sorted(item.sets, key=lambda row: row.index)
+    sets = _sort_sets(item)
     if not sets or any(set_.reps is None for set_ in sets):
         return None
     reps = {set_.reps for set_ in sets}
@@ -180,7 +191,7 @@ def _performed_sets_reps_signature(item: HevyAppWorkoutItem) -> tuple[int, int] 
 
 
 def _prescribed_sets_reps_signature(info: str) -> tuple[int, int] | None:
-    match = re.search(r"\b(\d+)\s*x\s*(\d+)\b", info, flags=re.IGNORECASE)
+    match = PRESCRIBED_SETS_REPS_PATTERN.search(info)
     if match is None:
         return None
     return (int(match.group(1)), int(match.group(2)))
@@ -233,7 +244,7 @@ def _proposed_result_text(item: HevyAppWorkoutItem, formatter_name: str | None) 
     if formatter_name not in result_formatters:
         return None
     formatter = result_formatters[formatter_name]
-    return formatter(cast(list[HevySet], sorted(item.sets, key=lambda row: row.index))).strip()
+    return formatter(cast(list[HevySet], _sort_sets(item))).strip()
 
 
 def _plan(
@@ -268,9 +279,7 @@ def _hevy_exercise_to_dict(exercise: HevyAppExercise | None) -> dict[str, Any] |
     }
 
 
-def _target_to_dict(item: TrueCoachWorkoutItem | None) -> dict[str, Any] | None:
-    if item is None:
-        return None
+def _target_to_dict(item: TrueCoachWorkoutItem) -> dict[str, Any]:
     return {
         "true_coach_workout_item_id": item.id,
         "workout_id": item.workout_id,
@@ -289,13 +298,7 @@ def _target_items_to_dict(
 ) -> list[dict[str, Any]]:
     if true_coach_workout is None:
         return []
-    sorted_items = _sort_targets(list(true_coach_workout.workout_items))
-    targets: list[dict[str, Any]] = []
-    for item in sorted_items:
-        target = _target_to_dict(item)
-        if target is not None:
-            targets.append(target)
-    return targets
+    return [_target_to_dict(item) for item in _sort_targets(list(true_coach_workout.workout_items))]
 
 
 def _set_to_dict(set_: HevyAppSets) -> dict[str, Any]:
