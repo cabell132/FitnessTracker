@@ -77,6 +77,7 @@ from fitness_tracker.sync_review import (
     TrueCoachToHevyReviewService,
     TrueCoachWorkoutBackfillReviewService,
     WorkoutBackfillApplyError,
+    WorkoutBackfillApplyResult,
     WorkoutBackfillInspectResult,
     WorkoutBackfillPipeline,
     WorkoutBackfillReviewError,
@@ -128,6 +129,10 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0911, PLR0912,
         return _workout_backfill_review(args)
     if args.command == "workout-backfill" and args.workout_backfill_command == "write-request":
         return _workout_backfill_write_request(args)
+    if args.command == "workout-backfill" and args.workout_backfill_command == "apply":
+        return _workout_backfill_apply(args)
+    if args.command == "workout-backfill" and args.workout_backfill_command == "apply-manual":
+        return _workout_backfill_apply_manual(args)
     if args.command == "workout-backfill" and args.workout_backfill_command == "inspect":
         return _workout_backfill_inspect(args)
     if args.command == "sync-review" and args.sync_review_command == "truecoach-to-hevy":
@@ -448,8 +453,16 @@ def _add_exercise_links_parser(subparsers: Any) -> None:
 def _add_workout_backfill_parser(subparsers: Any) -> None:
     workout_backfill = subparsers.add_parser("workout-backfill")
     workout_backfill_subparsers = workout_backfill.add_subparsers(dest="workout_backfill_command")
+    _add_workout_backfill_candidates_parser(workout_backfill_subparsers)
+    _add_workout_backfill_review_parser(workout_backfill_subparsers)
+    _add_workout_backfill_inspect_parser(workout_backfill_subparsers)
+    _add_workout_backfill_write_request_parser(workout_backfill_subparsers)
+    _add_workout_backfill_apply_parser(workout_backfill_subparsers)
+    _add_workout_backfill_apply_manual_parser(workout_backfill_subparsers)
 
-    candidates = workout_backfill_subparsers.add_parser("candidates")
+
+def _add_workout_backfill_candidates_parser(subparsers: Any) -> None:
+    candidates = subparsers.add_parser("candidates")
     candidates.add_argument("--db", help="SQLite database path. Prefer --database-url.")
     candidates.add_argument(
         "--database-url", help="SQLAlchemy database URL. Defaults to DATABASE_URL."
@@ -460,7 +473,9 @@ def _add_workout_backfill_parser(subparsers: Any) -> None:
         help="Report root. Defaults to reports.",
     )
 
-    review = workout_backfill_subparsers.add_parser("review")
+
+def _add_workout_backfill_review_parser(subparsers: Any) -> None:
+    review = subparsers.add_parser("review")
     review.add_argument("--workout-id", type=int, required=True)
     review.add_argument("--db", help="SQLite database path. Prefer --database-url.")
     review.add_argument("--database-url", help="SQLAlchemy database URL. Defaults to DATABASE_URL.")
@@ -473,12 +488,29 @@ def _add_workout_backfill_parser(subparsers: Any) -> None:
     review.add_argument("--preserve-decisions", action="store_true")
     review.add_argument("--reset-decisions", action="store_true")
 
-    inspect = workout_backfill_subparsers.add_parser("inspect")
+
+def _add_workout_backfill_inspect_parser(subparsers: Any) -> None:
+    inspect = subparsers.add_parser("inspect")
     inspect.add_argument("--review-dir", type=Path, required=True)
 
-    write_request = workout_backfill_subparsers.add_parser("write-request")
+
+def _add_workout_backfill_write_request_parser(subparsers: Any) -> None:
+    write_request = subparsers.add_parser("write-request")
     write_request.add_argument("--review-dir", type=Path, required=True)
     write_request.add_argument("--force", action="store_true")
+
+
+def _add_workout_backfill_apply_parser(subparsers: Any) -> None:
+    apply = subparsers.add_parser("apply")
+    apply.add_argument("--review-dir", type=Path, required=True)
+    apply.add_argument("--db", help="SQLite database path. Prefer --database-url.")
+    apply.add_argument("--database-url", help="SQLAlchemy database URL. Defaults to DATABASE_URL.")
+
+
+def _add_workout_backfill_apply_manual_parser(subparsers: Any) -> None:
+    apply_manual = subparsers.add_parser("apply-manual")
+    apply_manual.add_argument("--workout-id", type=int, required=True)
+    apply_manual.add_argument("--request-path", type=Path, required=True)
 
 
 def _add_sync_review_parser(  # noqa: PLR0915
@@ -1828,12 +1860,76 @@ def _workout_backfill_write_request(args: argparse.Namespace) -> int:
     )
     try:
         result = pipeline.write_request(args.review_dir, force=args.force)
-    except (OSError, TypeError, WorkoutBackfillApplyError, WorkoutBackfillReviewError) as exc:
+    except (
+        OSError,
+        TypeError,
+        HevyAppAPIError,
+        WorkoutBackfillApplyError,
+        WorkoutBackfillReviewError,
+    ) as exc:
         _emit(f"Error: {exc}")
         return 2
     _emit(f"Wrote Workout backfill request: {result.request_path}")
     _emit(f"Wrote Workout backfill request manifest: {result.manifest_path}")
     return 0
+
+
+def _workout_backfill_apply(args: argparse.Namespace) -> int:
+    pipeline = WorkoutBackfillPipeline(
+        store=Store(_engine_from_args(args)),
+        output_root=Path("reports"),
+    )
+    try:
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        result = pipeline.apply(
+            args.review_dir,
+            workout_writer=HevyWorkoutWriterAdapter(_hevy_client_from_config()),
+        )
+    except (
+        OSError,
+        TypeError,
+        HevyAppAPIError,
+        WorkoutBackfillApplyError,
+        WorkoutBackfillReviewError,
+    ) as exc:
+        _emit(f"Error: {exc}")
+        return 2
+    _emit_workout_backfill_apply_result(result)
+    return 0
+
+
+def _workout_backfill_apply_manual(args: argparse.Namespace) -> int:
+    pipeline = WorkoutBackfillPipeline(
+        store=Store(create_database_engine("sqlite:///:memory:")),
+        output_root=Path("reports"),
+    )
+    try:
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        result = pipeline.apply_manual_request(
+            args.request_path,
+            workout_id=args.workout_id,
+            workout_writer=HevyWorkoutWriterAdapter(_hevy_client_from_config()),
+        )
+    except (
+        OSError,
+        TypeError,
+        HevyAppAPIError,
+        WorkoutBackfillApplyError,
+        WorkoutBackfillReviewError,
+    ) as exc:
+        _emit(f"Error: {exc}")
+        return 2
+    _emit_workout_backfill_apply_result(result)
+    return 0
+
+
+def _emit_workout_backfill_apply_result(result: WorkoutBackfillApplyResult) -> None:
+    if result.action == "already_linked":
+        _emit(f"Hevy Workout already linked locally: {result.request_path}")
+    elif result.action == "repaired_existing_remote":
+        _emit(f"Linked existing remote Hevy Workout from request: {result.request_path}")
+    else:
+        _emit(f"Created Hevy Workout from request: {result.request_path}")
 
 
 def _workout_backfill_inspect(args: argparse.Namespace) -> int:
@@ -2068,7 +2164,7 @@ def _patch_down_regulate_sets(plan: dict[str, Any], *, duration_seconds: int) ->
         item["proposed_sets"] = [{"type": "normal", "duration_seconds": duration_seconds}]
 
 
-def _sync_apply_truecoach_workout_backfill(args: argparse.Namespace) -> int:  # noqa: PLR0915
+def _sync_apply_truecoach_workout_backfill(args: argparse.Namespace) -> int:
     decisions_path = Path(args.decisions) if args.decisions else None
     try:
         if args.manual_request:
@@ -2098,12 +2194,8 @@ def _sync_apply_truecoach_workout_backfill(args: argparse.Namespace) -> int:  # 
         return 2
     if args.dry_run:
         _emit(f"Wrote Hevy Workout request dry-run: {result.request_path}")
-    elif result.action == "already_linked":
-        _emit(f"Hevy Workout already linked locally: {result.request_path}")
-    elif result.action == "repaired_existing_remote":
-        _emit(f"Linked existing remote Hevy Workout from request: {result.request_path}")
     else:
-        _emit(f"Created Hevy Workout from request: {result.request_path}")
+        _emit_workout_backfill_apply_result(result)
     return 0
 
 
