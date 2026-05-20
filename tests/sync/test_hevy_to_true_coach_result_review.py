@@ -32,6 +32,7 @@ from fitness_tracker.database.models.true_coach import (
 from fitness_tracker.sync_review import (
     HevyToTrueCoachResultApplyError,
     HevyToTrueCoachResultReviewService,
+    HevyToTrueCoachResultSyncWorkflow,
 )
 from fitness_tracker.sync_review.hevy_to_true_coach_result_planner import (
     HevyToTrueCoachResultSyncPlanner,
@@ -1045,6 +1046,133 @@ def test_hevy_to_truecoach_result_apply_sends_partial_reviewed_updates(
     assert applied.unresolved_hevy_workout_item_ids == [4]
 
 
+def test_hevy_to_truecoach_result_sync_workflow_applies_strict_safe_workout(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_result_review_workout(store)
+    _keep_only_bench_result_item(store)
+    writer = _RecordingTrueCoachWorkoutItemWriter()
+    workflow = HevyToTrueCoachResultSyncWorkflow(store=store, output_root=tmp_path / "reports")
+
+    result = workflow.sync_one("hevy-result-1", workout_item_writer=writer)
+
+    assert result.status == "applied"
+    assert [item_id for item_id, _ in writer.update_requests] == [9101]
+    assert result.apply_result is not None
+    assert result.apply_result.action == "applied"
+    assert result.review_bundle.directory.exists()
+
+
+def test_hevy_to_truecoach_result_sync_workflow_requires_review_for_plan_warning(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_result_review_workout(store)
+    _replace_row_work_with_repeated_warmup_and_main(store, ambiguous=False)
+    _delete_hevy_result_items_by_index(store, {1, 3})
+    writer = _RecordingTrueCoachWorkoutItemWriter()
+    workflow = HevyToTrueCoachResultSyncWorkflow(store=store, output_root=tmp_path / "reports")
+
+    result = workflow.sync_one("hevy-result-1", workout_item_writer=writer)
+
+    assert result.status == "review_required"
+    assert result.apply_result is None
+    assert result.reasons == ["plan_warnings", "item_warnings"]
+    assert result.plan_warnings == [
+        "Candidate True Coach target found, but the performed Hevy item is not linked",
+        "Candidate True Coach target found, but the performed Hevy item is not linked",
+    ]
+    assert writer.update_requests == []
+    assert result.review_bundle.decision_validation_path.exists()
+
+
+def test_hevy_to_truecoach_result_sync_workflow_requires_review_for_item_blocker(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_result_review_workout(store)
+    writer = _RecordingTrueCoachWorkoutItemWriter()
+    workflow = HevyToTrueCoachResultSyncWorkflow(store=store, output_root=tmp_path / "reports")
+
+    result = workflow.sync_one("hevy-result-1", workout_item_writer=writer)
+
+    assert result.status == "review_required"
+    assert "item_blockers" in result.reasons
+    assert any("Unsupported Hevy exercise type" in blocker for blocker in result.item_blockers)
+    assert result.apply_result is None
+    assert writer.update_requests == []
+    assert result.review_bundle.plan_path.exists()
+
+
+def test_hevy_to_truecoach_result_sync_workflow_requires_review_for_decision_blocker(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_result_review_workout(store)
+    _delete_hevy_result_items_by_index(store, {1, 2})
+    _link_hevy_result_item_to_true_coach(store, hevy_item_index=3, true_coach_item_id=9105)
+    decisions_path = tmp_path / "decisions.json"
+    decisions_path.write_text(
+        json.dumps(
+            {
+                "hevy_workout_id": "hevy-result-1",
+                "allow_partial_apply": False,
+                "approve_completion": False,
+                "items": [
+                    {"hevy_workout_item_id": 1, "action": "sync"},
+                    {
+                        "hevy_workout_item_id": 4,
+                        "action": "sync",
+                        "override_true_coach_workout_item_id": 9101,
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    writer = _RecordingTrueCoachWorkoutItemWriter()
+    workflow = HevyToTrueCoachResultSyncWorkflow(store=store, output_root=tmp_path / "reports")
+
+    result = workflow.sync_one(
+        "hevy-result-1",
+        workout_item_writer=writer,
+        decisions_path=decisions_path,
+    )
+
+    assert result.status == "review_required"
+    assert result.reasons == ["decision_blockers"]
+    assert any(
+        "receives multiple performed Hevy items" in blocker for blocker in result.decision_blockers
+    )
+    assert writer.update_requests == []
+
+
+def test_hevy_to_truecoach_result_sync_workflow_raises_apply_failure(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_result_review_workout(store)
+    _keep_only_bench_result_item(store)
+    workflow = HevyToTrueCoachResultSyncWorkflow(store=store, output_root=tmp_path / "reports")
+    writer = _FailingTrueCoachWorkoutItemWriter()
+
+    with pytest.raises(TrueCoachAPIError, match="rate limited"):
+        workflow.sync_one("hevy-result-1", workout_item_writer=writer)
+
+    assert [item_id for item_id, _ in writer.update_requests] == [9101]
+
+
 def _write_review_with_decisions(
     tmp_path: Path,
     db_path: Path,
@@ -1118,6 +1246,13 @@ class _RecordingTrueCoachWorkoutItemWriter:
 
     def mark_workout_completed(self, workout_id: int) -> None:
         self.completed_workout_ids.append(workout_id)
+
+
+class _FailingTrueCoachWorkoutItemWriter(_RecordingTrueCoachWorkoutItemWriter):
+    def update_workout_item(self, item_id: int, item: PutWorkoutItemRequest) -> None:
+        self.update_requests.append((item_id, item))
+        msg = "rate limited"
+        raise TrueCoachAPIError(msg, status_code=429, url=f"workout_items/{item_id}")
 
 
 class _FakeSecret:
@@ -1294,6 +1429,60 @@ def _replace_row_work_with_repeated_warmup_and_main(store: Store, *, ambiguous: 
             ),
         ):
             uow.session.add(row)
+
+
+def _keep_only_bench_result_item(store: Store) -> None:
+    _delete_hevy_result_items_by_index(store, {1, 2, 3})
+
+
+def _delete_hevy_result_items_by_index(store: Store, indexes: set[int]) -> None:
+    with store.unit_of_work() as uow:
+        delete_ids = [
+            item.id
+            for item in uow.session.query(HevyAppWorkoutItem)
+            .filter(HevyAppWorkoutItem.index.in_(indexes))
+            .all()
+        ]
+        for item in (
+            uow.session.query(HevyAppWorkoutItem)
+            .filter(HevyAppWorkoutItem.id.in_(delete_ids))
+            .all()
+        ):
+            for set_ in list(item.sets):
+                uow.session.delete(set_)
+            uow.session.delete(item)
+        for tracker_item in (
+            uow.session.query(TrackerWorkoutItem)
+            .filter(TrackerWorkoutItem.hevy_app_id.in_(delete_ids))
+            .all()
+        ):
+            uow.session.delete(tracker_item)
+
+
+def _link_hevy_result_item_to_true_coach(
+    store: Store,
+    *,
+    hevy_item_index: int,
+    true_coach_item_id: int,
+) -> None:
+    with store.unit_of_work() as uow:
+        hevy_item = uow.session.query(HevyAppWorkoutItem).filter_by(index=hevy_item_index).one()
+        tracker_workout = (
+            uow.session.query(TrackerWorkout).filter_by(hevy_app_id="hevy-result-1").one()
+        )
+        tracker_exercise = (
+            uow.session.query(TrackerExercise).filter_by(hevy_app_id=hevy_item.exercise_id).one()
+        )
+        uow.session.add(
+            TrackerWorkoutItem(
+                workout_id=tracker_workout.id,
+                position=hevy_item.index + 1,
+                exercise_id=tracker_exercise.id,
+                hevy_app_id=hevy_item.id,
+                true_coach_id=true_coach_item_id,
+                rest=90,
+            )
+        )
 
 
 def _seed_result_review_workout(store: Store) -> None:
