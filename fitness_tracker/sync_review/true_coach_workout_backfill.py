@@ -128,6 +128,30 @@ class WorkoutBackfillDiffResult:
 
 
 @dataclass(frozen=True)
+class WorkoutBackfillLinkWorkoutCommand:
+    """Manifest-verified artifacts for linking an existing remote Hevy Workout."""
+
+    review_dir: Path
+    review_manifest_path: Path
+    request_path: Path
+    request_manifest_path: Path
+    workout_id: int
+    request_body: PostWorkoutsRequestBody
+    plan: dict[str, Any]
+    decisions: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class WorkoutBackfillLinkWorkoutResult:
+    """Result of linking an existing remote Hevy Workout from artifacts."""
+
+    review_dir: Path
+    request_path: Path
+    request_body: PostWorkoutsRequestBody
+    action: str
+
+
+@dataclass(frozen=True)
 class WorkoutBackfillPipelinePaths:
     """Artifact paths for one pipeline review directory."""
 
@@ -626,6 +650,41 @@ class WorkoutBackfillPipeline:
             workout_writer=workout_writer,
         )
 
+    def link_workout(
+        self,
+        review_dir: Path,
+        *,
+        workout_writer: HevyWorkoutWriter,
+    ) -> WorkoutBackfillLinkWorkoutResult:
+        """Link an existing remote Hevy Workout using verified review artifacts.
+
+        Args:
+            review_dir (Path): Existing review directory with request artifacts.
+            workout_writer (HevyWorkoutWriter): Workout reader/writer port.
+
+        Returns:
+            WorkoutBackfillLinkWorkoutResult: Link result and consumed request path.
+        """
+        command = _load_link_workout_command(review_dir)
+        result = self._apply_service.repair_local_links(
+            workout_id=command.workout_id,
+            result=WorkoutBackfillApplyResult(
+                review_bundle=None,
+                request_path=command.request_path,
+                request_body=command.request_body,
+                action="link_workout",
+            ),
+            workout_writer=workout_writer,
+            plan=command.plan,
+            decisions=command.decisions,
+        )
+        return WorkoutBackfillLinkWorkoutResult(
+            review_dir=command.review_dir,
+            request_path=command.request_path,
+            request_body=result.request_body,
+            action="linked_existing_workout",
+        )
+
     def inspect(self, review_dir: Path) -> WorkoutBackfillInspectResult:
         """Load review status through the review manifest.
 
@@ -873,6 +932,38 @@ def _validate_pipeline_request_manifest(
     _validate_pipeline_request_manifest_hashes(paths, manifest, manifest_path)
 
 
+def _load_link_workout_command(review_dir: Path) -> WorkoutBackfillLinkWorkoutCommand:
+    review_manifest_path = review_dir / PIPELINE_MANIFEST_FILENAME
+    request_manifest_path = review_dir / PIPELINE_REQUEST_MANIFEST_FILENAME
+    manifest = read_json_object(review_manifest_path)
+    _validate_pipeline_review_manifest(manifest, review_manifest_path)
+    paths = _pipeline_request_paths(review_dir, manifest)
+    request_manifest = read_json_object(request_manifest_path)
+    _validate_pipeline_request_manifest(paths, request_manifest, request_manifest_path)
+    plan = read_json_object(paths.plan)
+    decisions = read_json_object(paths.decisions)
+    decision_validation = read_json_object(paths.decision_validation)
+    request_body = _load_pipeline_request(paths.request)
+    _validate_apply_request(
+        WorkoutBackfillApplyValidationContext(
+            plan=plan,
+            decision_validation=decision_validation,
+            request_body=request_body,
+            decisions=decisions,
+        )
+    )
+    return WorkoutBackfillLinkWorkoutCommand(
+        review_dir=review_dir,
+        review_manifest_path=review_manifest_path,
+        request_path=paths.request,
+        request_manifest_path=request_manifest_path,
+        workout_id=manifest["workout_id"],
+        request_body=request_body,
+        plan=plan,
+        decisions=decisions,
+    )
+
+
 def _validate_pipeline_request_manifest_header(
     manifest: dict[str, Any],
     manifest_path: Path,
@@ -1011,15 +1102,26 @@ def _pipeline_request_manifest(
         "workflow": PIPELINE_REQUEST_WORKFLOW,
         "schema_version": PIPELINE_REQUEST_SCHEMA_VERSION,
         "generated_at": datetime.now(UTC).isoformat(),
-        "artifacts": _expected_pipeline_request_artifacts(paths),
-        "sha256": _pipeline_request_hashes(paths),
+        "artifacts": _pipeline_request_artifacts(paths),
+        "sha256": {
+            name: _sha256_file(path)
+            for name, path in _pipeline_request_artifact_paths(paths).items()
+        },
     }
 
 
-def _pipeline_request_hashes(paths: WorkoutBackfillPipelineRequestPaths) -> dict[str, str]:
+def _pipeline_request_artifacts(paths: WorkoutBackfillPipelineRequestPaths) -> dict[str, str]:
+    return {name: path.name for name, path in _pipeline_request_artifact_paths(paths).items()}
+
+
+def _pipeline_request_artifact_paths(
+    paths: WorkoutBackfillPipelineRequestPaths,
+) -> dict[str, Path]:
     return {
-        artifact_name: _sha256_file(artifact_path)
-        for artifact_name, artifact_path in _expected_pipeline_request_paths(paths).items()
+        "plan": paths.plan,
+        "decisions": paths.decisions,
+        "decision_validation": paths.decision_validation,
+        "request": paths.request,
     }
 
 

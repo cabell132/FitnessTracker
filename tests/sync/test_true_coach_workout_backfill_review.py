@@ -602,6 +602,104 @@ def test_workout_backfill_pipeline_apply_rejects_stale_inputs_before_mutation(
         assert tracker_workout.hevy_app_id is None
 
 
+def test_workout_backfill_pipeline_link_workout_links_existing_remote_from_artifacts(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    pipeline = WorkoutBackfillPipeline(store=store, output_root=tmp_path / "reports")
+    review = pipeline.review(455045484)
+    _write_requestable_pipeline_decisions(review.decisions_path)
+    pipeline.write_request(review.directory)
+    writer = _RecordingWorkoutWriter(
+        existing_workout=_hevy_workout_response(workout_id="hevy-existing-455045484").workout[0],
+    )
+
+    result = pipeline.link_workout(review.directory, workout_writer=writer)
+
+    assert result.action == "linked_existing_workout"
+    assert writer.requests == []
+    assert writer.marker_searches == [455045484]
+    assert result.request_path == review.directory / "hevy-workout-request.json"
+    with store.unit_of_work() as uow:
+        tracker_workout = uow.tracker.get_workout(true_coach_id=455045484)
+        assert tracker_workout is not None
+        assert tracker_workout.hevy_app_id == "hevy-existing-455045484"
+
+
+def test_workout_backfill_pipeline_link_workout_rejects_stale_request_artifact(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    pipeline = WorkoutBackfillPipeline(store=store, output_root=tmp_path / "reports")
+    review = pipeline.review(455045484)
+    _write_requestable_pipeline_decisions(review.decisions_path)
+    pipeline.write_request(review.directory)
+    request_path = review.directory / "hevy-workout-request.json"
+    request = json.loads(request_path.read_text(encoding="utf-8"))
+    request["workout"]["title"] = "Edited after manifest"
+    request_path.write_text(json.dumps(request) + "\n", encoding="utf-8")
+    writer = _RecordingWorkoutWriter(
+        existing_workout=_hevy_workout_response(workout_id="hevy-existing-455045484").workout[0],
+    )
+
+    with pytest.raises(WorkoutBackfillReviewError, match="hash mismatch"):
+        pipeline.link_workout(review.directory, workout_writer=writer)
+
+    assert writer.requests == []
+    assert writer.marker_searches == []
+
+
+def test_workout_backfill_pipeline_link_workout_rejects_stale_decisions_artifact(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    pipeline = WorkoutBackfillPipeline(store=store, output_root=tmp_path / "reports")
+    review = pipeline.review(455045484)
+    _write_requestable_pipeline_decisions(review.decisions_path)
+    pipeline.write_request(review.directory)
+    decisions = json.loads(review.decisions_path.read_text(encoding="utf-8"))
+    decisions["workout"]["selected_start_time"] = "2024-04-10T15:00:00+00:00"
+    review.decisions_path.write_text(json.dumps(decisions) + "\n", encoding="utf-8")
+    writer = _RecordingWorkoutWriter(
+        existing_workout=_hevy_workout_response(workout_id="hevy-existing-455045484").workout[0],
+    )
+
+    with pytest.raises(WorkoutBackfillReviewError, match="Request artifact is stale"):
+        pipeline.link_workout(review.directory, workout_writer=writer)
+
+    assert writer.requests == []
+    assert writer.marker_searches == []
+
+
+def test_workout_backfill_pipeline_link_workout_rejects_missing_remote_marker_or_link(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    pipeline = WorkoutBackfillPipeline(store=store, output_root=tmp_path / "reports")
+    review = pipeline.review(455045484)
+    _write_requestable_pipeline_decisions(review.decisions_path)
+    pipeline.write_request(review.directory)
+    writer = _RecordingWorkoutWriter()
+
+    with pytest.raises(WorkoutBackfillApplyError, match="No linked or marked remote Hevy Workout"):
+        pipeline.link_workout(review.directory, workout_writer=writer)
+
+    assert writer.requests == []
+    assert writer.marker_searches == [455045484]
+
+
 def test_workout_backfill_review_and_inspect_cli_smoke(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -781,6 +879,45 @@ def test_workout_backfill_apply_and_apply_manual_cli_smoke(
     assert manual_exit_code == 0
     assert f"Created Hevy Workout from request: {request.request_path}" in manual_output
     assert len(fake_client.workouts.created_requests) == 2
+
+
+def test_workout_backfill_link_workout_cli_smoke(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    pipeline = WorkoutBackfillPipeline(store=store, output_root=tmp_path / "reports")
+    review = pipeline.review(455045484)
+    _write_requestable_pipeline_decisions(review.decisions_path)
+    pipeline.write_request(review.directory)
+    writer = _RecordingWorkoutWriter(
+        existing_workout=_hevy_workout_response(workout_id="hevy-existing-455045484").workout[0],
+    )
+    monkeypatch.setattr(cli, "_hevy_client_from_config", lambda: object())
+    monkeypatch.setattr(cli, "HevyWorkoutWriterAdapter", lambda _client: writer)
+
+    exit_code = main(
+        [
+            "workout-backfill",
+            "link-workout",
+            "--review-dir",
+            str(review.directory),
+            "--database-url",
+            f"sqlite:///{db_path}",
+        ]
+    )
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert (
+        f"Linked existing Workout from request: {review.directory / 'hevy-workout-request.json'}"
+        in output
+    )
+    assert writer.requests == []
 
 
 def test_workout_backfill_review_reports_missing_hevy_template_mapping(

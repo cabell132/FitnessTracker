@@ -140,6 +140,8 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0911, PLR0912,
         return _workout_backfill_apply(args)
     if args.command == "workout-backfill" and args.workout_backfill_command == "apply-manual":
         return _workout_backfill_apply_manual(args)
+    if args.command == "workout-backfill" and args.workout_backfill_command == "link-workout":
+        return _workout_backfill_link_workout(args)
     if args.command == "workout-backfill" and args.workout_backfill_command == "inspect":
         return _workout_backfill_inspect(args)
     if args.command == "workout-backfill" and args.workout_backfill_command == "diff":
@@ -469,6 +471,7 @@ def _add_workout_backfill_parser(subparsers: Any) -> None:
     _add_workout_backfill_diff_parser(workout_backfill_subparsers)
     _add_workout_backfill_apply_parser(workout_backfill_subparsers)
     _add_workout_backfill_apply_manual_parser(workout_backfill_subparsers)
+    _add_workout_backfill_link_workout_parser(workout_backfill_subparsers)
 
 
 def _add_workout_backfill_candidates_parser(subparsers: Any) -> None:
@@ -508,6 +511,15 @@ def _add_workout_backfill_write_request_parser(subparsers: Any) -> None:
     write_request = subparsers.add_parser("write-request")
     write_request.add_argument("--review-dir", type=Path, required=True)
     write_request.add_argument("--force", action="store_true")
+
+
+def _add_workout_backfill_link_workout_parser(subparsers: Any) -> None:
+    link_workout = subparsers.add_parser("link-workout")
+    link_workout.add_argument("--review-dir", type=Path, required=True)
+    link_workout.add_argument("--db", help="SQLite database path. Prefer --database-url.")
+    link_workout.add_argument(
+        "--database-url", help="SQLAlchemy database URL. Defaults to DATABASE_URL."
+    )
 
 
 def _add_workout_backfill_diff_parser(workout_backfill_subparsers: Any) -> None:
@@ -1912,6 +1924,20 @@ def _emit_workout_backfill_apply_result(result: WorkoutBackfillApplyResult) -> N
         _emit(f"Linked existing remote Hevy Workout from request: {result.request_path}")
     else:
         _emit(f"Created Hevy Workout from request: {result.request_path}")
+
+
+def _workout_backfill_link_workout(args: argparse.Namespace) -> int:
+    pipeline = _workout_backfill_pipeline_from_args(args)
+    try:
+        result = pipeline.link_workout(
+            args.review_dir,
+            workout_writer=_hevy_workout_writer_from_config(),
+        )
+    except WORKOUT_BACKFILL_CLI_ERRORS as exc:
+        _emit(f"Error: {exc}")
+        return 2
+    _emit(f"Linked existing Workout from request: {result.request_path}")
+    return 0
 
 
 def _workout_backfill_inspect(args: argparse.Namespace) -> int:
