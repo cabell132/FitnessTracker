@@ -36,6 +36,9 @@ from fitness_tracker.sync_review import (
 from fitness_tracker.sync_review.hevy_to_true_coach_result_planner import (
     HevyToTrueCoachResultSyncPlanner,
 )
+from fitness_tracker.sync_review.hevy_to_true_coach_result_decisions import (
+    HevyToTrueCoachResultDecisionBuilder,
+)
 
 
 def test_hevy_to_truecoach_result_sync_planner_builds_read_only_mapping_plan(
@@ -63,6 +66,48 @@ def test_hevy_to_truecoach_result_sync_planner_builds_read_only_mapping_plan(
     assert [
         candidate["true_coach_workout_item_id"] for candidate in plan["items"][2]["candidates"]
     ] == [9103, 9104]
+
+
+def test_hevy_to_truecoach_result_decision_builder_prepares_review_and_apply_payloads(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_result_review_workout(store)
+    plan = _result_review_plan(store)
+    builder = HevyToTrueCoachResultDecisionBuilder()
+    decisions = builder.decisions_template("hevy-result-1", plan["items"])
+    decisions["allow_partial_apply"] = True
+    decisions["approve_completion"] = True
+    decisions["items"][2]["override_true_coach_workout_item_id"] = 9103
+
+    validation = builder.decision_validation(plan, decisions)
+    builder.validate_apply_request(validation, decisions)
+    request = builder.build_true_coach_update_request(plan, decisions)
+    report = builder.apply_report(plan, decisions, request)
+
+    assert any("Unsupported Hevy exercise type" in blocker for blocker in validation["blockers"])
+    assert request["mark_workout_completed"] is False
+    assert [update["body"]["workout_item"]["id"] for update in request["update_workout_items"]] == [
+        9101,
+        9103,
+    ]
+    assert report == {
+        "updated_true_coach_workout_item_ids": [9101, 9103],
+        "omitted_hevy_workout_item_ids": [],
+        "unresolved_hevy_workout_item_ids": [2, 4],
+        "completion_status": "blocked",
+    }
+
+
+def _result_review_plan(store: Store) -> dict[str, object]:
+    with store.unit_of_work() as uow:
+        workout = uow.hevy.get_workout(id="hevy-result-1")
+        tracker_workout = (
+            uow.session.query(TrackerWorkout).filter_by(hevy_app_id="hevy-result-1").one()
+        )
+        return HevyToTrueCoachResultSyncPlanner().plan(workout, tracker_workout)
 
 
 def test_hevy_to_truecoach_result_review_cli_writes_read_only_artifacts(  # noqa: PLR0915
