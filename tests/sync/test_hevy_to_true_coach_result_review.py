@@ -33,6 +33,36 @@ from fitness_tracker.sync_review import (
     HevyToTrueCoachResultApplyError,
     HevyToTrueCoachResultReviewService,
 )
+from fitness_tracker.sync_review.hevy_to_true_coach_result_planner import (
+    HevyToTrueCoachResultSyncPlanner,
+)
+
+
+def test_hevy_to_truecoach_result_sync_planner_builds_read_only_mapping_plan(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_result_review_workout(store)
+
+    with store.unit_of_work() as uow:
+        workout = uow.hevy.get_workout(id="hevy-result-1")
+        tracker_workout = (
+            uow.session.query(TrackerWorkout).filter_by(hevy_app_id="hevy-result-1").one()
+        )
+
+        plan = HevyToTrueCoachResultSyncPlanner().plan(workout, tracker_workout)
+
+    assert plan["workout"]["hevy_workout_id"] == "hevy-result-1"
+    assert plan["target_items"][0]["true_coach_workout_item_id"] == 9101
+    assert plan["items"][0]["proposed_result_text"] == "8 x 80.0 kg\n7 x 80.0 kg"
+    assert plan["items"][2]["blockers"] == [
+        "Ambiguous True Coach target for unlinked performed Hevy item: 2 candidates"
+    ]
+    assert [
+        candidate["true_coach_workout_item_id"] for candidate in plan["items"][2]["candidates"]
+    ] == [9103, 9104]
 
 
 def test_hevy_to_truecoach_result_review_cli_writes_read_only_artifacts(  # noqa: PLR0915
