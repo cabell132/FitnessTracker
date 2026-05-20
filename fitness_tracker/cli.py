@@ -78,7 +78,10 @@ from fitness_tracker.sync_review import (
     TrueCoachWorkoutBackfillDiscoveryService,
     TrueCoachWorkoutBackfillReviewService,
     WorkoutBackfillApplyError,
+    WorkoutBackfillInspectResult,
+    WorkoutBackfillPipeline,
     WorkoutBackfillReviewError,
+    WorkoutBackfillReviewOptions,
 )
 from fitness_tracker.sync_review.true_coach_to_hevy import ApplyResult, _build_hevy_routine_request
 
@@ -120,6 +123,10 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0911, PLR0912,
         return _truecoach_workout_items(args)
     if args.command == "exercise-links" and args.exercise_links_command == "set":
         return _set_exercise_link(args)
+    if args.command == "workout-backfill" and args.workout_backfill_command == "review":
+        return _workout_backfill_review(args)
+    if args.command == "workout-backfill" and args.workout_backfill_command == "inspect":
+        return _workout_backfill_inspect(args)
     if args.command == "sync-review" and args.sync_review_command == "truecoach-to-hevy":
         return _sync_review_truecoach_to_hevy(args)
     if args.command == "sync-review" and args.sync_review_command == "hevy-to-truecoach-results":
@@ -167,6 +174,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_hevy_parser(subparsers)
     _add_truecoach_parser(subparsers)
     _add_exercise_links_parser(subparsers)
+    _add_workout_backfill_parser(subparsers)
     _add_sync_review_parser(subparsers)
     _add_sync_apply_parser(subparsers)
     return parser
@@ -432,6 +440,27 @@ def _add_exercise_links_parser(subparsers: Any) -> None:
     set_link.add_argument(
         "--database-url", help="SQLAlchemy database URL. Defaults to DATABASE_URL."
     )
+
+
+def _add_workout_backfill_parser(subparsers: Any) -> None:
+    workout_backfill = subparsers.add_parser("workout-backfill")
+    workout_backfill_subparsers = workout_backfill.add_subparsers(dest="workout_backfill_command")
+
+    review = workout_backfill_subparsers.add_parser("review")
+    review.add_argument("--workout-id", type=int, required=True)
+    review.add_argument("--db", help="SQLite database path. Prefer --database-url.")
+    review.add_argument("--database-url", help="SQLAlchemy database URL. Defaults to DATABASE_URL.")
+    review.add_argument(
+        "--output-dir",
+        default="reports",
+        help="Report root. Defaults to reports.",
+    )
+    review.add_argument("--force", action="store_true")
+    review.add_argument("--preserve-decisions", action="store_true")
+    review.add_argument("--reset-decisions", action="store_true")
+
+    inspect = workout_backfill_subparsers.add_parser("inspect")
+    inspect.add_argument("--review-dir", type=Path, required=True)
 
 
 def _add_sync_review_parser(  # noqa: PLR0915
@@ -1747,6 +1776,71 @@ def _sync_review_truecoach_workout_backfill_candidates(args: argparse.Namespace)
     bundle = service.write_report()
     _emit(f"Wrote backfill candidate report: {bundle.report_path}")
     return 0
+
+
+def _workout_backfill_review(args: argparse.Namespace) -> int:
+    pipeline = WorkoutBackfillPipeline(
+        store=Store(_engine_from_args(args)),
+        output_root=Path(args.output_dir),
+    )
+    try:
+        review = pipeline.review(
+            args.workout_id,
+            WorkoutBackfillReviewOptions(
+                force=args.force,
+                preserve_decisions=args.preserve_decisions,
+                reset_decisions=args.reset_decisions,
+            ),
+        )
+    except WorkoutBackfillReviewError as exc:
+        _emit(f"Error: {exc}")
+        return 2
+    _emit(f"Wrote Workout backfill review: {review.directory}")
+    return 0
+
+
+def _workout_backfill_inspect(args: argparse.Namespace) -> int:
+    pipeline = WorkoutBackfillPipeline(
+        store=Store(create_database_engine("sqlite:///:memory:")),
+        output_root=Path("reports"),
+    )
+    try:
+        result = pipeline.inspect(args.review_dir)
+    except (OSError, TypeError, WorkoutBackfillReviewError) as exc:
+        _emit(f"Error: {exc}")
+        return 2
+    _emit_workout_backfill_inspect_result(result)
+    return 0
+
+
+def _emit_workout_backfill_inspect_result(result: WorkoutBackfillInspectResult) -> None:
+    plan = result.plan
+    workout = plan.get("workout", {})
+    _emit(f"review_dir: {result.review_dir}")
+    _emit(
+        "workout: "
+        f"{workout.get('id')} | {workout.get('title')} | due={workout.get('due')} | "
+        f"tracker={workout.get('tracker_workout_id')} | hevy={workout.get('tracker_hevy_app_id')}"
+    )
+    _emit(f"request_status: {result.manifest.get('request_status', 'unknown')}")
+    _emit(f"blockers: {plan.get('blockers', [])}")
+    _emit(f"warnings: {plan.get('warnings', [])}")
+    _emit(f"decision_blockers: {result.decision_validation.get('blockers', [])}")
+    _emit(f"decision_warnings: {result.decision_validation.get('warnings', [])}")
+    _emit("plan_items:")
+    for item in plan.get("items", []):
+        template = item.get("selected_hevy_template") or {}
+        _emit(
+            f"{item.get('position')}. tc_item={item.get('source_id')} "
+            f"tracker_item={item.get('tracker_workout_item_id')} "
+            f"superset={item.get('superset_id')} template={template.get('id')} "
+            f"sets={len(item.get('sets') or [])} notes={bool(item.get('notes'))} "
+            f"name={item.get('name')!r}"
+        )
+        for warning in item.get("warnings", []):
+            _emit(f"  warning: {warning}")
+        for blocker in item.get("blockers", []):
+            _emit(f"  blocker: {blocker}")
 
 
 def _sync_review_truecoach_workout_backfill(args: argparse.Namespace) -> int:

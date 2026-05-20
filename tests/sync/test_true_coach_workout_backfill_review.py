@@ -32,6 +32,9 @@ from fitness_tracker.database.models.tracker import (
 from fitness_tracker.database.models.true_coach import TrueCoachWorkout, TrueCoachWorkoutItem
 from fitness_tracker.sync_review.true_coach_workout_backfill import (
     WorkoutBackfillApplyError,
+    WorkoutBackfillPipeline,
+    WorkoutBackfillReviewError,
+    WorkoutBackfillReviewOptions,
     TrueCoachWorkoutBackfillReviewService,
 )
 from fitness_tracker.sync_review.workout_backfill_performed_work import (
@@ -195,6 +198,165 @@ def test_workout_backfill_review_cli_writes_deterministic_bundle_for_455045484(
     assert "Draft Hevy Workout request: hevy-workout-request.json" in report
     assert "Athlete comment: 80kg x 8, 80kg x 8, 80kg x 8" in report
     assert "Blockers: none" in report
+
+
+def test_workout_backfill_pipeline_review_writes_manifest_layout_without_request(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    pipeline = WorkoutBackfillPipeline(store=store, output_root=tmp_path / "reports")
+
+    result = pipeline.review(455045484)
+
+    review_dir = tmp_path / "reports" / "workout-backfill" / "455045484"
+    manifest = json.loads((review_dir / "review-manifest.json").read_text(encoding="utf-8"))
+    assert result.directory == review_dir
+    assert manifest == {
+        "version": 1,
+        "kind": "workout-backfill-review",
+        "workout_id": 455045484,
+        "artifacts": {
+            "plan": "plan.json",
+            "decisions": "decisions.json",
+            "decision_validation": "decision-validation.json",
+            "apple_health_evidence": "apple-health-evidence.json",
+            "report": "report.md",
+        },
+        "request_status": "not-written",
+    }
+    assert (review_dir / "plan.json").exists()
+    assert (review_dir / "decisions.json").exists()
+    assert (review_dir / "decision-validation.json").exists()
+    assert (review_dir / "apple-health-evidence.json").exists()
+    assert (review_dir / "report.md").exists()
+    assert not (review_dir / "hevy-workout-request.json").exists()
+    assert not (review_dir / "request-manifest.json").exists()
+
+
+def test_workout_backfill_pipeline_review_requires_force_for_existing_directory(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    pipeline = WorkoutBackfillPipeline(store=store, output_root=tmp_path / "reports")
+
+    pipeline.review(455045484)
+
+    with pytest.raises(WorkoutBackfillReviewError, match="already exists"):
+        pipeline.review(455045484)
+
+
+def test_workout_backfill_pipeline_force_requires_decision_strategy(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    pipeline = WorkoutBackfillPipeline(store=store, output_root=tmp_path / "reports")
+    review = pipeline.review(455045484)
+
+    with pytest.raises(WorkoutBackfillReviewError, match="preserve-decisions"):
+        pipeline.review(455045484, WorkoutBackfillReviewOptions(force=True))
+
+    review.decisions_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "workout": {
+                    "id": 999,
+                    "selected_start_time": None,
+                    "selected_end_time": None,
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    preserved = pipeline.review(
+        455045484,
+        WorkoutBackfillReviewOptions(force=True, preserve_decisions=True),
+    )
+    decisions = json.loads(preserved.decisions_path.read_text(encoding="utf-8"))
+    validation = json.loads(preserved.decision_validation_path.read_text(encoding="utf-8"))
+
+    assert decisions["workout"]["id"] == 999
+    assert validation["blockers"] == [
+        "Decision workout id must match True Coach Workout 455045484",
+        "Missing required decision: selected Workout timestamps",
+    ]
+
+
+def test_workout_backfill_pipeline_inspect_loads_artifacts_through_manifest(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    pipeline = WorkoutBackfillPipeline(store=store, output_root=tmp_path / "reports")
+    review = pipeline.review(455045484)
+    alternate_plan_path = review.directory / "renamed-plan.json"
+    review.plan_path.rename(alternate_plan_path)
+    manifest = json.loads(review.manifest_path.read_text(encoding="utf-8"))
+    manifest["artifacts"]["plan"] = alternate_plan_path.name
+    review.manifest_path.write_text(json.dumps(manifest) + "\n", encoding="utf-8")
+
+    result = pipeline.inspect(review.directory)
+
+    assert result.review_dir == review.directory
+    assert result.manifest["request_status"] == "not-written"
+    assert result.plan["workout"]["id"] == 455045484
+    assert result.decision_validation["blockers"] == [
+        "Missing required decision: selected Workout timestamps"
+    ]
+
+
+def test_workout_backfill_review_and_inspect_cli_smoke(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+
+    review_exit_code = main(
+        [
+            "workout-backfill",
+            "review",
+            "--workout-id",
+            "455045484",
+            "--database-url",
+            f"sqlite:///{db_path}",
+            "--output-dir",
+            str(tmp_path / "reports"),
+        ]
+    )
+    review_output = capsys.readouterr().out
+    review_dir = tmp_path / "reports" / "workout-backfill" / "455045484"
+    inspect_exit_code = main(
+        [
+            "workout-backfill",
+            "inspect",
+            "--review-dir",
+            str(review_dir),
+        ]
+    )
+    inspect_output = capsys.readouterr().out
+
+    assert review_exit_code == 0
+    assert f"Wrote Workout backfill review: {review_dir}" in review_output
+    assert inspect_exit_code == 0
+    assert f"review_dir: {review_dir}" in inspect_output
+    assert "request_status: not-written" in inspect_output
+    assert "workout: 455045484 | Upper" in inspect_output
 
 
 def test_workout_backfill_review_reports_missing_hevy_template_mapping(

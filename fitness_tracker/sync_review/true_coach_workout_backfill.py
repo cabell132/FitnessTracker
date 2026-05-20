@@ -67,6 +67,38 @@ class WorkoutBackfillReviewBundle:
 
 
 @dataclass(frozen=True)
+class WorkoutBackfillPipelineReview:
+    """Artifact-first review directory written by the Workout backfill pipeline."""
+
+    directory: Path
+    manifest_path: Path
+    plan_path: Path
+    decisions_path: Path
+    decision_validation_path: Path
+    apple_health_evidence_path: Path
+    report_path: Path
+
+
+@dataclass(frozen=True)
+class WorkoutBackfillReviewOptions:
+    """Options for regenerating an artifact-first Workout backfill review."""
+
+    force: bool = False
+    preserve_decisions: bool = False
+    reset_decisions: bool = False
+
+
+@dataclass(frozen=True)
+class WorkoutBackfillInspectResult:
+    """Review data loaded through a Workout backfill review manifest."""
+
+    review_dir: Path
+    manifest: dict[str, Any]
+    plan: dict[str, Any]
+    decision_validation: dict[str, Any]
+
+
+@dataclass(frozen=True)
 class WorkoutBackfillReviewArtifacts:
     """Rendered artifacts for one Workout backfill review."""
 
@@ -156,6 +188,22 @@ class TrueCoachWorkoutBackfillReviewService:
             decisions_path=output_decisions_path,
             decision_validation_path=decision_validation_path,
         )
+
+    def build_review_artifacts(
+        self,
+        workout_id: int,
+        decisions: dict[str, Any] | None = None,
+    ) -> WorkoutBackfillReviewArtifacts:
+        """Render review artifacts without writing them.
+
+        Args:
+            workout_id (int): True Coach Workout id.
+            decisions (dict[str, Any] | None): Optional editable decisions payload.
+
+        Returns:
+            WorkoutBackfillReviewArtifacts: Rendered plan, decisions, evidence, and report.
+        """
+        return self._build_artifacts(workout_id, decisions)
 
     def write_apply_request(
         self,
@@ -331,6 +379,85 @@ class TrueCoachWorkoutBackfillReviewService:
             )
 
 
+class WorkoutBackfillPipeline:
+    """Artifact-first Workout backfill review and inspect pipeline."""
+
+    def __init__(self, store: Store, output_root: Path = Path("reports")) -> None:
+        """Create the pipeline.
+
+        Args:
+            store (Store): Local database snapshot.
+            output_root (Path): Root under which pipeline artifacts are written.
+        """
+        self._review_service = TrueCoachWorkoutBackfillReviewService(
+            store=store,
+            output_root=output_root,
+        )
+        self._output_root = output_root
+
+    def review(
+        self,
+        workout_id: int,
+        options: WorkoutBackfillReviewOptions | None = None,
+    ) -> WorkoutBackfillPipelineReview:
+        """Write an artifact-first review directory for one True Coach Workout.
+
+        Args:
+            workout_id (int): True Coach Workout id.
+            options (WorkoutBackfillReviewOptions | None): Regeneration options.
+
+        Returns:
+            WorkoutBackfillPipelineReview: Paths written for the review.
+        """
+        options = options or WorkoutBackfillReviewOptions()
+        review_dir = self._output_root / "workout-backfill" / str(workout_id)
+        decisions_path = review_dir / "decisions.json"
+        _validate_pipeline_review_write(review_dir, decisions_path, options)
+        decisions = _load_pipeline_review_decisions(decisions_path, options)
+        artifacts = self._review_service.build_review_artifacts(workout_id, decisions)
+        review_dir.mkdir(parents=True, exist_ok=True)
+        paths = _pipeline_review_paths(review_dir)
+        _write_pipeline_review_artifacts(paths, workout_id, artifacts)
+        return WorkoutBackfillPipelineReview(
+            directory=review_dir,
+            manifest_path=paths["manifest"],
+            plan_path=paths["plan"],
+            decisions_path=paths["decisions"],
+            decision_validation_path=paths["decision_validation"],
+            apple_health_evidence_path=paths["apple_health_evidence"],
+            report_path=paths["report"],
+        )
+
+    def inspect(self, review_dir: Path) -> WorkoutBackfillInspectResult:
+        """Load review status through the review manifest.
+
+        Args:
+            review_dir (Path): Existing review directory containing a manifest.
+
+        Returns:
+            WorkoutBackfillInspectResult: Manifest-backed inspect data.
+
+        Raises:
+            WorkoutBackfillReviewError: If the manifest does not list required artifacts.
+        """
+        manifest_path = review_dir / "review-manifest.json"
+        manifest = read_json_object(manifest_path)
+        artifacts = manifest.get("artifacts")
+        if not isinstance(artifacts, dict):
+            msg = f"Review manifest {manifest_path} must contain an artifacts object"
+            raise WorkoutBackfillReviewError(msg)
+        plan = read_json_object(_manifest_artifact_path(review_dir, artifacts, "plan"))
+        decision_validation = read_json_object(
+            _manifest_artifact_path(review_dir, artifacts, "decision_validation")
+        )
+        return WorkoutBackfillInspectResult(
+            review_dir=review_dir,
+            manifest=manifest,
+            plan=plan,
+            decision_validation=decision_validation,
+        )
+
+
 def _bundle_paths(
     output_root: Path,
     workout_id: int,
@@ -345,6 +472,99 @@ def _bundle_paths(
         bundle_dir / "backfill-decisions.json",
         bundle_dir / "decision-validation.json",
     )
+
+
+def _pipeline_review_paths(review_dir: Path) -> dict[str, Path]:
+    return {
+        "manifest": review_dir / "review-manifest.json",
+        "plan": review_dir / "plan.json",
+        "decisions": review_dir / "decisions.json",
+        "decision_validation": review_dir / "decision-validation.json",
+        "apple_health_evidence": review_dir / "apple-health-evidence.json",
+        "report": review_dir / "report.md",
+    }
+
+
+def _validate_pipeline_review_write(
+    review_dir: Path,
+    decisions_path: Path,
+    options: WorkoutBackfillReviewOptions,
+) -> None:
+    if options.preserve_decisions and options.reset_decisions:
+        msg = "--preserve-decisions and --reset-decisions cannot be combined"
+        raise WorkoutBackfillReviewError(msg)
+    if review_dir.exists() and not options.force:
+        msg = f"Workout backfill review directory already exists: {review_dir}"
+        raise WorkoutBackfillReviewError(msg)
+    if (
+        options.force
+        and decisions_path.exists()
+        and not options.preserve_decisions
+        and not options.reset_decisions
+    ):
+        msg = (
+            "Existing decisions.json found; use --preserve-decisions or "
+            "--reset-decisions with --force"
+        )
+        raise WorkoutBackfillReviewError(msg)
+
+
+def _load_pipeline_review_decisions(
+    decisions_path: Path,
+    options: WorkoutBackfillReviewOptions,
+) -> dict[str, Any] | None:
+    if options.preserve_decisions and decisions_path.exists():
+        return load_decisions_file(decisions_path, error_cls=WorkoutBackfillReviewError)
+    return None
+
+
+def _write_pipeline_review_artifacts(
+    paths: dict[str, Path],
+    workout_id: int,
+    artifacts: WorkoutBackfillReviewArtifacts,
+) -> None:
+    _remove_request_artifacts(paths["manifest"].parent)
+    write_json_artifact(paths["manifest"], _pipeline_review_manifest(workout_id))
+    write_json_artifact(paths["plan"], artifacts.plan)
+    write_json_artifact(paths["decisions"], artifacts.decisions)
+    write_json_artifact(paths["decision_validation"], artifacts.decision_validation)
+    write_json_artifact(paths["apple_health_evidence"], artifacts.apple_health_evidence)
+    paths["report"].write_text(artifacts.report, encoding="utf-8")
+
+
+def _pipeline_review_manifest(workout_id: int) -> dict[str, Any]:
+    return {
+        "version": 1,
+        "kind": "workout-backfill-review",
+        "workout_id": workout_id,
+        "artifacts": {
+            "plan": "plan.json",
+            "decisions": "decisions.json",
+            "decision_validation": "decision-validation.json",
+            "apple_health_evidence": "apple-health-evidence.json",
+            "report": "report.md",
+        },
+        "request_status": "not-written",
+    }
+
+
+def _remove_request_artifacts(review_dir: Path) -> None:
+    for filename in ("hevy-workout-request.json", "request-manifest.json"):
+        path = review_dir / filename
+        if path.exists():
+            path.unlink()
+
+
+def _manifest_artifact_path(
+    review_dir: Path,
+    artifacts: dict[Any, Any],
+    artifact_name: str,
+) -> Path:
+    artifact_path = artifacts.get(artifact_name)
+    if not isinstance(artifact_path, str):
+        msg = f"Review manifest is missing artifact path: {artifact_name}"
+        raise WorkoutBackfillReviewError(msg)
+    return review_dir / artifact_path
 
 
 def _superset_ids_by_position(workout: TrueCoachWorkout) -> dict[int, int]:
