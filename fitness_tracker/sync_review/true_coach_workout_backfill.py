@@ -197,6 +197,7 @@ PIPELINE_REQUEST_MANIFEST_FILENAME = "request-manifest.json"
 PIPELINE_REQUEST_FILENAME = "hevy-workout-request.json"
 PIPELINE_REQUEST_WORKFLOW = "workout-backfill"
 PIPELINE_REQUEST_SCHEMA_VERSION = 1
+PIPELINE_REQUEST_ARTIFACT_NAMES = ("plan", "decisions", "decision_validation", "request")
 PIPELINE_ARTIFACT_FILENAMES = {
     "plan": "plan.json",
     "decisions": "decisions.json",
@@ -574,7 +575,7 @@ class WorkoutBackfillPipeline:
 
         Args:
             review_dir (Path): Existing review directory with request artifacts.
-            workout_writer (HevyWorkoutWriter): Workout reader port.
+            workout_writer (HevyWorkoutWriter): Workout reader/writer port.
 
         Returns:
             WorkoutBackfillLinkWorkoutResult: Link result and consumed request path.
@@ -794,7 +795,7 @@ def _load_link_workout_command(review_dir: Path) -> WorkoutBackfillLinkWorkoutCo
         request_manifest_path=request_manifest_path,
     )
     _validate_pipeline_request_hashes(
-        review_dir=review_dir,
+        paths=paths,
         request_manifest=request_manifest,
         request_manifest_path=request_manifest_path,
     )
@@ -848,12 +849,7 @@ def _validate_pipeline_request_artifact_paths(
     request_manifest_path: Path,
 ) -> None:
     artifacts = request_manifest["artifacts"]
-    expected = {
-        "plan": paths.plan.name,
-        "decisions": paths.decisions.name,
-        "decision_validation": paths.decision_validation.name,
-        "request": paths.request.name,
-    }
+    expected = _pipeline_request_artifacts(paths)
     if artifacts != expected:
         msg = f"Request manifest {request_manifest_path} does not match review artifacts"
         raise WorkoutBackfillReviewError(msg)
@@ -861,19 +857,18 @@ def _validate_pipeline_request_artifact_paths(
 
 def _validate_pipeline_request_hashes(
     *,
-    review_dir: Path,
+    paths: WorkoutBackfillPipelineRequestPaths,
     request_manifest: dict[str, Any],
     request_manifest_path: Path,
 ) -> None:
-    artifacts = request_manifest["artifacts"]
     hashes = request_manifest["sha256"]
-    for artifact_name in ("plan", "decisions", "decision_validation", "request"):
-        filename = artifacts.get(artifact_name)
+    artifact_paths = _pipeline_request_artifact_paths(paths)
+    for artifact_name in PIPELINE_REQUEST_ARTIFACT_NAMES:
         expected_hash = hashes.get(artifact_name)
-        if not isinstance(filename, str) or not isinstance(expected_hash, str):
+        if not isinstance(expected_hash, str):
             msg = f"Request manifest {request_manifest_path} is missing {artifact_name} hash"
             raise WorkoutBackfillReviewError(msg)
-        path = review_dir / filename
+        path = artifact_paths[artifact_name]
         if _sha256_file(path) != expected_hash:
             msg = f"Stale Workout backfill artifact: {path}"
             raise WorkoutBackfillReviewError(msg)
@@ -909,18 +904,26 @@ def _pipeline_request_manifest(
         "workflow": PIPELINE_REQUEST_WORKFLOW,
         "schema_version": PIPELINE_REQUEST_SCHEMA_VERSION,
         "generated_at": datetime.now(UTC).isoformat(),
-        "artifacts": {
-            "plan": paths.plan.name,
-            "decisions": paths.decisions.name,
-            "decision_validation": paths.decision_validation.name,
-            "request": paths.request.name,
-        },
+        "artifacts": _pipeline_request_artifacts(paths),
         "sha256": {
-            "plan": _sha256_file(paths.plan),
-            "decisions": _sha256_file(paths.decisions),
-            "decision_validation": _sha256_file(paths.decision_validation),
-            "request": _sha256_file(paths.request),
+            name: _sha256_file(path)
+            for name, path in _pipeline_request_artifact_paths(paths).items()
         },
+    }
+
+
+def _pipeline_request_artifacts(paths: WorkoutBackfillPipelineRequestPaths) -> dict[str, str]:
+    return {name: path.name for name, path in _pipeline_request_artifact_paths(paths).items()}
+
+
+def _pipeline_request_artifact_paths(
+    paths: WorkoutBackfillPipelineRequestPaths,
+) -> dict[str, Path]:
+    return {
+        "plan": paths.plan,
+        "decisions": paths.decisions,
+        "decision_validation": paths.decision_validation,
+        "request": paths.request,
     }
 
 
