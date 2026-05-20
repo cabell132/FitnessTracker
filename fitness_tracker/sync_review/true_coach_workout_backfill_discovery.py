@@ -19,6 +19,11 @@ from fitness_tracker.database.models.tracker import (
 from fitness_tracker.database.models.true_coach import TrueCoachWorkout
 
 CandidateStatus = Literal["structured-results", "placeholder-or-no-results"]
+BACKFILL_CANDIDATES_DIR = Path("workout-backfill") / "candidates"
+BACKFILL_CANDIDATES_REPORT = "report.md"
+BACKFILL_CANDIDATES_JSON = "candidates.json"
+BACKFILL_CANDIDATES_MANIFEST = "candidates-manifest.json"
+BACKFILL_CANDIDATES_WORKFLOW = "workout-backfill-candidates"
 
 
 @dataclass(frozen=True)
@@ -35,8 +40,8 @@ class BackfillCandidate:
 
 
 @dataclass(frozen=True)
-class BackfillDiscoveryBundle:
-    """Paths written for a backfill discovery report."""
+class BackfillCandidatesResult:
+    """CLI-neutral result for Workout backfill candidate artifact generation."""
 
     directory: Path
     report_path: Path
@@ -46,14 +51,8 @@ class BackfillDiscoveryBundle:
 
 
 @dataclass(frozen=True)
-class BackfillCandidatesResult:
-    """CLI-neutral result for Workout backfill candidate artifact generation."""
-
-    directory: Path
-    report_path: Path
-    candidates_path: Path
-    manifest_path: Path
-    candidate_count: int
+class BackfillDiscoveryBundle(BackfillCandidatesResult):
+    """Paths written for the legacy backfill discovery report API."""
 
 
 class TrueCoachWorkoutBackfillDiscoveryService:
@@ -136,20 +135,14 @@ class TrueCoachWorkoutBackfillDiscoveryService:
             BackfillCandidatesResult: Paths and summary data for the generated artifacts.
         """
         candidates = self.discover()
-        bundle_dir = self._output_root / "workout-backfill" / "candidates"
+        bundle_dir = self._output_root / BACKFILL_CANDIDATES_DIR
         bundle_dir.mkdir(parents=True, exist_ok=True)
-        report_path = bundle_dir / "report.md"
-        candidates_path = bundle_dir / "candidates.json"
-        manifest_path = bundle_dir / "candidates-manifest.json"
+        report_path = bundle_dir / BACKFILL_CANDIDATES_REPORT
+        candidates_path = bundle_dir / BACKFILL_CANDIDATES_JSON
+        manifest_path = bundle_dir / BACKFILL_CANDIDATES_MANIFEST
         report_path.write_text(_render_report(candidates), encoding="utf-8")
-        candidates_path.write_text(
-            json.dumps([asdict(candidate) for candidate in candidates], indent=2) + "\n",
-            encoding="utf-8",
-        )
-        manifest_path.write_text(
-            json.dumps(_candidates_manifest(), indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
+        _write_json(candidates_path, [asdict(candidate) for candidate in candidates])
+        _write_json(manifest_path, _candidates_manifest(), sort_keys=True)
         return BackfillCandidatesResult(
             directory=bundle_dir,
             report_path=report_path,
@@ -190,13 +183,17 @@ def _render_report(candidates: list[BackfillCandidate]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _write_json(path: Path, payload: object, *, sort_keys: bool = False) -> None:
+    path.write_text(json.dumps(payload, indent=2, sort_keys=sort_keys) + "\n", encoding="utf-8")
+
+
 def _candidates_manifest() -> dict[str, object]:
     return {
-        "workflow": "workout-backfill-candidates",
+        "workflow": BACKFILL_CANDIDATES_WORKFLOW,
         "schema_version": 1,
         "generated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         "artifacts": {
-            "report": "report.md",
-            "candidates": "candidates.json",
+            "report": BACKFILL_CANDIDATES_REPORT,
+            "candidates": BACKFILL_CANDIDATES_JSON,
         },
     }
