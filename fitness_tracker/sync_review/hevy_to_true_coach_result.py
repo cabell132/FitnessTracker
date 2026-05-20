@@ -7,19 +7,23 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, cast
 
-import fitness_tracker.sync_review.hevy_to_true_coach_result_decisions as result_decisions
 from fitness_tracker.apis.true_coach.exceptions import TrueCoachAPIError
 from fitness_tracker.apis.true_coach.types import PutWorkoutItemRequest
 from fitness_tracker.database import Store
 from fitness_tracker.database.models.hevy_app import HevyAppWorkout
 from fitness_tracker.database.models.tracker import Workout as TrackerWorkout
 from fitness_tracker.database.models.true_coach import TrueCoachWorkoutItem
+from fitness_tracker.sync_review.hevy_to_true_coach_result_decisions import (
+    HevyToTrueCoachResultApplyError as _DecisionApplyError,
+    HevyToTrueCoachResultDecisionBuilder,
+)
 from fitness_tracker.sync_review.hevy_to_true_coach_result_planner import (
     HevyToTrueCoachResultSyncPlanner,
 )
 from fitness_tracker.sync.ports.true_coach_workout_item_writer import TrueCoachWorkoutItemWriter
 
-HevyToTrueCoachResultApplyError = result_decisions.HevyToTrueCoachResultApplyError
+_DECISION_BUILDER = HevyToTrueCoachResultDecisionBuilder()
+HevyToTrueCoachResultApplyError = _DecisionApplyError
 
 
 class HevyToTrueCoachResultReviewError(Exception):
@@ -74,7 +78,7 @@ class HevyToTrueCoachResultReviewService:
         self._store = store
         self._output_root = output_root
         self._planner = HevyToTrueCoachResultSyncPlanner()
-        self._decision_builder = result_decisions.HevyToTrueCoachResultDecisionBuilder()
+        self._decision_builder = _DECISION_BUILDER
 
     def write_review(
         self,
@@ -270,11 +274,9 @@ def _apply_update_operations(
     workout_item_writer: TrueCoachWorkoutItemWriter,
     result: HevyToTrueCoachResultApplyResult,
 ) -> tuple[list[int], list[int]]:
-    hevy_item_ids_by_target_id = (
-        result_decisions.HevyToTrueCoachResultDecisionBuilder().hevy_item_ids_by_target_id(
-            _load_json_file(result.review_bundle.plan_path),
-            _load_json_file(result.review_bundle.decisions_path),
-        )
+    hevy_item_ids_by_target_id = _DECISION_BUILDER.hevy_item_ids_by_target_id(
+        _load_json_file(result.review_bundle.plan_path),
+        _load_json_file(result.review_bundle.decisions_path),
     )
     updated_item_ids: list[int] = []
     unresolved_hevy_item_ids = list(result.unresolved_hevy_workout_item_ids)
