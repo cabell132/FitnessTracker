@@ -198,6 +198,60 @@ asked to make a nuanced Hevy write, use the command recipes instead:
 Those workflows generate review artifacts, expose blockers, and keep heuristic
 judgement explicit before applying remote writes.
 
+## Review workflow module shape
+
+Review workflows in `fitness_tracker/sync_review/` follow the same module
+shape even when they target different platform directions. The workflow shell
+loads local source data, writes artifacts, renders reports, and coordinates
+review versus apply commands. The domain planner builds deterministic plan data
+from platform snapshots and local tracker rows. The decisions/request builder
+validates editable decisions and converts a reviewed plan into an exact platform
+request. The apply/mutation module is the only layer that performs remote
+writes or local link repair.
+
+Routine creation review is the True Coach prescription to Hevy Routine path.
+`routine_prescription.py` plans Coach-authored Workout Items, mixed-mode
+prescriptions, Athlete-history enrichment, template requirements, and
+Split Circuit evidence. The review shell emits `plan.json`, `report.md`, and,
+when apply is requested, `hevy-request.json`. The Hevy Routine request belongs
+after review because numeric Hevy grouping, folder selection, and final request
+shape are mutation concerns rather than source evidence.
+
+Workout backfill review is historical performed-result transfer from a
+completed True Coach Workout into a logged Hevy Workout.
+`true_coach_workout_backfill.py` is the workflow shell,
+`workout_backfill_performed_work.py` plans performed work, and
+`workout_backfill_request.py` owns editable backfill decisions and the Hevy
+Workout request shape. `workout_backfill_apply.py` performs platform mutation,
+idempotency checks, remote repair, and local tracker link repair. Its artifacts
+separate `plan.json`, `apple-health-evidence.json`,
+`backfill-decisions.json`, `decision-validation.json`, and
+`hevy-workout-request.json`.
+
+Result sync review is the performed Hevy Workout to True Coach result path.
+`hevy_to_true_coach_result.py` is the workflow shell,
+`hevy_to_true_coach_result_planner.py` builds deterministic performed-item
+mapping evidence, and `hevy_to_true_coach_result_decisions.py` owns editable
+Agent decisions plus the `truecoach-update-request.json` apply request.
+Result sync review artifacts include `plan.json`, `result-decisions.json`,
+`decision-validation.json`, and `report.md`.
+
+Deterministic plan data is evidence: source Workout or Routine identifiers,
+platform snapshot fields, parsed sets, Split Circuit plans, candidate mappings,
+warnings, blockers, and proposed formatter output. Editable decision artifacts
+record Agent or Athlete judgement: mapping overrides, selected timestamps,
+explicit omissions, template choices, partial-apply approval, completion
+approval, and readable context lines that preserve the same performed values.
+Request artifacts are reviewed mutation payloads derived from plan plus
+decisions; they should not be treated as the source audit trail.
+
+Apply modules perform platform mutations only after validation. They may define
+small writer seams for the specific platform operation they execute, such as
+creating one Hevy Workout or updating True Coach Workout Items, so tests and
+dry runs can verify the reviewed request. Those review apply mutation seams are
+not a reintroduction of broad sync-layer port wiring; the automatic sync layer
+still follows `docs/adr/0002-sync-layer-uses-concrete-wiring.md`.
+
 ## Platform primitive commands
 
 A platform primitive command performs one explicit operation against a single

@@ -26,6 +26,20 @@ WORKFLOW_CONTRACT_STRINGS = (
     "explicit `cached` commands",
     "cross-platform judgement belongs in `sync-review` and `sync-apply`",
 )
+REVIEW_MODULE_SHAPE_STRINGS = (
+    "Review workflow module shape",
+    "Routine creation review",
+    "Workout backfill review",
+    "Result sync review",
+    "workflow shell",
+    "domain planner",
+    "decisions/request builder",
+    "apply/mutation module",
+    "Deterministic plan data is evidence",
+    "Editable decision artifacts record Agent or Athlete judgement",
+    "Apply modules perform platform mutations",
+    "not a reintroduction of broad sync-layer port wiring",
+)
 
 
 def read_text(path: Path) -> str:
@@ -51,4 +65,7 @@ def test_platform_primitive_agent_docs_use_canonical_command_surface() -> None:
         assert command_string in create_hevy_routine_doc
 
     for contract_string in WORKFLOW_CONTRACT_STRINGS:
+        assert contract_string in normalized_workflow_doc
+
+    for contract_string in REVIEW_MODULE_SHAPE_STRINGS:
         assert contract_string in normalized_workflow_doc
