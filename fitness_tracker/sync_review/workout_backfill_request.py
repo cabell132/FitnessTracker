@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -27,6 +28,16 @@ class WorkoutBackfillApplyValidationContext:
     decisions: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class _ManualTemplateDecisionSection:
+    """Plan-backed manual template decisions for one item type."""
+
+    required_items: list[dict[str, Any]]
+    decision_for: Callable[[dict[str, Any], dict[str, Any]], dict[str, Any] | None]
+    item_type: str
+    name_key: str
+
+
 def build_workout_backfill_decision_template(
     workout_id: int,
     plan: dict[str, Any] | None = None,
@@ -48,10 +59,10 @@ def build_workout_backfill_decision_template(
             "selected_end_time": None,
         },
     }
-    choice_items = _choice_decision_templates(plan) if plan is not None else []
+    choice_items = _choice_decision_templates_for_plan(plan)
     if choice_items:
         decisions["choice_items"] = choice_items
-    circuit_items = _circuit_decision_templates(plan) if plan is not None else []
+    circuit_items = _circuit_decision_templates_for_plan(plan)
     if circuit_items:
         decisions["circuit_items"] = circuit_items
     return decisions
@@ -214,50 +225,60 @@ def _choice_decision_blockers(
     decisions: dict[str, Any],
     plan: dict[str, Any] | None,
 ) -> list[str]:
-    blockers: list[str] = []
-    for required_choice in _choice_decision_templates(plan) if plan is not None else []:
-        decision = _choice_decision_for(decisions, required_choice)
-        if decision is None or not decision.get("selected_hevy_template_id"):
-            blockers.append(
-                "Missing required decision: Choice Workout Item "
-                f"{required_choice['source_id']} {required_choice['performed_name']} template"
-            )
-        elif (
-            required_choice["candidate_template_ids"]
-            and decision["selected_hevy_template_id"]
-            not in required_choice["candidate_template_ids"]
-        ):
-            blockers.append(
-                "Choice Workout Item "
-                f"{required_choice['source_id']} {required_choice['performed_name']} "
-                "decision must use one of the candidate Hevy templates"
-            )
-    return blockers
+    return _manual_template_decision_blockers(
+        decisions,
+        _ManualTemplateDecisionSection(
+            required_items=_choice_decision_templates_for_plan(plan),
+            decision_for=_choice_decision_for,
+            item_type="Choice",
+            name_key="performed_name",
+        ),
+    )
 
 
 def _circuit_decision_blockers(
     decisions: dict[str, Any],
     plan: dict[str, Any] | None,
 ) -> list[str]:
+    return _manual_template_decision_blockers(
+        decisions,
+        _ManualTemplateDecisionSection(
+            required_items=_circuit_decision_templates_for_plan(plan),
+            decision_for=_circuit_decision_for,
+            item_type="Circuit",
+            name_key="movement_name",
+        ),
+    )
+
+
+def _manual_template_decision_blockers(
+    decisions: dict[str, Any],
+    section: _ManualTemplateDecisionSection,
+) -> list[str]:
     blockers: list[str] = []
-    for required_circuit in _circuit_decision_templates(plan) if plan is not None else []:
-        decision = _circuit_decision_for(decisions, required_circuit)
+    for required_item in section.required_items:
+        decision = section.decision_for(decisions, required_item)
         if decision is None or not decision.get("selected_hevy_template_id"):
             blockers.append(
-                "Missing required decision: Circuit Workout Item "
-                f"{required_circuit['source_id']} {required_circuit['movement_name']} template"
+                f"Missing required decision: {section.item_type} Workout Item "
+                f"{required_item['source_id']} {required_item[section.name_key]} template"
             )
         elif (
-            required_circuit["candidate_template_ids"]
-            and decision["selected_hevy_template_id"]
-            not in required_circuit["candidate_template_ids"]
+            required_item["candidate_template_ids"]
+            and decision["selected_hevy_template_id"] not in required_item["candidate_template_ids"]
         ):
             blockers.append(
-                "Circuit Workout Item "
-                f"{required_circuit['source_id']} {required_circuit['movement_name']} "
+                f"{section.item_type} Workout Item "
+                f"{required_item['source_id']} {required_item[section.name_key]} "
                 "decision must use one of the candidate Hevy templates"
             )
     return blockers
+
+
+def _choice_decision_templates_for_plan(
+    plan: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    return _choice_decision_templates(plan) if plan is not None else []
 
 
 def _choice_decision_templates(plan: dict[str, Any]) -> list[dict[str, Any]]:
@@ -272,6 +293,12 @@ def _choice_decision_templates(plan: dict[str, Any]) -> list[dict[str, Any]]:
         for item in plan["items"]
         if item.get("choice_decision_reason") is not None
     ]
+
+
+def _circuit_decision_templates_for_plan(
+    plan: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    return _circuit_decision_templates(plan) if plan is not None else []
 
 
 def _circuit_decision_templates(plan: dict[str, Any]) -> list[dict[str, Any]]:
@@ -382,12 +409,9 @@ class _WorkoutRequestSupersetAllocator:
 def _request_exercise(
     item: dict[str, Any],
     *,
-    template_id: str | None,
+    template_id: str,
     superset_id: int | None,
 ) -> PostWorkoutsRequestExercise:
-    if template_id is None:
-        msg = f"Missing Hevy template for request exercise: {item['name']}"
-        raise ValueError(msg)
     return PostWorkoutsRequestExercise(
         exercise_template_id=template_id,
         superset_id=superset_id,
