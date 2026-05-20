@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fitness_tracker.database import Store
 from fitness_tracker.sync.ports.true_coach_workout_item_writer import TrueCoachWorkoutItemWriter
@@ -15,12 +15,26 @@ from fitness_tracker.sync_review.hevy_to_true_coach_result import (
 )
 from fitness_tracker.sync_review.workflow import read_json_object
 
+_PLAN_WARNINGS = "plan_warnings"
+_ITEM_WARNINGS = "item_warnings"
+_ITEM_BLOCKERS = "item_blockers"
+_DECISION_BLOCKERS = "decision_blockers"
+
+_STRICT_REVIEW_REASONS = (
+    _PLAN_WARNINGS,
+    _ITEM_WARNINGS,
+    _ITEM_BLOCKERS,
+    _DECISION_BLOCKERS,
+)
+
+type HevyToTrueCoachResultSyncWorkflowStatus = Literal["applied", "review_required"]
+
 
 @dataclass(frozen=True)
 class HevyToTrueCoachResultSyncWorkflowResult:
     """Outcome of one strict automatic Result sync attempt."""
 
-    status: str
+    status: HevyToTrueCoachResultSyncWorkflowStatus
     review_bundle: HevyToTrueCoachResultReviewBundle
     apply_result: HevyToTrueCoachResultApplyResult | None = None
     reasons: list[str] = field(default_factory=list)
@@ -68,7 +82,7 @@ class HevyToTrueCoachResultSyncWorkflow:
             read_json_object(bundle.plan_path),
             read_json_object(bundle.decision_validation_path),
         )
-        if strict_safety.reasons:
+        if strict_safety.requires_review:
             return HevyToTrueCoachResultSyncWorkflowResult(
                 status="review_required",
                 review_bundle=bundle,
@@ -100,26 +114,25 @@ class _StrictSafety:
     decision_blockers: list[str]
     decision_warnings: list[str]
 
+    @property
+    def requires_review(self) -> bool:
+        return bool(self.reasons)
+
 
 def _strict_safety(plan: dict[str, Any], validation: dict[str, Any]) -> _StrictSafety:
-    plan_warnings = [str(warning) for warning in plan.get("warnings", [])]
-    item_warnings = [
-        str(warning) for item in plan.get("items", []) for warning in item.get("warnings", [])
-    ]
-    item_blockers = [
-        str(blocker) for item in plan.get("items", []) for blocker in item.get("blockers", [])
-    ]
-    decision_blockers = [str(blocker) for blocker in validation.get("blockers", [])]
-    decision_warnings = [str(warning) for warning in validation.get("warnings", [])]
-    reasons = []
-    if plan_warnings:
-        reasons.append("plan_warnings")
-    if item_warnings:
-        reasons.append("item_warnings")
-    if item_blockers:
-        reasons.append("item_blockers")
-    if decision_blockers:
-        reasons.append("decision_blockers")
+    plan_warnings = _messages_from(plan.get("warnings", []))
+    item_warnings = _item_messages_from(plan, "warnings")
+    item_blockers = _item_messages_from(plan, "blockers")
+    decision_blockers = _messages_from(validation.get("blockers", []))
+    decision_warnings = _messages_from(validation.get("warnings", []))
+    reasons = _review_reasons(
+        {
+            _PLAN_WARNINGS: plan_warnings,
+            _ITEM_WARNINGS: item_warnings,
+            _ITEM_BLOCKERS: item_blockers,
+            _DECISION_BLOCKERS: decision_blockers,
+        }
+    )
     return _StrictSafety(
         reasons=reasons,
         plan_warnings=plan_warnings,
@@ -128,3 +141,15 @@ def _strict_safety(plan: dict[str, Any], validation: dict[str, Any]) -> _StrictS
         decision_blockers=decision_blockers,
         decision_warnings=decision_warnings,
     )
+
+
+def _messages_from(messages: Any) -> list[str]:
+    return [str(message) for message in messages]
+
+
+def _item_messages_from(plan: dict[str, Any], key: str) -> list[str]:
+    return [str(message) for item in plan.get("items", []) for message in item.get(key, [])]
+
+
+def _review_reasons(messages_by_reason: dict[str, list[str]]) -> list[str]:
+    return [reason for reason in _STRICT_REVIEW_REASONS if messages_by_reason[reason]]
