@@ -18,13 +18,18 @@ from logs import WideEvent
 from fitness_tracker.sync._deps import SyncDeps
 from fitness_tracker.sync._run import SyncRunResult
 from fitness_tracker.sync.adapters.file_checkpoint_store import HEVY_CHECKPOINT_KEY
+from fitness_tracker.sync.adapters.true_coach_workout_item_writer import (
+    TrueCoachWorkoutItemWriterAdapter,
+)
 from fitness_tracker.sync.apple_health_tracker.sync import AppleHealthToFitnessTrackerSyncronizer
 from fitness_tracker.sync.hevy_tracker.sync import HevyToFitnessTrackerSyncronizer
-from fitness_tracker.sync.hevy_true_coach.sync import HevyToTrueCoachSyncronizer
 from fitness_tracker.sync.tracker_hevy.sync import TrackerToHevySyncronizer
 from fitness_tracker.sync.tracker_true_coach.sync import TrackerToTrueCoachSyncronizer
 from fitness_tracker.sync.true_coach_hevy.sync import TrueCoachToHevySyncronizer
 from fitness_tracker.sync.true_coach_tracker.sync import TrueCoachToFitnessTrackerSyncronizer
+from fitness_tracker.sync_review.hevy_to_true_coach_result_workflow import (
+    HevyToTrueCoachResultSyncWorkflow,
+)
 
 if TYPE_CHECKING:
     from fitness_tracker.database.models.true_coach import TrueCoachWorkout
@@ -59,10 +64,8 @@ class SyncService:
             source=deps.hevy,
             llm=deps.llm,
         )
-        self._hevy_to_tc = HevyToTrueCoachSyncronizer(
-            store=deps.store,
-            target=deps.true_coach,
-        )
+        self._tc_workout_item_writer = TrueCoachWorkoutItemWriterAdapter(deps.true_coach)
+        self._hevy_result_sync = HevyToTrueCoachResultSyncWorkflow(store=deps.store)
         self._tc_to_tracker = TrueCoachToFitnessTrackerSyncronizer(
             store=deps.store,
             source=deps.true_coach,
@@ -169,10 +172,12 @@ class SyncService:
         """
         events = self._hevy_to_tracker.sync_workouts(since=since)
 
-        with self._store.unit_of_work():
-            for event in events:
-                if isinstance(event, UpdatedWorkout):
-                    self._hevy_to_tc.sync_workout(event.workout.id)
+        for event in events:
+            if isinstance(event, UpdatedWorkout):
+                self._hevy_result_sync.sync_one(
+                    event.workout.id,
+                    workout_item_writer=self._tc_workout_item_writer,
+                )
 
         return events
 

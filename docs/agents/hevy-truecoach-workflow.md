@@ -33,8 +33,9 @@ Workout is a completed training session.
 4. Read the Hevy workout-events checkpoint.
 5. Fetch Hevy workout events since that checkpoint.
 6. Sync updated or deleted Hevy Workouts into the local tracker.
-7. For each updated Hevy Workout, push linked performed results back to True
-   Coach.
+7. For each updated Hevy Workout, run the strict Hevy-to-True-Coach Result sync
+   workflow. Strict-safe plans apply through the review/apply path; plans with
+   warnings or blockers write review artifacts without mutating True Coach.
 8. Write the new Hevy checkpoint.
 9. Push tracker assessment metrics to True Coach assessments.
 10. Delete existing Hevy Routine drafts.
@@ -59,9 +60,10 @@ on these directional responsibilities:
 - Hevy to tracker stores performed or deleted Hevy Workouts locally, extracts
   the True Coach Workout id from the Hevy Workout title, links matching tracker
   rows, and refreshes local performed set data.
-- Hevy to True Coach formats linked Hevy performed sets into True Coach result
-  text, updates matching True Coach Workout Items, and marks the True Coach
-  Workout completed.
+- Hevy to True Coach Result sync writes review artifacts for performed Hevy
+  Workouts, applies strict-safe result updates through the review/apply path,
+  and marks the True Coach Workout completed only when the result workflow
+  decides it is safe.
 - Tracker to True Coach pushes local metric rows into True Coach assessments.
 - True Coach to Hevy converts due True Coach Workouts into Hevy Routines.
 
@@ -84,17 +86,20 @@ When a Hevy updated-workout event is received:
 4. Hevy exercise blocks are linked to True Coach Workout Items by deterministic
    SQL first, then LLM-assisted linking for remaining unmatched items.
 5. Local tracker exercises and sets are updated from the linked Hevy rows.
-6. The Hevy-to-True-Coach syncer formats each linked Hevy item into True Coach
-   result text and updates the matching True Coach Workout Item.
-7. The True Coach Workout is marked completed.
+6. The strict Result sync workflow writes `hevy-to-truecoach-results` review
+   artifacts for the performed Hevy Workout.
+7. If the plan has no warnings, item blockers, or decision blockers, the
+   workflow applies the reviewed request to matching True Coach Workout Items
+   and marks the True Coach Workout completed when safe.
+8. If the plan has warnings or blockers, automatic sync leaves the review
+   artifacts for an Agent and does not mutate True Coach.
 
-If the True Coach API returns a stale-item `404`, the syncer refreshes the
-latest True Coach Workout snapshot and retries the item update when possible.
+The automatic Result sync path fails loudly on apply/API errors. It does not
+preserve the legacy stale True Coach row repair-on-404 behavior.
 
 ## Agentic Hevy to True Coach review
 
-The current automatic path writes linked Hevy results to True Coach immediately.
-The Agentic path should split this into review and apply steps:
+The automatic path and Agentic path share the same review/apply workflow:
 
 1. Generate a Hevy to True Coach result sync review for one Hevy Workout.
 2. Show linked Hevy exercise blocks, matched True Coach Workout Items, proposed
