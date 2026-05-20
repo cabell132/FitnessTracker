@@ -3,6 +3,8 @@
 from unittest.mock import MagicMock
 
 from fitness_tracker.apis.true_coach.types import Meta, Workout, WorkoutItem, WorkoutResponse
+from fitness_tracker.database.models.tracker import Workout as TrackerWorkout
+from fitness_tracker.database.models.tracker import WorkoutItem as TrackerWorkoutItem
 from fitness_tracker.database.models.true_coach import TrueCoachExercise, TrueCoachWorkoutItem
 from fitness_tracker.database.store import Store
 from fitness_tracker.sync.true_coach_tracker.sync import TrueCoachToFitnessTrackerSyncronizer
@@ -75,3 +77,28 @@ def test_sync_workouts_creates_referenced_exercise_before_workout_item(store: St
     assert exercise.name == "Hip Adductor Med Ball Squeeze"
     assert item is not None
     assert item.exercise_id == exercise.id
+
+
+def test_sync_workouts_creates_tracker_workout_and_items_for_result_sync_linking(
+    store: Store,
+) -> None:
+    """Imported True Coach snapshots create tracker hub rows before Hevy result sync."""
+    response = WorkoutResponse(
+        workouts=[_workout()],
+        workout_items=[_workout_item()],
+        comments=[],
+        meta=Meta(page=1, total_pages=1, per_page=10, total_count=1),
+    )
+    syncer = TrueCoachToFitnessTrackerSyncronizer(store=store, source=MagicMock())
+
+    syncer.sync_workouts(response)
+
+    tracker_workout = store.query_one(TrackerWorkout, true_coach_id=599821297)
+    assert tracker_workout is not None
+    assert tracker_workout.title == "Mobility"
+    assert tracker_workout.hevy_app_id is None
+
+    tracker_item = store.query_one(TrackerWorkoutItem, true_coach_id=-1393788898)
+    assert tracker_item is not None
+    assert tracker_item.workout_id == tracker_workout.id
+    assert tracker_item.position == 8

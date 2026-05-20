@@ -1,299 +1,91 @@
-# Fitness Tracker
+# Code Context
 
-A personal system that keeps a Coach-authored training plan and the Athlete's
-logged results in sync between True Coach and Hevy.
+## Files Retrieved
+1. `CONTEXT.md` (lines 1-200) - domain vocabulary and workflow constraints around Routine, Workout, backfill, result sync, feedback, split circuits, and review artifacts.
+2. `docs/adr/0002-sync-layer-uses-concrete-wiring.md` (lines 1-15) - decision against broad ports/adapters in sync layer; deletion guidance.
+3. `docs/adr/0003-workout-backfill-uses-review-artifacts-and-agent-decisions.md` (lines 1-35) - backfill review/apply/idempotency constraints.
+4. `docs/adr/0004-circuits-sync-as-superset-routine-blocks.md` (lines 1-46) - circuit semantics, backfill requirements, and synthetic tracker row expectations.
+5. `docs/adr/0006-hevy-to-truecoach-result-sync-uses-review-artifacts.md` (lines 1-8) - result sync must use review/apply artifacts for brittle mappings.
+6. `docs/adr/0007-split-circuit-planning-uses-shared-review-core.md` (lines 1-22) - shared split-circuit core and workflow-adapter boundary.
+7. `fitness_tracker/sync/_service.py` (lines 70-175) - full automatic sync pipeline and calls into legacy directional syncers.
+8. `fitness_tracker/sync/true_coach_hevy/sync.py` (lines 47-138) - legacy direct True Coach to Hevy Routine creation orchestration.
+9. `fitness_tracker/sync/hevy_true_coach/sync.py` (lines 40-140) - legacy direct Hevy result to True Coach mutation path.
+10. `fitness_tracker/sync_review/true_coach_to_hevy.py` (lines 75-158, 241-320) - review/apply service and request builder for Routine creation.
+11. `fitness_tracker/sync_review/routine_prescription.py` (lines 163-238, 255-428) - large Routine prescription planner, template selection, mixed-mode and circuit adaptation.
+12. `fitness_tracker/sync_review/workout_backfill_performed_work.py` (lines 133-220, 295-420) - backfill performed-work planner and split-circuit adaptation.
+13. `fitness_tracker/sync_review/workout_backfill_request.py` (lines 103-205) - backfill request builder and apply blockers over plan/decisions dicts.
+14. `fitness_tracker/sync_review/hevy_to_true_coach_result.py` (lines 73-220) - result sync review/apply service.
+15. `fitness_tracker/sync_review/hevy_to_true_coach_result_planner.py` (lines 22-131) - result mapping planner.
+16. `fitness_tracker/sync/ports/hevy_workout_writer.py` (lines 1-49) and `fitness_tracker/sync/adapters/hevy_workout_writer.py` (lines 1-64) - representative shallow port/adapter pair.
+17. `fitness_tracker/cli.py` (lines 90-172, 438-610, 1769-1928) - large CLI dispatcher/parser and review/apply orchestration branches.
 
-## Language
+## Key Code
 
-### Actors
+- `SyncService.run()` calls `_execute_full_sync()`, which imports Apple Health, syncs True Coach, syncs Hevy events, writes checkpoints, syncs assessments, clears routines, re-syncs True Coach, then creates Hevy routines for due workouts (`fitness_tracker/sync/_service.py` lines 85-121). `sync_hevy_workouts()` immediately cascades updated Hevy workouts to the direct True Coach syncer (`fitness_tracker/sync/_service.py` lines 161-175).
 
-**Athlete**:
-The person who performs the training and owns this system.
-_Avoid_: user, client — the Athlete is True Coach's "client", but "client" here means an API client.
+- Legacy Routine creation is a single orchestration method with template lookup, placeholder allocation, superset extraction, LLM/deterministic set parsing, request creation, remote mutation, and cross-domain linking in one Module (`fitness_tracker/sync/true_coach_hevy/sync.py` lines 47-138). It does not write review artifacts.
 
-**Coach**:
-The personal trainer who authors training plans for the Athlete.
-_Avoid_: trainer, PT
+- The review path is a separate Module: `TrueCoachToHevyReviewService.write_review()` builds plan/report artifacts, `write_apply_request()` rebuilds a typed Hevy request from `plan.json`, and `apply()` calls a writer (`fitness_tracker/sync_review/true_coach_to_hevy.py` lines 75-158). `_build_hevy_routine_request()` validates blockers and converts the plan dict into request models (`fitness_tracker/sync_review/true_coach_to_hevy.py` lines 241-320).
 
-### Platforms
+- `RoutinePrescriptionPlanner.review_item()` mixes template selection, required-template override resolution, circuit parsing, mixed-mode splitting, Athlete-history enrichment, warnings, and blockers (`fitness_tracker/sync_review/routine_prescription.py` lines 163-238). Its circuit adapter nests a template resolver and maps shared split-circuit plan data back into Routine-specific `PlannedBlock` objects (`fitness_tracker/sync_review/routine_prescription.py` lines 317-428).
 
-**True Coach**:
-The third-party platform where the Coach authors training plans — system of record for the plan.
+- Backfill has a parallel but different adapter: `_circuit_plan_items()` expands split-circuit exercises, applies performed evidence, omissions/replacements, blockers, candidate IDs, notes, and per-movement sets (`fitness_tracker/sync_review/workout_backfill_performed_work.py` lines 320-405). Request eligibility and blocker logic is later recalculated over plain dicts in `workout_backfill_request.py` lines 143-180.
 
-**Hevy**:
-The third-party platform where the Athlete logs training — system of record for results.
+- ADR 0002 explicitly says broad sync `ports/` and `adapters/` were tried and reverted, with only checkpoint storage intended as live exception (`docs/adr/0002-sync-layer-uses-concrete-wiring.md` lines 6-15). Current usage still imports writer ports from `sync.ports` in review Modules, and representative `HevyWorkoutWriterAdapter` is a shallow pass-through except for remote idempotency search (`fitness_tracker/sync/adapters/hevy_workout_writer.py` lines 24-64).
 
-### Training concepts
+## Architecture
 
-**Routine**:
-A planned, not-yet-performed training session — a prescription. In Hevy terms, a routine.
-_Avoid_: plan, template, workout
+The repo has two overlapping sync architectures:
 
-**Routine feedback**:
-An Athlete-approved update to a Hevy Routine after completing a Workout, used as evidence for improving future generated Routine prescriptions without treating ordinary performed results as new Coach intent.
-Pure load or rep value changes are low-signal by default; set-count changes and set-type changes are reviewable feedback because they alter Routine structure.
-Warmup-row additions are structural Routine feedback, but they remain
-review-required because they may reflect a one-off Workout choice rather than a
-future prescription default.
-Routine feedback review should classify differences by signal: template
-changes, rest period changes, notes changes, set-count changes, and set-type
-changes are shown by default; pure load changes, pure rep value changes, and
-performed cardio durations on distance sets are low-signal unless explicitly
-requested.
+1. **Automatic directional sync Modules** under `fitness_tracker/sync/`. `SyncService` wires concrete Implementations and hides step ordering. Directional syncers directly combine local DB access, API calls, parsing/formatting, and mutation.
+2. **Review/apply workflow Modules** under `fitness_tracker/sync_review/`. These create durable artifacts (`plan.json`, request JSON, decisions JSON, reports), then apply through narrow writer seams.
 
-**Workout**:
-A single training session that has been performed and logged.
-_Avoid_: session, routine
+The deeper domain vocabulary in `CONTEXT.md` and ADRs favors review artifacts for ambiguous Workouts, Routine backfill, split circuits, and result sync decisions. The friction is that several Seams are still encoded as ad-hoc dict shapes and large orchestration functions rather than as stable workflow concepts, while some shallow Interface/Adapter layers remain from an ADR-rejected experiment.
 
-**Workout backfill**:
-Creating a logged Hevy Workout from an already-completed True Coach Workout
-that was not originally recorded in Hevy. Backfill is historical result
-transfer, not Routine creation.
-Every performed Workout Item included in a backfilled Hevy Workout must resolve
-to a concrete Hevy exercise template. Placeholder items may be omitted only when
-they represent non-exercise context such as rest notes.
-A completed backfill links the created Hevy Workout and its included exercise
-blocks back to the existing local tracker rows, so the local tracker records
-that the historical Workout has been transferred.
-Backfilled Hevy Workouts include the source True Coach Workout id as an
-idempotency marker, so retries can detect or repair an existing remote backfill
-instead of creating a duplicate.
-Backfill timing may be inferred from Apple Health evidence such as nearby
-workout intervals and heart-rate patterns. Timing inference is a review
-judgement, not a silent automatic fact; if confidence is too low, the timestamp
-should remain unset until the Athlete or Agent chooses it.
-The deterministic backfill plan is an audit trail of local source data. Agent or
-Athlete judgement belongs in editable request or decision artifacts, not by
-rewriting the deterministic plan.
+## Start Here
 
-**Performed results**:
-The Athlete's completed set outcomes for a Workout, such as load, reps,
-distance, duration, and effort. For Workout backfill, performed results are the
-data being transferred; Coach-authored prescription text remains context for
-review and notes.
-Cardio durations added after completing a Routine, such as completed Rowing
-Machine split times, are performed results by default and should not become
-future Routine duration targets unless the Athlete explicitly promotes them.
-When performed-result text cannot be fully represented in Hevy's structured set
-fields, the raw text is preserved in Hevy exercise notes.
-Exercise notes should preserve non-structured context and Athlete feedback, not
-duplicate values already represented in structured Hevy set rows.
+Start with `fitness_tracker/sync/_service.py`. It shows where automatic sync still enters legacy direct-mutation Implementations, which is the highest-leverage place to decide whether review/apply workflows should replace or be explicitly kept separate from automatic sync.
 
-**Result sync review**:
-An Agent-reviewed Hevy to True Coach sync step that prepares Coach-facing result
-text from linked Hevy Workout data before mutating True Coach. Hevy remains the
-source of truth for performed results; the Agent may review item mappings, omit
-noise, and adjust readable result text, but must not invent performed set
-outcomes that are not present in Hevy evidence.
+## Architectural Deepening Candidates
 
-**Performed exercise replacement**:
-An Athlete change during a Hevy Workout where the performed exercise differs
-from the Coach-authored True Coach Workout Item. During Result sync review, the
-performed Hevy exercise may still map to the original True Coach item, but the
-Coach-facing result text should explain what exercise was actually performed
-because True Coach exercise definitions cannot be patched as part of sync.
+1. **Unify or retire the legacy direct Routine creation path**
+   - **Files:** `fitness_tracker/sync/_service.py` lines 85-121; `fitness_tracker/sync/true_coach_hevy/sync.py` lines 47-138; `fitness_tracker/sync_review/true_coach_to_hevy.py` lines 75-158 and 241-320.
+   - **Problem:** Two Modules implement True Coach -> Hevy Routine creation with different depth. The legacy Implementation is shallow at the seam but deep inside one method: it directly mutates Hevy, uses placeholder templates, sets `rest_seconds=0`, mixes LLM parsing with fallback parsing, and bypasses review blockers. The review Module has better Locality for artifacts and safety, but automatic `SyncService` still calls the legacy path.
+   - **Deletion test:** If `fitness_tracker/sync/true_coach_hevy/sync.py` disappeared, the review/apply path still knows how to plan and create Routines, but `SyncService.create_hevy_routine()` would need a replacement policy. That indicates duplicate capability, not a necessary Adapter.
+   - **Solution sketch:** Make one Routine creation Implementation authoritative. Either route automatic Routine creation through the review planner with an explicit no-review policy for safe cases, or explicitly mark the legacy syncer as a constrained fast path and strip duplicated parsing/planning logic from it.
+   - **Benefits:** Higher Leverage from one prescription planner; fewer bugs hidden in orchestration; clearer Seam between deterministic planning, Agent review, and remote mutation; better alignment with Routine feedback/backfill ADR language.
 
-**Performed order change**:
-An Athlete change during a Hevy Workout where exercises are performed in a
-different order from the Coach-authored True Coach Workout Item order. During
-Result sync review, the Agent should preserve the mapping to the intended True
-Coach items when possible and mention meaningful order changes because fatigue
-context may explain different performance.
+2. **Separate result-sync safety policy from direct cascade mutation**
+   - **Files:** `fitness_tracker/sync/_service.py` lines 161-175; `fitness_tracker/sync/hevy_true_coach/sync.py` lines 40-140; `fitness_tracker/sync_review/hevy_to_true_coach_result.py` lines 73-220; `fitness_tracker/sync_review/hevy_to_true_coach_result_planner.py` lines 22-131; `docs/adr/0006-hevy-to-truecoach-result-sync-uses-review-artifacts.md` lines 1-8.
+   - **Problem:** Hevy updates automatically cascade into direct True Coach mutation, while ADR 0006 says brittle result mappings should use review/apply artifacts. The review planner has explicit candidates, blockers, omissions, partial apply, and completion status. The legacy path has repair logic and direct PUTs, but little Locality for mapping decisions.
+   - **Deletion test:** Deleting the legacy result syncer would break the automatic cascade, but not the review/apply capability. Deleting the review path would lose the documented safety model. This suggests the Seam is policy, not API access.
+   - **Solution sketch:** Deepen a result-sync workflow boundary that can choose direct apply only when the planner has no blockers and policy allows automation; otherwise emit review artifacts. Preserve the legacy refresh/repair behavior as a reusable Implementation detail rather than owning the mapping policy.
+   - **Benefits:** Keeps performed-result semantics from `CONTEXT.md` local to one workflow; reduces accidental completion of unresolved Workouts; improves testability by testing plan/apply policy instead of full API orchestration.
 
-**Repeated performed exercise**:
-The same Hevy exercise template appearing more than once in one Workout for
-different roles, such as warmup work and later main work. During Result sync
-review, repeated exercises should be mapped by local context such as set type,
-load, position, nearby True Coach items, and notes rather than by template name
-alone. If the role remains ambiguous, the Agent should ask the Athlete before
-syncing the affected items.
+3. **Move review writer ports/adapters out of the ADR-rejected sync port layer**
+   - **Files:** `docs/adr/0002-sync-layer-uses-concrete-wiring.md` lines 1-15; `fitness_tracker/sync/ports/hevy_workout_writer.py` lines 1-49; `fitness_tracker/sync/adapters/hevy_workout_writer.py` lines 1-64; `fitness_tracker/sync_review/true_coach_to_hevy.py` lines 146-158; `fitness_tracker/sync_review/hevy_to_true_coach_result.py` lines 172-220.
+   - **Problem:** `sync/ports` says “sync layer ports” even though ADR 0002 says that architecture was reverted. Some writer Interfaces are now useful to review/apply workflows, but their location leaks an old architecture into new Modules. The Adapters are mostly shallow pass-throughs, so the naming adds conceptual cost without much Depth.
+   - **Deletion test:** Deleting `sync/ports` entirely breaks live review imports and checkpoint typing, so ADR completion is blocked by misplaced live seams. Deleting individual pass-through Adapters would often just require calling concrete API clients, except where the Adapter has real workflow logic like remote idempotency lookup.
+   - **Solution sketch:** Keep only seams with real workflow Leverage, colocated with the workflow that needs them. Leave checkpoint storage with `SyncService`, and either inline shallow writers or move review-specific mutation seams under `sync_review`/workflow apply Modules.
+   - **Benefits:** Aligns code with ADR 0002; improves Locality of mutation boundaries; removes misleading shallow Modules; makes future agents less likely to reintroduce broad ports/adapters.
 
-**Choice Workout Item**:
-A Coach-authored Workout Item where the Coach offers multiple exercise options
-and the Athlete's result text identifies which option was performed. During
-Workout backfill, the performed exercise is selected from the Athlete's result
-text rather than the Coach's generic choice wording.
-If the Athlete performed multiple options, the backfill may split one Choice
-Workout Item into multiple Hevy exercise blocks. Metrics that Hevy cannot store
-structurally for those blocks remain in notes.
-Ambiguous Choice Workout Item mappings are resolved as explicit backfill
-decisions that select the performed Hevy exercise template.
+4. **Deepen the Split Circuit workflow Adapter concept**
+   - **Files:** `docs/adr/0007-split-circuit-planning-uses-shared-review-core.md` lines 1-22; `fitness_tracker/sync_review/routine_prescription.py` lines 317-428; `fitness_tracker/sync_review/workout_backfill_performed_work.py` lines 295-420; `fitness_tracker/sync_review/workout_backfill_request.py` lines 143-180.
+   - **Problem:** The shared core exists, but the workflow Adapter logic is embedded inside large Modules. Routine creation and Workout backfill each resolve templates, convert set rows, allocate/group supersets, render notes, and build blockers in separate places. Backfill also derives requestability and blockers later from dicts, so a concept like “performed split-circuit movement with decision state” is spread across multiple Modules.
+   - **Deletion test:** Deleting `split_circuit/core.py` would break both workflows, confirming it is deep. Deleting the embedded adapter code is impossible without touching many unrelated concerns in 858-line and 888-line Modules, showing weak Locality at the Adapter seam.
+   - **Solution sketch:** Extract the workflow-specific split-circuit adaptation out of the large planners into narrow Modules that translate core plans into Routine blocks or backfill performed items. Keep the core free of concrete Hevy request objects as ADR 0007 requires.
+   - **Benefits:** Better Leverage for new circuit behaviors; clearer boundaries between prescription parsing, performed evidence, and Hevy request adaptation; easier tests around omissions/replacements/rest/grouping without full planner setup.
 
-**Down Regulate**:
-A Coach-authored breathing exercise normally performed at the end of a Workout.
-It is performed work, not a note-only cooldown marker. When no more specific
-performed result exists, the Athlete treats it as 4 minutes.
+5. **Give review artifacts a typed internal shape before JSON serialization**
+   - **Files:** `fitness_tracker/sync_review/true_coach_to_hevy.py` lines 160-191 and 241-283; `fitness_tracker/sync_review/workout_backfill_request.py` lines 103-205; `fitness_tracker/sync_review/hevy_to_true_coach_result_planner.py` lines 66-81.
+   - **Problem:** Many Modules pass `dict[str, Any]` plans through build/validate/apply stages. The JSON artifact is a good external Interface, but internally the same dict keys become a hard-to-test implicit Interface. Bugs can hide when orchestration changes a key, because request builders and blockers are string-key consumers far away from the planner.
+   - **Deletion test:** If `plan.json` serialization were removed from an in-memory apply path, much of the business logic should still work. Today `write_apply_request()` reads back the just-written JSON (`true_coach_to_hevy.py` lines 135-139), proving the artifact format is acting as an internal Interface.
+   - **Solution sketch:** Keep JSON artifacts as the external audit trail, but use typed plan/value objects inside planners, validators, and request builders, serializing at the workflow boundary.
+   - **Benefits:** Stronger Locality for plan fields; easier refactors; better tests for orchestration without filesystem round-trips; fewer shallow helper functions that only protect dict access.
 
-**Workout Item**:
-One exercise prescription within a True Coach plan — the unit the Coach writes.
-
-**Template selection override**:
-An item-level correction where the wording of a True Coach Workout Item implies a
-more specific Hevy exercise template than the default exercise link. The override
-applies to the generated Routine item only; it does not change the permanent
-True Coach to Hevy exercise link.
-When Coach notes materially change the exercise, such as "Use handles" on a
-rope-named item, Routine feedback may correct the selected Hevy template rather
-than preserving the original name-based mapping. Notes disappearing after an
-in-workout Hevy exercise replacement are a Hevy app artifact, not necessarily
-Athlete intent to drop Coach context.
-Whether a note-driven replacement becomes a permanent exercise link, a
-Template selection override, or a one-off correction is a case-by-case Athlete
-decision and must not be applied silently.
-
-**Exercise replacement artifact**:
-A Hevy behavior where replacing an exercise while performing a Workout may drop
-Routine notes and populate set values from the replacement exercise's history,
-making notes and load changes lower-signal than the template replacement itself.
-
-**Mixed-mode prescription**:
-A single True Coach Workout Item that prescribes materially different set modes
-for the same exercise, such as timed isometric holds followed by rep-based sets.
-When syncing to Hevy, a mixed-mode prescription should become multiple Routine
-exercise blocks when the phases can be split deterministically. Split phases may
-require different Hevy exercise templates when their set modes differ, such as a
-duration-capable template for isometric holds and a reps-capable template for
-dynamic reps.
-Generated Hevy notes may be phase-specific, but the original Coach wording
-remains the source text for traceability.
-
-**Build work**:
-Coach guidance to ramp or feel out load before the prescribed working sets, such
-as "build weight then". Build work is not a concrete warmup prescription unless
-the Coach gives exact sets, reps, load, or duration.
-
-**Athlete-history enrichment**:
-A calculated logging default derived from the Athlete's previous Hevy Workouts,
-such as a suggested load for a rep target. It is not a Coach prescription and
-must remain distinguishable from values explicitly written by the Coach. When
-confidence is high, enriched loads should be written into generated Hevy Routine
-sets as real values, with internal provenance marking them as history-derived.
-
-**Rep range target**:
-When a Coach prescription gives a rep range but Hevy requires a single rep value,
-the Athlete uses the upper bound as the structured target. The upper bound is a
-progression target: if the Athlete completes all prescribed sets at that target,
-they consider increasing the load next time.
-
-**Plus-set prescription**:
-A Coach prescription such as "3 x 10+10" or "3 x 10>10" means each prescribed
-set has multiple dropset parts. In Hevy this should be represented as alternating
-normal and dropset rows, such as normal 10, dropset 10, repeated for each
-prescribed set.
-
-**Dropset load enrichment**:
-Athlete-history enrichment for a Plus-set prescription. Previous matching
-dropset history is preferred; if it is missing, the system may calculate a
-conservative dropset load from the normal-set load.
-
-**Each-side marker**:
-Coach shorthand such as "ES" means each side. It should be preserved in Hevy
-notes and should not multiply the number of generated Hevy set rows.
-
-**Execution marker**:
-Coach wording that changes how the Athlete performs a set without changing the
-number or type of generated Hevy set rows, such as "alternating" or RIR targets.
-Execution markers should be preserved in notes.
-
-**Circuit block**:
-A Coach-authored Workout Item that contains multiple exercises performed as a
-round or conditioning sequence. When syncing to Hevy, a Circuit block should
-become multiple generated Routine exercise blocks in one superset when its
-exercises can be identified and mapped deterministically; otherwise it remains
-review-required rather than silently becoming a generic placeholder. Each
-generated Routine exercise block should receive one set row per prescribed
-round, with exercise-specific targets where parseable. If any exercise in a
-split Circuit block cannot be mapped to a concrete Hevy exercise template, the
-whole split is review-blocked rather than partially synced. Split Circuit blocks
-use the same Hevy superset id stream as Coach-authored supersets: a standalone
-Circuit block receives the next available superset id, while a Circuit block
-inside an existing Coach-authored superset inherits that superset id. Exercise
-boundaries inside a Circuit block should be identified only from deterministic
-list structure such as line breaks, bullets, numbered lines, or clear comma
-lists; uncertain exercise boundaries are review-blocked. A split Circuit block
-must have a deterministic round count; missing or ambiguous round counts are
-review-blocked. A split Circuit block may contain mixed target types because
-each generated Hevy exercise block owns its own set rows. Unsupported or
-ambiguous target details stay in that exercise's notes. Missing deterministic
-set rows do not block the split when the generated exercise is still useful as
-notes-only or when a review decision explicitly accepts it; otherwise the
-generated exercise remains review-blocked. Each generated exercise should
-preserve the original Circuit block wording in notes for traceability. Split
-Circuit exercises must resolve to concrete Hevy exercise
-templates; generic placeholder templates should not be used for them. A
-single-exercise Circuit block remains one Routine exercise block rather than a
-one-item superset. Rest between rounds should be represented as the rest period
-on the final generated exercise in the circuit round. An exercise duration
-may be represented as that exercise's rest period when the duration is the
-Athlete-facing timer for the exercise, such as a plank, but round-level circuit
-rest takes priority over exercise duration on the final exercise. Cardio machine
-durations, such as cycling for time, should not be represented as rest periods.
-When an exercise duration is structurally supported by Hevy, it should remain a
-duration set target even if it is also used as that exercise's rest period.
-Exercise-level rest should attach to the preceding generated exercise;
-round-level circuit rest still takes priority on the final exercise. Rest-only
-lines in a Circuit block are rest metadata, not generated exercises.
-
-**AMRAP block**:
-A Coach-authored Workout Item performed for as many rounds or reps as possible.
-A multi-exercise AMRAP should be treated as a Circuit block; a single-exercise
-AMRAP should remain one Routine exercise block with the AMRAP instruction
-preserved in notes. For time-boxed multi-exercise AMRAPs, each generated
-exercise should default to half the number of cap minutes, rounded down,
-with a minimum of one set row; the time cap remains in notes.
-
-**Split Circuit plan**:
-A deterministic representation of a Circuit block or multi-exercise AMRAP block
-as generated exercises, selected Hevy exercise templates or template blockers,
-rest metadata, round/count evidence, and review blockers before it is adapted
-into either a Hevy Routine or a backfilled Hevy Workout. A Split Circuit plan
-may carry optional performed evidence, such as completed round counts, for
-Workout backfill; Routine creation treats the same plan as prescription-only.
-An exercise omitted by the Athlete may be preserved as review evidence, but it
-is not part of the backfilled Hevy Workout because Workout backfill represents
-performed work. Workout backfill omission evidence does not affect Routine
-creation unless the Athlete explicitly promotes it through Routine feedback or a
-future prescription review decision. A Split Circuit plan owns the generated exercises' Circuit
-grouping intent, including whether that group inherits Coach-authored superset
-context, but the numeric Hevy `superset_id` is assigned only when adapting the
-plan into a Hevy request. Athlete-history enrichment is not part of a Split
-Circuit plan; Routine creation may enrich generated exercise set rows after the
-plan is adapted. In Workout backfill, an Athlete comment that names a
-replacement exercise for a generated exercise always requires an explicit
-decision rather than silent automatic resolution.
-
-**Substitution instruction**:
-Coach guidance that names alternatives when equipment or conditions differ.
-Substitution instructions should stay in notes and should not automatically
-change the selected Hevy exercise template.
-
-**Rest period**:
-The recovery time *prescribed* for an exercise — a single per-exercise value on a Routine. It is a prescription, not an outcome: Hevy never records the rest actually taken during a Workout.
-A simple single rest value may be structured into Hevy's exercise rest period;
-complex or per-set rest instructions should remain in notes.
-Rest period edits made through Routine feedback are high-signal for future
-Routine generation. Explicit Coach rest text in the True Coach prescription is
-higher priority than Athlete feedback and should be structured when it is a
-simple single rest value.
-When Coach text is silent, Athlete Routine feedback may establish a reusable
-default Rest period for the selected Hevy exercise template.
-
-## Relationships
-
-- A **Coach** authors plans on **True Coach**
-- The system converts a True Coach plan into a Hevy **Routine** for the **Athlete**
-- The **Athlete** performs the Routine on **Hevy**, producing a **Workout**
-- A **Workout** is synced back to **True Coach** as results for the **Coach**
-
-## Example dialogue
-
-> **Athlete:** "When Ross writes a session, does it become a Hevy Workout?"
-> **Domain expert:** "No — it becomes a Hevy **Routine**. A Routine is the prescription.
-> It only becomes a **Workout** once the Athlete performs and logs it. The Workout is
-> what syncs back to the Coach."
-
-## Flagged ambiguities
-
-- "rest timer" (Athlete's words) resolved to **Rest period** — one per-exercise value on a Routine, not a per-set timer. Resolved: rest is plan-side only; it is never measured or stored on a performed Workout.
-- "client" is overloaded — the person is the **Athlete**; "client" is reserved for API clients.
-- "create a new exercise" vs the current placeholder-exercise stand-in — unresolved, pending feature design.
+6. **Split the CLI into command Modules around workflow seams**
+   - **Files:** `fitness_tracker/cli.py` lines 90-172, 438-610, 1769-1928; line count check shows `fitness_tracker/cli.py` is 2547 lines.
+   - **Problem:** The CLI is a large shallow Module that knows every command, parser option, service construction, dry-run/apply branch, manual request path, output text, and some domain patching (`_write_patched_truecoach_to_hevy_request`). It has low Depth: lots of pass-through and branch plumbing, but any new workflow change touches the same file.
+   - **Deletion test:** Deleting the CLI should not delete domain capability, but today it would remove nontrivial apply variants and patching behavior, meaning workflow logic leaked across the CLI Seam.
+   - **Solution sketch:** Move command families into Modules that align with deep workflow boundaries (`sync_review`, `sync_apply`, `hevy maintenance`, etc.). Keep top-level CLI as a dispatcher.
+   - **Benefits:** Better Locality for command changes; less merge friction; clearer boundary between user Interface and workflow Implementation; lower risk of bugs hidden in argparse/orchestration branches.

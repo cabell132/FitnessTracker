@@ -28,6 +28,9 @@ class TrueCoachToFitnessTrackerSyncronizer:
             workout (Workout): The workout to syncronize.
         """
         uow.true_coach.add_workout(workout)
+        true_coach_workout = uow.true_coach.get_workout(id=workout.id)
+        if true_coach_workout is not None:
+            uow.tracker.add_workout(true_coach_workout)
 
     def sync_workout_item(self, uow: Tx, workout_item: WorkoutItem) -> None:
         """Syncronize the workout item with the given id.
@@ -57,3 +60,5 @@ class TrueCoachToFitnessTrackerSyncronizer:
                 self.sync_workout(uow=uow, workout=workout)
             for workout_item in workouts.workout_items:
                 self.sync_workout_item(uow=uow, workout_item=workout_item)
+            uow.cross_domain.flush()
+            uow.cross_domain.insert_tc_tracker_workout_items()
