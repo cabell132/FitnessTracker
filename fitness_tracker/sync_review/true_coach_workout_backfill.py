@@ -167,7 +167,7 @@ PIPELINE_REVIEW_DIRNAME = "workout-backfill"
 PIPELINE_MANIFEST_FILENAME = "review-manifest.json"
 PIPELINE_REQUEST_MANIFEST_FILENAME = "request-manifest.json"
 PIPELINE_REQUEST_FILENAME = "hevy-workout-request.json"
-PIPELINE_WORKFLOW = "workout-backfill"
+PIPELINE_REQUEST_WORKFLOW = "workout-backfill"
 PIPELINE_REQUEST_SCHEMA_VERSION = 1
 PIPELINE_ARTIFACT_FILENAMES = {
     "plan": "plan.json",
@@ -504,21 +504,12 @@ class WorkoutBackfillPipeline:
 
         plan = read_json_object(paths.plan)
         decisions = read_json_object(paths.decisions)
-        decision_validation = validate_workout_backfill_decisions(
-            manifest["workout_id"],
-            decisions,
-            plan,
+        request_body, decision_validation = _build_validated_pipeline_request(
+            workout_id=manifest["workout_id"],
+            plan=plan,
+            decisions=decisions,
         )
         write_json_artifact(paths.decision_validation, decision_validation)
-        request_body = build_hevy_workout_backfill_request(plan, decisions)
-        _validate_apply_request(
-            WorkoutBackfillApplyValidationContext(
-                plan=plan,
-                decision_validation=decision_validation,
-                request_body=request_body,
-                decisions=decisions,
-            )
-        )
         write_json_artifact(paths.request, request_body)
         write_json_artifact(
             paths.request_manifest,
@@ -691,21 +682,55 @@ def _validate_existing_pipeline_request(
         msg = f"Existing request has no manifest: {request_manifest_path}"
         raise WorkoutBackfillReviewError(msg)
     manifest = read_json_object(request_manifest_path)
-    hashes = manifest.get("sha256")
-    output_hash = hashes.get("request") if isinstance(hashes, dict) else None
-    if not isinstance(output_hash, str):
-        msg = f"Request manifest {request_manifest_path} is missing request hash"
-        raise WorkoutBackfillReviewError(msg)
-    if _sha256_file(request_path) != output_hash:
+    request_hash = _request_manifest_hash(manifest, request_manifest_path)
+    if _sha256_file(request_path) != request_hash:
         msg = f"Existing request has been edited; use --force to overwrite: {request_path}"
         raise WorkoutBackfillReviewError(msg)
+
+
+def _request_manifest_hash(
+    manifest: dict[str, Any],
+    manifest_path: Path,
+) -> str:
+    hashes = manifest.get("sha256")
+    if not isinstance(hashes, dict):
+        msg = f"Request manifest {manifest_path} is missing request hash"
+        raise WorkoutBackfillReviewError(msg)
+    request_hash = hashes.get("request")
+    if not isinstance(request_hash, str):
+        msg = f"Request manifest {manifest_path} is missing request hash"
+        raise WorkoutBackfillReviewError(msg)
+    return request_hash
+
+
+def _build_validated_pipeline_request(
+    *,
+    workout_id: int,
+    plan: dict[str, Any],
+    decisions: dict[str, Any],
+) -> tuple[PostWorkoutsRequestBody, dict[str, list[str]]]:
+    decision_validation = validate_workout_backfill_decisions(
+        workout_id,
+        decisions,
+        plan,
+    )
+    request_body = build_hevy_workout_backfill_request(plan, decisions)
+    _validate_apply_request(
+        WorkoutBackfillApplyValidationContext(
+            plan=plan,
+            decision_validation=decision_validation,
+            request_body=request_body,
+            decisions=decisions,
+        )
+    )
+    return request_body, decision_validation
 
 
 def _pipeline_request_manifest(
     paths: WorkoutBackfillPipelineRequestPaths,
 ) -> dict[str, Any]:
     return {
-        "workflow": PIPELINE_WORKFLOW,
+        "workflow": PIPELINE_REQUEST_WORKFLOW,
         "schema_version": PIPELINE_REQUEST_SCHEMA_VERSION,
         "generated_at": datetime.now(UTC).isoformat(),
         "artifacts": {
