@@ -1,0 +1,139 @@
+hooks:
+  - id: enforce-uv-before-bash
+    event: tool.before.bash
+    actions:
+      - bash: ".claude/scripts/enforce-uv.sh"
+
+  - id: enforce-poe-before-bash
+    event: tool.before.bash
+    actions:
+      - bash: ".claude/scripts/enforce-poe.sh"
+
+  - id: enforce-safe-git-before-bash
+    event: tool.before.bash
+    actions:
+      - bash: ".claude/scripts/enforce-safe-git.sh"
+
+  - id: protect-init-before-write
+    event: tool.before.write
+    actions:
+      - bash: ".claude/scripts/protect-init.sh"
+
+  - id: protect-init-before-edit
+    event: tool.before.edit
+    actions:
+      - bash: ".claude/scripts/protect-init.sh"
+
+  - id: protect-config-before-write
+    event: tool.before.write
+    actions:
+      - bash: ".claude/scripts/protect-config.sh"
+
+  - id: protect-config-before-edit
+    event: tool.before.edit
+    actions:
+      - bash: ".claude/scripts/protect-config.sh"
+
+  - id: ruff-format-after-write
+    event: tool.after.write
+    conditions:
+      - matchesAnyPath:
+          - "**/*.py"
+          - "*.py"
+    actions:
+      - bash: ".claude/scripts/ruff-format.sh"
+
+  - id: ruff-format-after-edit
+    event: tool.after.edit
+    conditions:
+      - matchesAnyPath:
+          - "**/*.py"
+          - "*.py"
+    actions:
+      - bash: ".claude/scripts/ruff-format.sh"
+
+  - id: pydoclint-after-write
+    event: tool.after.write
+    conditions:
+      - matchesAnyPath:
+          - "**/*.py"
+          - "*.py"
+    actions:
+      - bash: ".claude/scripts/pydoclint-check.sh"
+
+  - id: pydoclint-after-edit
+    event: tool.after.edit
+    conditions:
+      - matchesAnyPath:
+          - "**/*.py"
+          - "*.py"
+    actions:
+      - bash: ".claude/scripts/pydoclint-check.sh"
+
+  - id: check-file-length-after-write
+    event: tool.after.write
+    conditions:
+      - matchesAnyPath:
+          - "**/*.py"
+          - "*.py"
+    actions:
+      - bash: ".claude/scripts/check-file-length.sh"
+
+  - id: check-file-length-after-edit
+    event: tool.after.edit
+    conditions:
+      - matchesAnyPath:
+          - "**/*.py"
+          - "*.py"
+    actions:
+      - bash: ".claude/scripts/check-file-length.sh"
+
+  - id: check-single-class-after-write
+    event: tool.after.write
+    conditions:
+      - matchesAnyPath:
+          - "**/*.py"
+          - "*.py"
+    actions:
+      - bash: ".claude/scripts/check-single-class.sh"
+
+  - id: check-single-class-after-edit
+    event: tool.after.edit
+    conditions:
+      - matchesAnyPath:
+          - "**/*.py"
+          - "*.py"
+    actions:
+      - bash: ".claude/scripts/check-single-class.sh"
+
+  - id: check-test-naming-after-write
+    event: tool.after.write
+    conditions:
+      - matchesAnyPath:
+          - "tests/**/*.py"
+          - "tests/*.py"
+    actions:
+      - bash: ".claude/scripts/check-test-naming.sh"
+
+  - id: check-test-naming-after-edit
+    event: tool.after.edit
+    conditions:
+      - matchesAnyPath:
+          - "tests/**/*.py"
+          - "tests/*.py"
+    actions:
+      - bash: ".claude/scripts/check-test-naming.sh"
+
+  - id: ty-check-on-idle
+    event: session.idle
+    actions:
+      - bash:
+          command: ".claude/scripts/ty-check.sh"
+          timeout: 30000
+
+  - id: ruff-check-on-idle
+    event: session.idle
+    actions:
+      - bash:
+          command: ".claude/scripts/ruff-check.sh"
+          timeout: 30000

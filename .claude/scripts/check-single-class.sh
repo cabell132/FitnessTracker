@@ -2,7 +2,7 @@
 # PostToolUse hook: Block multiple classes per file (>50 lines each)
 
 input=$(cat)
-file_path=$(echo "$input" | jq -r '.tool_input.file_path // empty')
+file_path=$(echo "$input" | jq -r '.tool_input.file_path // .tool_input.path // .tool_args.file_path // .tool_args.path // .files[0] // .changes[0].path // empty')
 
 [ -z "$file_path" ] && exit 0
 [[ "$file_path" != *.py ]] && exit 0

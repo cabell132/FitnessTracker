@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, cast
@@ -21,6 +20,12 @@ from fitness_tracker.sync_review.hevy_to_true_coach_result_planner import (
     HevyToTrueCoachResultSyncPlanner,
 )
 from fitness_tracker.sync.ports.true_coach_workout_item_writer import TrueCoachWorkoutItemWriter
+from fitness_tracker.sync_review.workflow import (
+    load_decisions_file,
+    read_json_object,
+    review_bundle_dir,
+    write_json_artifact,
+)
 
 _DECISION_BUILDER = HevyToTrueCoachResultDecisionBuilder()
 HevyToTrueCoachResultApplyError = _DecisionApplyError
@@ -108,7 +113,10 @@ class HevyToTrueCoachResultReviewService:
             )
             plan = self._planner.plan(workout, tracker_workout)
             decisions = (
-                _load_decisions(decisions_path)
+                load_decisions_file(
+                    decisions_path,
+                    error_cls=HevyToTrueCoachResultReviewError,
+                )
                 if decisions_path is not None
                 else self._decision_builder.decisions_template(workout.id, plan["items"])
             )
@@ -141,15 +149,15 @@ class HevyToTrueCoachResultReviewService:
             HevyToTrueCoachResultApplyResult: Dry-run request artifact details.
         """
         bundle = self.write_review(hevy_workout_id, decisions_path=decisions_path)
-        plan = _load_json_file(bundle.plan_path)
-        decisions = _load_json_file(bundle.decisions_path)
-        validation = _load_json_file(bundle.decision_validation_path)
+        plan = read_json_object(bundle.plan_path)
+        decisions = read_json_object(bundle.decisions_path)
+        validation = read_json_object(bundle.decision_validation_path)
         self._decision_builder.validate_apply_request(validation, decisions)
         request = self._decision_builder.build_true_coach_update_request(plan, decisions)
         report = self._decision_builder.apply_report(plan, decisions, request)
         request.update(report)
         request_path = bundle.directory / "truecoach-update-request.json"
-        _write_json(request_path, request)
+        write_json_artifact(request_path, request)
         return HevyToTrueCoachResultApplyResult(
             review_bundle=bundle,
             request_path=request_path,
@@ -201,7 +209,7 @@ class HevyToTrueCoachResultReviewService:
             "updated_true_coach_workout_item_ids": updated_item_ids,
             "unresolved_hevy_workout_item_ids": unresolved_hevy_item_ids,
         }
-        _write_json(result.request_path, applied_request)
+        write_json_artifact(result.request_path, applied_request)
         return replace(
             result,
             action="applied",
@@ -227,15 +235,14 @@ def _write_bundle(
     Returns:
         HevyToTrueCoachResultReviewBundle: Paths written for the review.
     """
-    bundle_dir = output_root / "sync-review" / "hevy-to-truecoach-results" / hevy_workout_id
-    bundle_dir.mkdir(parents=True, exist_ok=True)
+    bundle_dir = review_bundle_dir(output_root, "hevy-to-truecoach-results", hevy_workout_id)
     plan_path = bundle_dir / "plan.json"
     decisions_path = bundle_dir / "result-decisions.json"
     validation_path = bundle_dir / "decision-validation.json"
     report_path = bundle_dir / "report.md"
-    _write_json(plan_path, artifacts.plan)
-    _write_json(decisions_path, artifacts.decisions)
-    _write_json(validation_path, artifacts.validation)
+    write_json_artifact(plan_path, artifacts.plan)
+    write_json_artifact(decisions_path, artifacts.decisions)
+    write_json_artifact(validation_path, artifacts.validation)
     report_path.write_text(artifacts.report, encoding="utf-8")
     return HevyToTrueCoachResultReviewBundle(
         directory=bundle_dir,
@@ -246,37 +253,14 @@ def _write_bundle(
     )
 
 
-def _write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-
-
-def _load_decisions(decisions_path: Path) -> dict[str, Any]:
-    try:
-        data = json.loads(decisions_path.read_text(encoding="utf-8"))
-    except OSError as exc:
-        msg = f"Could not read decisions file {decisions_path}: {exc}"
-        raise HevyToTrueCoachResultReviewError(msg) from exc
-    except json.JSONDecodeError as exc:
-        msg = f"Could not parse decisions file {decisions_path}: {exc}"
-        raise HevyToTrueCoachResultReviewError(msg) from exc
-    if not isinstance(data, dict):
-        msg = f"Decisions file {decisions_path} must contain a JSON object"
-        raise HevyToTrueCoachResultReviewError(msg)
-    return data
-
-
-def _load_json_file(path: Path) -> dict[str, Any]:
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
 def _apply_update_operations(
     store: Store,
     workout_item_writer: TrueCoachWorkoutItemWriter,
     result: HevyToTrueCoachResultApplyResult,
 ) -> tuple[list[int], list[int]]:
     hevy_item_ids_by_target_id = _DECISION_BUILDER.hevy_item_ids_by_target_id(
-        _load_json_file(result.review_bundle.plan_path),
-        _load_json_file(result.review_bundle.decisions_path),
+        read_json_object(result.review_bundle.plan_path),
+        read_json_object(result.review_bundle.decisions_path),
     )
     updated_item_ids: list[int] = []
     unresolved_hevy_item_ids = list(result.unresolved_hevy_workout_item_ids)
