@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
-from datetime import datetime, time, timedelta
+from datetime import UTC, datetime, time, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -99,6 +100,15 @@ class WorkoutBackfillInspectResult:
 
 
 @dataclass(frozen=True)
+class WorkoutBackfillPipelineRequest:
+    """Request artifacts written for one Workout backfill review directory."""
+
+    review_dir: Path
+    request_path: Path
+    manifest_path: Path
+
+
+@dataclass(frozen=True)
 class WorkoutBackfillPipelinePaths:
     """Artifact paths for one pipeline review directory."""
 
@@ -108,6 +118,17 @@ class WorkoutBackfillPipelinePaths:
     decision_validation: Path
     apple_health_evidence: Path
     report: Path
+
+
+@dataclass(frozen=True)
+class WorkoutBackfillPipelineRequestPaths:
+    """Artifact paths consumed and produced by the request-writing step."""
+
+    plan: Path
+    decisions: Path
+    decision_validation: Path
+    request: Path
+    request_manifest: Path
 
 
 @dataclass(frozen=True)
@@ -144,6 +165,10 @@ class BackfillReportContext:
 
 PIPELINE_REVIEW_DIRNAME = "workout-backfill"
 PIPELINE_MANIFEST_FILENAME = "review-manifest.json"
+PIPELINE_REQUEST_MANIFEST_FILENAME = "request-manifest.json"
+PIPELINE_REQUEST_FILENAME = "hevy-workout-request.json"
+PIPELINE_WORKFLOW = "workout-backfill"
+PIPELINE_REQUEST_SCHEMA_VERSION = 1
 PIPELINE_ARTIFACT_FILENAMES = {
     "plan": "plan.json",
     "decisions": "decisions.json",
@@ -151,7 +176,7 @@ PIPELINE_ARTIFACT_FILENAMES = {
     "apple_health_evidence": "apple-health-evidence.json",
     "report": "report.md",
 }
-PIPELINE_REQUEST_FILENAMES = ("hevy-workout-request.json", "request-manifest.json")
+PIPELINE_REQUEST_FILENAMES = (PIPELINE_REQUEST_FILENAME, PIPELINE_REQUEST_MANIFEST_FILENAME)
 
 
 class TrueCoachWorkoutBackfillReviewService:
@@ -452,6 +477,61 @@ class WorkoutBackfillPipeline:
             report_path=paths.report,
         )
 
+    def write_request(
+        self,
+        review_dir: Path,
+        *,
+        force: bool = False,
+    ) -> WorkoutBackfillPipelineRequest:
+        """Write a Hevy Workout request from an existing review directory.
+
+        Args:
+            review_dir (Path): Existing artifact-first review directory.
+            force (bool): Overwrite existing request artifacts even when edited.
+
+        Returns:
+            WorkoutBackfillPipelineRequest: Paths written for the request step.
+        """
+        manifest_path = review_dir / PIPELINE_MANIFEST_FILENAME
+        manifest = read_json_object(manifest_path)
+        _validate_pipeline_review_manifest(manifest, manifest_path)
+        paths = _pipeline_request_paths(review_dir, manifest)
+        _validate_existing_pipeline_request(
+            paths.request,
+            paths.request_manifest,
+            force=force,
+        )
+
+        plan = read_json_object(paths.plan)
+        decisions = read_json_object(paths.decisions)
+        decision_validation = validate_workout_backfill_decisions(
+            manifest["workout_id"],
+            decisions,
+            plan,
+        )
+        write_json_artifact(paths.decision_validation, decision_validation)
+        request_body = build_hevy_workout_backfill_request(plan, decisions)
+        _validate_apply_request(
+            WorkoutBackfillApplyValidationContext(
+                plan=plan,
+                decision_validation=decision_validation,
+                request_body=request_body,
+                decisions=decisions,
+            )
+        )
+        write_json_artifact(paths.request, request_body)
+        write_json_artifact(
+            paths.request_manifest,
+            _pipeline_request_manifest(paths),
+        )
+        manifest["request_status"] = "written"
+        write_json_artifact(manifest_path, manifest)
+        return WorkoutBackfillPipelineRequest(
+            review_dir=review_dir,
+            request_path=paths.request,
+            manifest_path=paths.request_manifest,
+        )
+
     def inspect(self, review_dir: Path) -> WorkoutBackfillInspectResult:
         """Load review status through the review manifest.
 
@@ -564,6 +644,87 @@ def _pipeline_review_manifest(workout_id: int) -> dict[str, Any]:
         "artifacts": dict(PIPELINE_ARTIFACT_FILENAMES),
         "request_status": "not-written",
     }
+
+
+def _pipeline_request_paths(
+    review_dir: Path,
+    manifest: dict[str, Any],
+) -> WorkoutBackfillPipelineRequestPaths:
+    artifacts = manifest["artifacts"]
+    return WorkoutBackfillPipelineRequestPaths(
+        plan=_manifest_artifact_path(review_dir, artifacts, "plan"),
+        decisions=_manifest_artifact_path(review_dir, artifacts, "decisions"),
+        decision_validation=_manifest_artifact_path(
+            review_dir,
+            artifacts,
+            "decision_validation",
+        ),
+        request=review_dir / PIPELINE_REQUEST_FILENAME,
+        request_manifest=review_dir / PIPELINE_REQUEST_MANIFEST_FILENAME,
+    )
+
+
+def _validate_pipeline_review_manifest(
+    manifest: dict[str, Any],
+    manifest_path: Path,
+) -> None:
+    if manifest.get("kind") != "workout-backfill-review":
+        msg = f"Review manifest {manifest_path} is not a Workout backfill review"
+        raise WorkoutBackfillReviewError(msg)
+    if not isinstance(manifest.get("workout_id"), int):
+        msg = f"Review manifest {manifest_path} must contain an integer workout_id"
+        raise WorkoutBackfillReviewError(msg)
+    if not isinstance(manifest.get("artifacts"), dict):
+        msg = f"Review manifest {manifest_path} must contain an artifacts object"
+        raise WorkoutBackfillReviewError(msg)
+
+
+def _validate_existing_pipeline_request(
+    request_path: Path,
+    request_manifest_path: Path,
+    *,
+    force: bool,
+) -> None:
+    if force or not request_path.exists():
+        return
+    if not request_manifest_path.exists():
+        msg = f"Existing request has no manifest: {request_manifest_path}"
+        raise WorkoutBackfillReviewError(msg)
+    manifest = read_json_object(request_manifest_path)
+    hashes = manifest.get("sha256")
+    output_hash = hashes.get("request") if isinstance(hashes, dict) else None
+    if not isinstance(output_hash, str):
+        msg = f"Request manifest {request_manifest_path} is missing request hash"
+        raise WorkoutBackfillReviewError(msg)
+    if _sha256_file(request_path) != output_hash:
+        msg = f"Existing request has been edited; use --force to overwrite: {request_path}"
+        raise WorkoutBackfillReviewError(msg)
+
+
+def _pipeline_request_manifest(
+    paths: WorkoutBackfillPipelineRequestPaths,
+) -> dict[str, Any]:
+    return {
+        "workflow": PIPELINE_WORKFLOW,
+        "schema_version": PIPELINE_REQUEST_SCHEMA_VERSION,
+        "generated_at": datetime.now(UTC).isoformat(),
+        "artifacts": {
+            "plan": paths.plan.name,
+            "decisions": paths.decisions.name,
+            "decision_validation": paths.decision_validation.name,
+            "request": paths.request.name,
+        },
+        "sha256": {
+            "plan": _sha256_file(paths.plan),
+            "decisions": _sha256_file(paths.decisions),
+            "decision_validation": _sha256_file(paths.decision_validation),
+            "request": _sha256_file(paths.request),
+        },
+    }
+
+
+def _sha256_file(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def _remove_request_artifacts(review_dir: Path) -> None:

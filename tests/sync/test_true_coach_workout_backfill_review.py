@@ -318,6 +318,122 @@ def test_workout_backfill_pipeline_inspect_loads_artifacts_through_manifest(
     ]
 
 
+def test_workout_backfill_pipeline_write_request_writes_request_and_manifest(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    pipeline = WorkoutBackfillPipeline(store=store, output_root=tmp_path / "reports")
+    review = pipeline.review(455045484)
+    _write_requestable_pipeline_decisions(review.decisions_path)
+
+    result = pipeline.write_request(review.directory)
+
+    request = json.loads(result.request_path.read_text(encoding="utf-8"))
+    manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
+    assert request["workout"]["start_time"] == "2024-04-10T13:00:00+00:00"
+    assert request["workout"]["end_time"] == "2024-04-10T14:00:00+00:00"
+    assert manifest["workflow"] == "workout-backfill"
+    assert manifest["schema_version"] == 1
+    assert manifest["artifacts"] == {
+        "plan": "plan.json",
+        "decisions": "decisions.json",
+        "decision_validation": "decision-validation.json",
+        "request": "hevy-workout-request.json",
+    }
+    assert set(manifest["sha256"]) == {
+        "plan",
+        "decisions",
+        "decision_validation",
+        "request",
+    }
+    review_manifest = json.loads(review.manifest_path.read_text(encoding="utf-8"))
+    assert review_manifest["request_status"] == "written"
+
+
+def test_workout_backfill_pipeline_write_request_blocks_invalid_decisions(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    pipeline = WorkoutBackfillPipeline(store=store, output_root=tmp_path / "reports")
+    review = pipeline.review(455045484)
+
+    with pytest.raises(WorkoutBackfillApplyError, match="selected Workout timestamps"):
+        pipeline.write_request(review.directory)
+
+    assert not (review.directory / "hevy-workout-request.json").exists()
+    assert not (review.directory / "request-manifest.json").exists()
+
+
+def test_workout_backfill_pipeline_write_request_rewrites_stale_derived_request(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    pipeline = WorkoutBackfillPipeline(store=store, output_root=tmp_path / "reports")
+    review = pipeline.review(455045484)
+    _write_requestable_pipeline_decisions(review.decisions_path)
+    first = pipeline.write_request(review.directory)
+    request = json.loads(first.request_path.read_text(encoding="utf-8"))
+    assert request["workout"]["start_time"] == "2024-04-10T13:00:00+00:00"
+    decisions = json.loads(review.decisions_path.read_text(encoding="utf-8"))
+    decisions["workout"]["selected_start_time"] = "2024-04-10T15:00:00+00:00"
+    review.decisions_path.write_text(json.dumps(decisions) + "\n", encoding="utf-8")
+
+    result = pipeline.write_request(review.directory)
+
+    rewritten = json.loads(result.request_path.read_text(encoding="utf-8"))
+    assert rewritten["workout"]["start_time"] == "2024-04-10T15:00:00+00:00"
+
+
+def test_workout_backfill_pipeline_write_request_rejects_manual_edit_unless_forced(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    pipeline = WorkoutBackfillPipeline(store=store, output_root=tmp_path / "reports")
+    review = pipeline.review(455045484)
+    _write_requestable_pipeline_decisions(review.decisions_path)
+    result = pipeline.write_request(review.directory)
+    request = json.loads(result.request_path.read_text(encoding="utf-8"))
+    request["workout"]["title"] = "Manual Edit"
+    result.request_path.write_text(json.dumps(request, indent=2, sort_keys=True) + "\n")
+
+    with pytest.raises(WorkoutBackfillReviewError, match="use --force"):
+        pipeline.write_request(review.directory)
+
+    forced = pipeline.write_request(review.directory, force=True)
+    overwritten = json.loads(forced.request_path.read_text(encoding="utf-8"))
+    assert overwritten["workout"]["title"] == "2024-04-10 Upper"
+
+
+def test_workout_backfill_pipeline_write_request_requires_workout_backfill_manifest(
+    tmp_path: Path,
+) -> None:
+    review_dir = tmp_path / "review"
+    review_dir.mkdir()
+    (review_dir / "review-manifest.json").write_text(
+        json.dumps({"version": 1, "kind": "other-review", "artifacts": {}}) + "\n",
+        encoding="utf-8",
+    )
+    pipeline = WorkoutBackfillPipeline(
+        store=Store(create_engine("sqlite:///:memory:")),
+        output_root=tmp_path / "reports",
+    )
+
+    with pytest.raises(WorkoutBackfillReviewError, match="not a Workout backfill review"):
+        pipeline.write_request(review_dir)
+
+
 def test_workout_backfill_review_and_inspect_cli_smoke(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -357,6 +473,36 @@ def test_workout_backfill_review_and_inspect_cli_smoke(
     assert f"review_dir: {review_dir}" in inspect_output
     assert "request_status: not-written" in inspect_output
     assert "workout: 455045484 | Upper" in inspect_output
+
+
+def test_workout_backfill_write_request_cli_smoke(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    pipeline = WorkoutBackfillPipeline(store=store, output_root=tmp_path / "reports")
+    review = pipeline.review(455045484)
+    _write_requestable_pipeline_decisions(review.decisions_path)
+
+    exit_code = main(
+        [
+            "workout-backfill",
+            "write-request",
+            "--review-dir",
+            str(review.directory),
+        ]
+    )
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert (
+        f"Wrote Workout backfill request: {review.directory / 'hevy-workout-request.json'}"
+        in output
+    )
+    assert (review.directory / "request-manifest.json").exists()
 
 
 def test_workout_backfill_review_reports_missing_hevy_template_mapping(
@@ -2145,6 +2291,13 @@ def _run_backfill_review(
             str(decisions_path),
         ]
     )
+
+
+def _write_requestable_pipeline_decisions(decisions_path: Path) -> None:
+    decisions = json.loads(decisions_path.read_text(encoding="utf-8"))
+    decisions["workout"]["selected_start_time"] = "2024-04-10T13:00:00+00:00"
+    decisions["workout"]["selected_end_time"] = "2024-04-10T14:00:00+00:00"
+    decisions_path.write_text(json.dumps(decisions) + "\n", encoding="utf-8")
 
 
 def _assert_discovered_workout_ids(tmp_path: Path, expected_ids: list[int]) -> None:

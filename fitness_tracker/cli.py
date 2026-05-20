@@ -125,6 +125,8 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0911, PLR0912,
         return _set_exercise_link(args)
     if args.command == "workout-backfill" and args.workout_backfill_command == "review":
         return _workout_backfill_review(args)
+    if args.command == "workout-backfill" and args.workout_backfill_command == "write-request":
+        return _workout_backfill_write_request(args)
     if args.command == "workout-backfill" and args.workout_backfill_command == "inspect":
         return _workout_backfill_inspect(args)
     if args.command == "sync-review" and args.sync_review_command == "truecoach-to-hevy":
@@ -461,6 +463,10 @@ def _add_workout_backfill_parser(subparsers: Any) -> None:
 
     inspect = workout_backfill_subparsers.add_parser("inspect")
     inspect.add_argument("--review-dir", type=Path, required=True)
+
+    write_request = workout_backfill_subparsers.add_parser("write-request")
+    write_request.add_argument("--review-dir", type=Path, required=True)
+    write_request.add_argument("--force", action="store_true")
 
 
 def _add_sync_review_parser(  # noqa: PLR0915
@@ -1796,6 +1802,21 @@ def _workout_backfill_review(args: argparse.Namespace) -> int:
         _emit(f"Error: {exc}")
         return 2
     _emit(f"Wrote Workout backfill review: {review.directory}")
+    return 0
+
+
+def _workout_backfill_write_request(args: argparse.Namespace) -> int:
+    pipeline = WorkoutBackfillPipeline(
+        store=Store(create_database_engine("sqlite:///:memory:")),
+        output_root=Path("reports"),
+    )
+    try:
+        result = pipeline.write_request(args.review_dir, force=args.force)
+    except (OSError, TypeError, WorkoutBackfillApplyError, WorkoutBackfillReviewError) as exc:
+        _emit(f"Error: {exc}")
+        return 2
+    _emit(f"Wrote Workout backfill request: {result.request_path}")
+    _emit(f"Wrote Workout backfill request manifest: {result.manifest_path}")
     return 0
 
 
