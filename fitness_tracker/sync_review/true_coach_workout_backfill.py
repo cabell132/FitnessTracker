@@ -212,12 +212,6 @@ PIPELINE_REQUEST_MANIFEST_FILENAME = "request-manifest.json"
 PIPELINE_REQUEST_FILENAME = "hevy-workout-request.json"
 PIPELINE_REQUEST_WORKFLOW = "workout-backfill"
 PIPELINE_REQUEST_SCHEMA_VERSION = 1
-PIPELINE_REQUEST_ARTIFACT_NAMES = (
-    "plan",
-    "decisions",
-    "decision_validation",
-    "request",
-)
 PIPELINE_ARTIFACT_FILENAMES = {
     "plan": "plan.json",
     "decisions": "decisions.json",
@@ -1032,23 +1026,13 @@ def _validate_pipeline_request_manifest_hashes(
 def _expected_pipeline_request_artifacts(
     paths: WorkoutBackfillPipelineRequestPaths,
 ) -> dict[str, str]:
-    return {
-        "plan": paths.plan.name,
-        "decisions": paths.decisions.name,
-        "decision_validation": paths.decision_validation.name,
-        "request": paths.request.name,
-    }
+    return _pipeline_request_artifacts(paths)
 
 
 def _expected_pipeline_request_paths(
     paths: WorkoutBackfillPipelineRequestPaths,
 ) -> dict[str, Path]:
-    return {
-        "plan": paths.plan,
-        "decisions": paths.decisions,
-        "decision_validation": paths.decision_validation,
-        "request": paths.request,
-    }
+    return _pipeline_request_artifact_paths(paths)
 
 
 def _load_pipeline_request(request_path: Path) -> PostWorkoutsRequestBody:

@@ -75,7 +75,6 @@ from fitness_tracker.sync_review import (
     SyncApplyError,
     SyncReviewError,
     TrueCoachToHevyReviewService,
-    TrueCoachWorkoutBackfillReviewService,
     WorkoutBackfillApplyError,
     WorkoutBackfillApplyResult,
     WorkoutBackfillInspectResult,
@@ -1733,10 +1732,6 @@ def _truecoach_workout_item_writer_from_config() -> TrueCoachWorkoutItemWriterAd
     )
 
 
-def _sync_review_truecoach_workout_backfill_candidates(args: argparse.Namespace) -> int:
-    return _workout_backfill_candidates(args)
-
-
 def _workout_backfill_candidates(args: argparse.Namespace) -> int:
     pipeline = _workout_backfill_pipeline_from_args(args, output_root=Path(args.output_dir))
     result = pipeline.candidates()
@@ -1839,10 +1834,7 @@ def _workout_backfill_inspect(args: argparse.Namespace) -> int:
 
 
 def _workout_backfill_diff(args: argparse.Namespace) -> int:
-    pipeline = WorkoutBackfillPipeline(
-        store=Store(_engine_from_args(args)),
-        output_root=Path("reports"),
-    )
+    pipeline = _workout_backfill_pipeline_from_args(args)
     try:
         result = pipeline.diff(args.review_dir)
     except (OSError, TypeError, WorkoutBackfillReviewError) as exc:
@@ -1887,123 +1879,6 @@ def _emit_workout_backfill_inspect_result(result: WorkoutBackfillInspectResult) 
             _emit(f"  warning: {warning}")
         for blocker in item.get("blockers", []):
             _emit(f"  blocker: {blocker}")
-
-
-def _sync_review_truecoach_workout_backfill(args: argparse.Namespace) -> int:
-    store = Store(_engine_from_args(args))
-    service = TrueCoachWorkoutBackfillReviewService(
-        store=store,
-        output_root=Path(args.output_dir),
-    )
-    try:
-        bundle = service.write_review(
-            args.workout_id,
-            decisions_path=Path(args.decisions) if args.decisions else None,
-        )
-    except WorkoutBackfillReviewError as exc:
-        _emit(f"Error: {exc}")
-        return 2
-    _emit(f"Wrote Workout backfill review: {bundle.directory}")
-    return 0
-
-
-def _sync_review_truecoach_workout_backfill_inspect(args: argparse.Namespace) -> int:
-    try:
-        bundle = _write_workout_backfill_review(args)
-    except WorkoutBackfillReviewError as exc:
-        _emit(f"Error: {exc}")
-        return 2
-    plan = _read_json(bundle.plan_path)
-    request = _read_json(bundle.request_path)
-    workout = plan.get("workout", {})
-    _emit(f"review_dir: {bundle.directory}")
-    _emit(
-        "workout: "
-        f"{workout.get('id')} | {workout.get('title')} | due={workout.get('due')} | "
-        f"tracker={workout.get('tracker_workout_id')} | hevy={workout.get('tracker_hevy_app_id')}"
-    )
-    _emit(f"blockers: {plan.get('blockers', [])}")
-    _emit(f"warnings: {plan.get('warnings', [])}")
-    _emit("plan_items:")
-    for item in plan.get("items", []):
-        template = item.get("selected_hevy_template") or {}
-        _emit(
-            f"{item.get('position')}. tc_item={item.get('source_id')} "
-            f"tracker_item={item.get('tracker_workout_item_id')} "
-            f"superset={item.get('superset_id')} template={template.get('id')} "
-            f"sets={len(item.get('sets') or [])} notes={bool(item.get('notes'))} "
-            f"name={item.get('name')!r}"
-        )
-        for warning in item.get("warnings", []):
-            _emit(f"  warning: {warning}")
-        for blocker in item.get("blockers", []):
-            _emit(f"  blocker: {blocker}")
-    _emit("request_exercises:")
-    for index, exercise in enumerate(request.get("workout", {}).get("exercises", []), start=1):
-        _emit(
-            f"{index}. superset={exercise.get('superset_id')} "
-            f"template={exercise.get('exercise_template_id')} "
-            f"sets={len(exercise.get('sets') or [])} notes={bool(exercise.get('notes'))}"
-        )
-    return 0
-
-
-def _sync_review_truecoach_workout_backfill_evidence(args: argparse.Namespace) -> int:
-    try:
-        bundle = _write_workout_backfill_review(args)
-    except WorkoutBackfillReviewError as exc:
-        _emit(f"Error: {exc}")
-        return 2
-    evidence = _read_json(bundle.apple_health_evidence_path)
-    _emit(f"evidence: {bundle.apple_health_evidence_path}")
-    _emit(
-        "search_window: "
-        f"{evidence.get('search_window', {}).get('start')} -> "
-        f"{evidence.get('search_window', {}).get('end')}"
-    )
-    _emit("candidate_windows:")
-    for candidate in evidence.get("candidate_windows", []):
-        _emit(
-            f"- {candidate.get('confidence')} {candidate.get('source')}: "
-            f"{candidate.get('start')} -> {candidate.get('end')} | {candidate.get('reason')}"
-        )
-    _emit("workout_intervals:")
-    for interval in evidence.get("workout_intervals", []):
-        _emit(
-            f"- {interval.get('type')}: {interval.get('start')} -> {interval.get('end')} "
-            f"({interval.get('duration_minutes')} min)"
-        )
-    _emit("heart_rate_summaries:")
-    for summary in evidence.get("heart_rate_summaries", []):
-        _emit(
-            f"- {summary.get('window_start')} -> {summary.get('window_end')} "
-            f"samples={summary.get('sample_count')} avg={summary.get('average_bpm')} "
-            f"max={summary.get('max_bpm')}"
-        )
-    return 0
-
-
-def _sync_review_truecoach_workout_backfill_diff(args: argparse.Namespace) -> int:
-    try:
-        bundle = _write_workout_backfill_review(args)
-    except WorkoutBackfillReviewError as exc:
-        _emit(f"Error: {exc}")
-        return 2
-    request = _read_json(bundle.request_path)
-    local = _linked_hevy_workout_snapshot(_engine_from_args(args), args.workout_id)
-    if local is None:
-        _emit(f"No linked local Hevy Workout for True Coach Workout {args.workout_id}.")
-        return 2
-    differences = _workout_request_local_differences(request, local)
-    _emit(f"request: {bundle.request_path}")
-    _emit(f"local_hevy_workout: {local.get('id')}")
-    if not differences:
-        _emit("No differences between request and linked local Hevy Workout cache.")
-        return 0
-    _emit("differences:")
-    for difference in differences:
-        _emit(f"- {difference}")
-    return 1
 
 
 def _sync_apply_truecoach_to_hevy(args: argparse.Namespace) -> int:  # noqa: PLR0915
@@ -2077,72 +1952,6 @@ def _patch_down_regulate_sets(plan: dict[str, Any], *, duration_seconds: int) ->
         item["proposed_sets"] = [{"type": "normal", "duration_seconds": duration_seconds}]
 
 
-def _sync_apply_truecoach_workout_backfill(args: argparse.Namespace) -> int:
-    decisions_path = Path(args.decisions) if args.decisions else None
-    try:
-        if args.manual_request:
-            if args.dry_run:
-                _emit("Error: --manual-request cannot be combined with --dry-run")
-                return 2
-            result = _workout_backfill_manual_service(args).apply_manual_request(
-                Path(args.manual_request),
-                workout_id=args.workout_id,
-                workout_writer=_hevy_workout_writer_from_config(),
-            )
-        elif args.dry_run:
-            result = _workout_backfill_review_service(args).write_apply_request(
-                args.workout_id,
-                decisions_path=decisions_path,
-            )
-        else:
-            result = _workout_backfill_review_service(args).apply(
-                args.workout_id,
-                workout_writer=_hevy_workout_writer_from_config(),
-                decisions_path=decisions_path,
-            )
-    except (WorkoutBackfillApplyError, WorkoutBackfillReviewError, HevyAppAPIError) as exc:
-        _emit(f"Error: {exc}")
-        return 2
-    if args.dry_run:
-        _emit(f"Wrote Hevy Workout request dry-run: {result.request_path}")
-    else:
-        _emit_workout_backfill_apply_result(result)
-    return 0
-
-
-def _sync_apply_truecoach_workout_backfill_repair(args: argparse.Namespace) -> int:
-    decisions_path = Path(args.decisions) if args.decisions else None
-    try:
-        result = _workout_backfill_review_service(args).repair_local_links(
-            args.workout_id,
-            workout_writer=_hevy_workout_writer_from_config(),
-            decisions_path=decisions_path,
-        )
-    except (WorkoutBackfillApplyError, WorkoutBackfillReviewError, HevyAppAPIError) as exc:
-        _emit(f"Error: {exc}")
-        return 2
-    _emit(f"Linked existing remote Hevy Workout from request: {result.request_path}")
-    return 0
-
-
-def _workout_backfill_review_service(
-    args: argparse.Namespace,
-) -> TrueCoachWorkoutBackfillReviewService:
-    return TrueCoachWorkoutBackfillReviewService(
-        store=Store(_engine_from_args(args)),
-        output_root=Path(args.output_dir),
-    )
-
-
-def _workout_backfill_manual_service(
-    args: argparse.Namespace,
-) -> TrueCoachWorkoutBackfillReviewService:
-    return TrueCoachWorkoutBackfillReviewService(
-        store=Store(create_database_engine("sqlite:///:memory:")),
-        output_root=Path(args.output_dir),
-    )
-
-
 def _workout_backfill_pipeline_from_args(
     args: argparse.Namespace,
     *,
@@ -2164,13 +1973,6 @@ def _manual_workout_backfill_pipeline() -> WorkoutBackfillPipeline:
 def _hevy_workout_writer_from_config() -> HevyWorkoutWriterAdapter:
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     return HevyWorkoutWriterAdapter(_hevy_client_from_config())
-
-
-def _write_workout_backfill_review(args: argparse.Namespace) -> Any:
-    return _workout_backfill_review_service(args).write_review(
-        args.workout_id,
-        decisions_path=Path(args.decisions) if args.decisions else None,
-    )
 
 
 def _find_remote_hevy_routines(title: str) -> list[dict[str, Any]]:
@@ -2308,122 +2110,6 @@ def _write_response_artifact(response_path: str | None, response: dict[str, Any]
 
 def _read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
-
-
-def _linked_hevy_workout_snapshot(
-    engine: Engine, true_coach_workout_id: int
-) -> dict[str, Any] | None:
-    with engine.connect() as conn:
-        workout = (
-            conn.execute(
-                text(
-                    """
-                    SELECT h.id, h.title, h.start_time, h.end_time
-                    FROM "Workout" AS tw
-                    JOIN "HevyAppWorkout" AS h ON h.id = tw.hevy_app_id
-                    WHERE tw.true_coach_id = :true_coach_workout_id
-                    """
-                ),
-                {"true_coach_workout_id": true_coach_workout_id},
-            )
-            .mappings()
-            .first()
-        )
-        if workout is None:
-            return None
-        exercises = (
-            conn.execute(
-                text(
-                    """
-                    SELECT id, "index", name, notes, superset_id, exercise_id
-                    FROM "HevyAppWorkoutItem"
-                    WHERE workout_id = :workout_id
-                    ORDER BY "index"
-                    """
-                ),
-                {"workout_id": workout["id"]},
-            )
-            .mappings()
-            .all()
-        )
-        sets = (
-            conn.execute(
-                text(
-                    """
-                    SELECT workout_item_id, "index", type, weight_kg, reps,
-                           distance_meters, duration_seconds, rpe
-                    FROM "HevyAppSets"
-                    WHERE workout_item_id IN (
-                        SELECT id FROM "HevyAppWorkoutItem" WHERE workout_id = :workout_id
-                    )
-                    ORDER BY workout_item_id, "index"
-                    """
-                ),
-                {"workout_id": workout["id"]},
-            )
-            .mappings()
-            .all()
-        )
-    sets_by_item: dict[int, list[dict[str, Any]]] = {}
-    for row in sets:
-        sets_by_item.setdefault(int(row["workout_item_id"]), []).append(dict(row))
-    return {
-        "id": workout["id"],
-        "title": workout["title"],
-        "start_time": workout["start_time"],
-        "end_time": workout["end_time"],
-        "exercises": [
-            {
-                "id": row["id"],
-                "index": row["index"],
-                "name": row["name"],
-                "notes": row["notes"],
-                "superset_id": row["superset_id"],
-                "exercise_template_id": row["exercise_id"],
-                "sets": sets_by_item.get(int(row["id"]), []),
-            }
-            for row in exercises
-        ],
-    }
-
-
-def _workout_request_local_differences(
-    request: dict[str, Any],
-    local: dict[str, Any],
-) -> list[str]:
-    request_exercises = request.get("workout", {}).get("exercises", [])
-    local_exercises = local.get("exercises", [])
-    differences = []
-    if len(request_exercises) != len(local_exercises):
-        differences.append(
-            f"exercise count request={len(request_exercises)} local={len(local_exercises)}"
-        )
-    for index, request_exercise in enumerate(request_exercises):
-        if index >= len(local_exercises):
-            differences.append(f"exercise {index + 1} missing locally")
-            continue
-        local_exercise = local_exercises[index]
-        comparisons = (
-            (
-                "template",
-                request_exercise.get("exercise_template_id"),
-                local_exercise.get("exercise_template_id"),
-            ),
-            ("superset", request_exercise.get("superset_id"), local_exercise.get("superset_id")),
-            ("notes", request_exercise.get("notes") or "", local_exercise.get("notes") or ""),
-        )
-        for label, request_value, local_value in comparisons:
-            if request_value != local_value:
-                differences.append(
-                    f"exercise {index + 1} {label} request={request_value!r} local={local_value!r}"
-                )
-        request_sets = request_exercise.get("sets") or []
-        local_sets = local_exercise.get("sets") or []
-        if len(request_sets) != len(local_sets):
-            differences.append(
-                f"exercise {index + 1} set count request={len(request_sets)} local={len(local_sets)}"
-            )
-    return differences
 
 
 def _format_routine_diff_report(  # noqa: PLR0913
