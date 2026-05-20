@@ -128,6 +128,8 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0911, PLR0912,
         return _workout_backfill_review(args)
     if args.command == "workout-backfill" and args.workout_backfill_command == "write-request":
         return _workout_backfill_write_request(args)
+    if args.command == "workout-backfill" and args.workout_backfill_command == "link-workout":
+        return _workout_backfill_link_workout(args)
     if args.command == "workout-backfill" and args.workout_backfill_command == "inspect":
         return _workout_backfill_inspect(args)
     if args.command == "sync-review" and args.sync_review_command == "truecoach-to-hevy":
@@ -445,7 +447,7 @@ def _add_exercise_links_parser(subparsers: Any) -> None:
     )
 
 
-def _add_workout_backfill_parser(subparsers: Any) -> None:
+def _add_workout_backfill_parser(subparsers: Any) -> None:  # noqa: PLR0915
     workout_backfill = subparsers.add_parser("workout-backfill")
     workout_backfill_subparsers = workout_backfill.add_subparsers(dest="workout_backfill_command")
 
@@ -479,6 +481,13 @@ def _add_workout_backfill_parser(subparsers: Any) -> None:
     write_request = workout_backfill_subparsers.add_parser("write-request")
     write_request.add_argument("--review-dir", type=Path, required=True)
     write_request.add_argument("--force", action="store_true")
+
+    link_workout = workout_backfill_subparsers.add_parser("link-workout")
+    link_workout.add_argument("--review-dir", type=Path, required=True)
+    link_workout.add_argument("--db", help="SQLite database path. Prefer --database-url.")
+    link_workout.add_argument(
+        "--database-url", help="SQLAlchemy database URL. Defaults to DATABASE_URL."
+    )
 
 
 def _add_sync_review_parser(  # noqa: PLR0915
@@ -1833,6 +1842,24 @@ def _workout_backfill_write_request(args: argparse.Namespace) -> int:
         return 2
     _emit(f"Wrote Workout backfill request: {result.request_path}")
     _emit(f"Wrote Workout backfill request manifest: {result.manifest_path}")
+    return 0
+
+
+def _workout_backfill_link_workout(args: argparse.Namespace) -> int:
+    pipeline = WorkoutBackfillPipeline(
+        store=Store(_engine_from_args(args)),
+        output_root=Path("reports"),
+    )
+    try:
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        result = pipeline.link_workout(
+            args.review_dir,
+            workout_writer=HevyWorkoutWriterAdapter(_hevy_client_from_config()),
+        )
+    except (OSError, TypeError, WorkoutBackfillApplyError, WorkoutBackfillReviewError) as exc:
+        _emit(f"Error: {exc}")
+        return 2
+    _emit(f"Linked existing Workout from request: {result.request_path}")
     return 0
 
 

@@ -113,6 +113,30 @@ class WorkoutBackfillPipelineRequest:
 
 
 @dataclass(frozen=True)
+class WorkoutBackfillLinkWorkoutCommand:
+    """Manifest-verified artifacts for linking an existing remote Hevy Workout."""
+
+    review_dir: Path
+    review_manifest_path: Path
+    request_path: Path
+    request_manifest_path: Path
+    workout_id: int
+    request_body: PostWorkoutsRequestBody
+    plan: dict[str, Any]
+    decisions: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class WorkoutBackfillLinkWorkoutResult:
+    """Result of linking an existing remote Hevy Workout from artifacts."""
+
+    review_dir: Path
+    request_path: Path
+    request_body: PostWorkoutsRequestBody
+    action: str
+
+
+@dataclass(frozen=True)
 class WorkoutBackfillPipelinePaths:
     """Artifact paths for one pipeline review directory."""
 
@@ -450,6 +474,7 @@ class WorkoutBackfillPipeline:
             store=store,
             output_root=output_root,
         )
+        self._apply_service = WorkoutBackfillApplyService(store)
         self._output_root = output_root
 
     def candidates(self) -> BackfillCandidatesResult:
@@ -537,6 +562,41 @@ class WorkoutBackfillPipeline:
             review_dir=review_dir,
             request_path=paths.request,
             manifest_path=paths.request_manifest,
+        )
+
+    def link_workout(
+        self,
+        review_dir: Path,
+        *,
+        workout_writer: HevyWorkoutWriter,
+    ) -> WorkoutBackfillLinkWorkoutResult:
+        """Link an existing remote Hevy Workout using verified review artifacts.
+
+        Args:
+            review_dir (Path): Existing review directory with request artifacts.
+            workout_writer (HevyWorkoutWriter): Workout reader port.
+
+        Returns:
+            WorkoutBackfillLinkWorkoutResult: Link result and consumed request path.
+        """
+        command = _load_link_workout_command(review_dir)
+        result = self._apply_service.repair_local_links(
+            workout_id=command.workout_id,
+            result=WorkoutBackfillApplyResult(
+                review_bundle=None,
+                request_path=command.request_path,
+                request_body=command.request_body,
+                action="link_workout",
+            ),
+            workout_writer=workout_writer,
+            plan=command.plan,
+            decisions=command.decisions,
+        )
+        return WorkoutBackfillLinkWorkoutResult(
+            review_dir=command.review_dir,
+            request_path=command.request_path,
+            request_body=result.request_body,
+            action="linked_existing_workout",
         )
 
     def inspect(self, review_dir: Path) -> WorkoutBackfillInspectResult:
@@ -717,6 +777,106 @@ def _request_manifest_hash(
         msg = f"Request manifest {manifest_path} is missing request hash"
         raise WorkoutBackfillReviewError(msg)
     return request_hash
+
+
+def _load_link_workout_command(review_dir: Path) -> WorkoutBackfillLinkWorkoutCommand:
+    review_manifest_path = review_dir / PIPELINE_MANIFEST_FILENAME
+    request_manifest_path = review_dir / PIPELINE_REQUEST_MANIFEST_FILENAME
+    request_path = review_dir / PIPELINE_REQUEST_FILENAME
+    manifest = read_json_object(review_manifest_path)
+    _validate_pipeline_review_manifest(manifest, review_manifest_path)
+    paths = _pipeline_request_paths(review_dir, manifest)
+    request_manifest = read_json_object(request_manifest_path)
+    _validate_pipeline_request_manifest(request_manifest, request_manifest_path)
+    _validate_pipeline_request_artifact_paths(
+        paths=paths,
+        request_manifest=request_manifest,
+        request_manifest_path=request_manifest_path,
+    )
+    _validate_pipeline_request_hashes(
+        review_dir=review_dir,
+        request_manifest=request_manifest,
+        request_manifest_path=request_manifest_path,
+    )
+    plan = read_json_object(paths.plan)
+    decisions = read_json_object(paths.decisions)
+    decision_validation = read_json_object(paths.decision_validation)
+    request_data = read_json_object(request_path)
+    request_body = PostWorkoutsRequestBody(**request_data)
+    _validate_apply_request(
+        WorkoutBackfillApplyValidationContext(
+            plan=plan,
+            decision_validation=decision_validation,
+            request_body=request_body,
+            decisions=decisions,
+        )
+    )
+    return WorkoutBackfillLinkWorkoutCommand(
+        review_dir=review_dir,
+        review_manifest_path=review_manifest_path,
+        request_path=request_path,
+        request_manifest_path=request_manifest_path,
+        workout_id=manifest["workout_id"],
+        request_body=request_body,
+        plan=plan,
+        decisions=decisions,
+    )
+
+
+def _validate_pipeline_request_manifest(
+    manifest: dict[str, Any],
+    manifest_path: Path,
+) -> None:
+    if manifest.get("workflow") != PIPELINE_REQUEST_WORKFLOW:
+        msg = f"Request manifest {manifest_path} is not a Workout backfill request"
+        raise WorkoutBackfillReviewError(msg)
+    if manifest.get("schema_version") != PIPELINE_REQUEST_SCHEMA_VERSION:
+        msg = f"Request manifest {manifest_path} has unsupported schema_version"
+        raise WorkoutBackfillReviewError(msg)
+    if not isinstance(manifest.get("artifacts"), dict):
+        msg = f"Request manifest {manifest_path} must contain an artifacts object"
+        raise WorkoutBackfillReviewError(msg)
+    if not isinstance(manifest.get("sha256"), dict):
+        msg = f"Request manifest {manifest_path} must contain sha256 hashes"
+        raise WorkoutBackfillReviewError(msg)
+
+
+def _validate_pipeline_request_artifact_paths(
+    *,
+    paths: WorkoutBackfillPipelineRequestPaths,
+    request_manifest: dict[str, Any],
+    request_manifest_path: Path,
+) -> None:
+    artifacts = request_manifest["artifacts"]
+    expected = {
+        "plan": paths.plan.name,
+        "decisions": paths.decisions.name,
+        "decision_validation": paths.decision_validation.name,
+        "request": paths.request.name,
+    }
+    if artifacts != expected:
+        msg = f"Request manifest {request_manifest_path} does not match review artifacts"
+        raise WorkoutBackfillReviewError(msg)
+
+
+def _validate_pipeline_request_hashes(
+    *,
+    review_dir: Path,
+    request_manifest: dict[str, Any],
+    request_manifest_path: Path,
+) -> None:
+    artifacts = request_manifest["artifacts"]
+    hashes = request_manifest["sha256"]
+    for artifact_name in ("plan", "decisions", "decision_validation", "request"):
+        filename = artifacts.get(artifact_name)
+        expected_hash = hashes.get(artifact_name)
+        if not isinstance(filename, str) or not isinstance(expected_hash, str):
+            msg = f"Request manifest {request_manifest_path} is missing {artifact_name} hash"
+            raise WorkoutBackfillReviewError(msg)
+        path = review_dir / filename
+        if _sha256_file(path) != expected_hash:
+            msg = f"Stale Workout backfill artifact: {path}"
+            raise WorkoutBackfillReviewError(msg)
 
 
 def _build_validated_pipeline_request(
