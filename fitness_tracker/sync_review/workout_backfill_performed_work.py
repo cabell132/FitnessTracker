@@ -80,7 +80,7 @@ class DurationPerformance:
 
 
 @dataclass(frozen=True)
-class CircuitReviewContext:
+class CircuitPlanningContext:
     """Source context for expanding one Circuit or AMRAP Workout Item."""
 
     item: Any
@@ -94,7 +94,7 @@ class CircuitReviewContext:
 
 
 @dataclass(frozen=True)
-class ChoiceReviewContext:
+class ChoicePlanningContext:
     """Source context for expanding one Choice Workout Item."""
 
     item: Any
@@ -113,6 +113,21 @@ class ReplacementMovement:
     omitted_name: str
     name: str
     source_text: str
+
+
+@dataclass(frozen=True)
+class TrackerItemPlanningContext:
+    """Shared source data for planning one tracker Workout Item."""
+
+    item: Any
+    templates: list[HevyAppExercise]
+    superset_ids_by_position: dict[int, int]
+    source_id: int | None
+    info: str
+    comment: str
+    name: str
+    template: object | None
+    sets: list[PostWorkoutsRequestSet]
 
 
 def plan_performed_work_items(
@@ -136,7 +151,7 @@ def plan_performed_work_items(
     for item in tracker_items:
         if _is_persisted_synthetic_circuit_tracker_item(item, expanded_circuit_source_ids):
             continue
-        items.extend(_review_item(item, templates, superset_ids_by_position))
+        items.extend(_plan_tracker_item(item, templates, superset_ids_by_position))
     return items
 
 
@@ -164,66 +179,59 @@ def _is_persisted_synthetic_circuit_tracker_item(
     return item.true_coach_id in expanded_circuit_source_ids
 
 
-def _review_item(  # noqa: C901, PLR0915
+def _plan_tracker_item(
     item: Any,
     templates: list[HevyAppExercise],
     superset_ids_by_position: dict[int, int],
 ) -> list[BackfillReviewItem]:
-    true_coach_item = item.true_coach
-    template = item.exercise.hevy_app if item.exercise is not None else None
-    sets = [
-        _set_to_request_set(set_row) for set_row in sorted(item.sets, key=lambda row: row.index)
-    ]
-    info = true_coach_item.info or "" if true_coach_item is not None else ""
-    comment = true_coach_item.comment or "" if true_coach_item is not None else ""
-    name = true_coach_item.name if true_coach_item is not None else item.exercise.name
-    if true_coach_item is not None and bool(true_coach_item.is_circuit):
-        parsed_block = parse_circuit_block(name=name, text=info)
-        if parsed_block is not None:
-            if true_coach_item.state == "missed":
-                return []
-            return _circuit_review_items(
-                CircuitReviewContext(
-                    item=item,
-                    source_id=true_coach_item.id,
-                    position=item.position,
-                    superset_id=superset_ids_by_position.get(item.position),
-                    info=info,
-                    comment=comment,
-                    templates=templates,
-                    parsed_block=parsed_block,
-                )
-            )
-    choice_items = _choice_review_items(
-        ChoiceReviewContext(
-            item=item,
-            source_id=true_coach_item.id if true_coach_item is not None else None,
-            position=item.position,
-            superset_id=superset_ids_by_position.get(item.position),
-            info=info,
-            comment=comment,
-            templates=templates,
-        )
-    )
+    context = _tracker_item_planning_context(item, templates, superset_ids_by_position)
+    circuit_items = _circuit_plan_items_for_tracker_item(context)
+    if circuit_items is not None:
+        return circuit_items
+    choice_items = _choice_plan_items_for_tracker_item(context)
     if choice_items:
         return choice_items
+    return _standard_plan_items(context)
+
+
+def _choice_plan_items_for_tracker_item(
+    context: TrackerItemPlanningContext,
+) -> list[BackfillReviewItem]:
+    return _choice_plan_items(
+        ChoicePlanningContext(
+            item=context.item,
+            source_id=context.source_id,
+            position=context.item.position,
+            superset_id=context.superset_ids_by_position.get(context.item.position),
+            info=context.info,
+            comment=context.comment,
+            templates=context.templates,
+        )
+    )
+
+
+def _standard_plan_items(context: TrackerItemPlanningContext) -> list[BackfillReviewItem]:
+    template = context.template
+    sets = context.sets
     notes: str | None = None
-    if not sets and _is_down_regulate_item(name):
+    if not sets and _is_down_regulate_item(context.name):
         sets = [PostWorkoutsRequestSet(type="normal", duration_seconds=240)]
     if not sets and isinstance(template, HevyAppExercise):
-        duration_performance = _duration_performance(comment, template)
+        duration_performance = _duration_performance(context.comment, template)
         if duration_performance is not None:
             sets = duration_performance.sets
             notes = duration_performance.notes
     blockers: list[str] = []
     warnings: list[str] = []
     is_placeholder_rest = not sets and _is_placeholder_rest_item(
-        name=name,
-        info=info,
-        comment=comment,
+        name=context.name,
+        info=context.info,
+        comment=context.comment,
     )
     if template is None and not is_placeholder_rest:
-        blockers.append(f"Missing Hevy template mapping for performed item: {item.exercise.name}")
+        blockers.append(
+            f"Missing Hevy template mapping for performed item: {context.item.exercise.name}"
+        )
     if not sets:
         if is_placeholder_rest:
             warnings.append(
@@ -233,41 +241,101 @@ def _review_item(  # noqa: C901, PLR0915
             warnings.append("No structured tracker Sets rows found; omitted from draft request.")
     return [
         BackfillReviewItem(
-            source_id=true_coach_item.id if true_coach_item is not None else None,
-            tracker_workout_item_id=item.id,
-            position=item.position,
-            superset_id=superset_ids_by_position.get(item.position),
-            name=name,
-            info=info,
-            comment=comment,
+            source_id=context.source_id,
+            tracker_workout_item_id=context.item.id,
+            position=context.item.position,
+            superset_id=context.superset_ids_by_position.get(context.item.position),
+            name=context.name,
+            info=context.info,
+            comment=context.comment,
             selected_hevy_template=template if isinstance(template, HevyAppExercise) else None,
             sets=sets,
-            notes=notes if notes is not None else _notes(info=info, comment=comment, sets=sets),
+            notes=notes
+            if notes is not None
+            else _notes(info=context.info, comment=context.comment, sets=sets),
             warnings=warnings,
             blockers=blockers,
         )
     ]
 
 
-def _circuit_review_items(context: CircuitReviewContext) -> list[BackfillReviewItem]:  # noqa: PLR0915
+def _tracker_item_planning_context(
+    item: Any,
+    templates: list[HevyAppExercise],
+    superset_ids_by_position: dict[int, int],
+) -> TrackerItemPlanningContext:
+    template = item.exercise.hevy_app if item.exercise is not None else None
+    sets = [
+        _set_to_request_set(set_row) for set_row in sorted(item.sets, key=lambda row: row.index)
+    ]
+    true_coach_item = item.true_coach
+    if true_coach_item is None:
+        source_id = None
+        info = ""
+        comment = ""
+        name = item.exercise.name
+    else:
+        source_id = true_coach_item.id
+        info = true_coach_item.info or ""
+        comment = true_coach_item.comment or ""
+        name = true_coach_item.name
+    return TrackerItemPlanningContext(
+        item=item,
+        templates=templates,
+        superset_ids_by_position=superset_ids_by_position,
+        source_id=source_id,
+        info=info,
+        comment=comment,
+        name=name,
+        template=template,
+        sets=sets,
+    )
+
+
+def _circuit_plan_items_for_tracker_item(
+    context: TrackerItemPlanningContext,
+) -> list[BackfillReviewItem] | None:
+    true_coach_item = context.item.true_coach
+    if true_coach_item is None or not bool(true_coach_item.is_circuit):
+        return None
+    parsed_block = parse_circuit_block(name=context.name, text=context.info)
+    if parsed_block is None:
+        return None
+    if true_coach_item.state == "missed":
+        return []
+    return _circuit_plan_items(
+        CircuitPlanningContext(
+            item=context.item,
+            source_id=true_coach_item.id,
+            position=context.item.position,
+            superset_id=context.superset_ids_by_position.get(context.item.position),
+            info=context.info,
+            comment=context.comment,
+            templates=context.templates,
+            parsed_block=parsed_block,
+        )
+    )
+
+
+def _circuit_plan_items(context: CircuitPlanningContext) -> list[BackfillReviewItem]:  # noqa: PLR0915
     split_plan = _split_circuit_plan(context)
     completed_round_count = _completed_round_count(context.comment, context.parsed_block)
     round_time_lines = _round_time_lines(context.comment)
     omitted_movements = _omitted_movement_names(context.comment)
     replacement_movements = _replacement_movements_from_comment(context.comment)
-    review_items: list[BackfillReviewItem] = []
+    planned_items: list[BackfillReviewItem] = []
     for offset, exercise in enumerate(split_plan.exercises):
         replacement = _matching_replacement(exercise.name, replacement_movements)
-        review_name = exercise.name
+        planned_name = exercise.name
         template = _hevy_template_for_split_exercise(context.templates, exercise)
         replacement_for_movement_name: str | None = None
         replacement_source_comment: str | None = None
         if replacement is not None:
-            review_name = replacement.name
+            planned_name = replacement.name
             template = None
             replacement_for_movement_name = exercise.name
             replacement_source_comment = replacement.source_text
-        matches = _matching_choice_templates(review_name, context.templates)
+        matches = _matching_choice_templates(planned_name, context.templates)
         omission_comment = _matching_omission_comment(exercise.name, omitted_movements)
         base_sets = [_workout_set_from_split_row(set_row) for set_row in exercise.set_rows]
         sets = _repeat_sets(base_sets, count=completed_round_count or 1)
@@ -300,13 +368,13 @@ def _circuit_review_items(context: CircuitReviewContext) -> list[BackfillReviewI
         blockers.extend(_agent_decision_blockers(exercise))
         if exercise.target and not base_sets and omission_comment is None:
             warnings.append("No deterministic set parser for Circuit movement target.")
-        review_items.append(
+        planned_items.append(
             BackfillReviewItem(
                 source_id=context.source_id,
                 tracker_workout_item_id=context.item.id,
                 position=context.position + offset,
                 superset_id=context.superset_id,
-                name=review_name,
+                name=planned_name,
                 info=context.info,
                 comment=context.comment,
                 selected_hevy_template=template,
@@ -334,10 +402,10 @@ def _circuit_review_items(context: CircuitReviewContext) -> list[BackfillReviewI
                 replacement_source_comment=replacement_source_comment,
             )
         )
-    return review_items
+    return planned_items
 
 
-def _split_circuit_plan(context: CircuitReviewContext) -> SplitCircuitPlan:
+def _split_circuit_plan(context: CircuitPlanningContext) -> SplitCircuitPlan:
     def resolve_template(
         movement_name: str,
         _source_text: str,
@@ -546,12 +614,12 @@ def _circuit_note_extra_lines(
     return tuple(lines)
 
 
-def _choice_review_items(context: ChoiceReviewContext) -> list[BackfillReviewItem]:
+def _choice_plan_items(context: ChoicePlanningContext) -> list[BackfillReviewItem]:
     options = _choice_options(context.info)
     performances = _choice_performances(context.comment, options)
     if not options or not performances:
         return []
-    review_items = []
+    planned_items = []
     for offset, performance in enumerate(performances):
         matches = _matching_choice_templates(performance.name, context.templates)
         blockers = []
@@ -570,7 +638,7 @@ def _choice_review_items(context: ChoiceReviewContext) -> list[BackfillReviewIte
             choice_decision_reason = "ambiguous_template"
         else:
             choice_decision_reason = None
-        review_items.append(
+        planned_items.append(
             BackfillReviewItem(
                 source_id=context.source_id,
                 tracker_workout_item_id=context.item.id,
@@ -588,7 +656,7 @@ def _choice_review_items(context: ChoiceReviewContext) -> list[BackfillReviewIte
                 choice_decision_reason=choice_decision_reason,
             )
         )
-    return review_items
+    return planned_items
 
 
 def _choice_options(info: str) -> list[str]:
