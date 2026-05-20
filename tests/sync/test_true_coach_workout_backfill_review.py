@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import create_engine, select
 
+from fitness_tracker import cli
 from fitness_tracker.apis.hevy_app.types import (
     Exercise as HevyWorkoutExercise,
     PostWorkoutsRequestBody,
@@ -521,6 +522,86 @@ def test_workout_backfill_pipeline_diff_requires_linked_local_hevy_workout(
         pipeline.diff(review.directory)
 
 
+def test_workout_backfill_pipeline_apply_submits_manifest_verified_request(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    pipeline = WorkoutBackfillPipeline(store=store, output_root=tmp_path / "reports")
+    review = pipeline.review(455045484)
+    _write_requestable_pipeline_decisions(review.decisions_path)
+    request = pipeline.write_request(review.directory)
+    request_contents = request.request_path.read_text(encoding="utf-8")
+    writer = _RecordingWorkoutWriter(
+        response=_hevy_workout_response(workout_id="hevy-created-455045484")
+    )
+
+    result = pipeline.apply(review.directory, workout_writer=writer)
+
+    assert result.action == "created"
+    assert result.request_path == request.request_path
+    assert len(writer.requests) == 1
+    assert writer.requests[0].workout.start_time == "2024-04-10T13:00:00+00:00"
+    assert request.request_path.read_text(encoding="utf-8") == request_contents
+    _assert_455045484_local_links(store)
+
+
+def test_workout_backfill_pipeline_apply_rejects_request_hash_mismatch_before_mutation(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    pipeline = WorkoutBackfillPipeline(store=store, output_root=tmp_path / "reports")
+    review = pipeline.review(455045484)
+    _write_requestable_pipeline_decisions(review.decisions_path)
+    request = pipeline.write_request(review.directory)
+    request_body = json.loads(request.request_path.read_text(encoding="utf-8"))
+    request_body["workout"]["title"] = "Tampered Backfill"
+    request.request_path.write_text(json.dumps(request_body) + "\n", encoding="utf-8")
+    writer = _RecordingWorkoutWriter(
+        response=_hevy_workout_response(workout_id="hevy-created-455045484")
+    )
+
+    with pytest.raises(WorkoutBackfillReviewError, match="hash mismatch"):
+        pipeline.apply(review.directory, workout_writer=writer)
+
+    assert writer.requests == []
+    with store.unit_of_work() as uow:
+        tracker_workout = uow.tracker.get_workout(true_coach_id=455045484)
+        assert tracker_workout is not None
+        assert tracker_workout.hevy_app_id is None
+
+
+def test_workout_backfill_pipeline_apply_rejects_stale_inputs_before_mutation(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    pipeline = WorkoutBackfillPipeline(store=store, output_root=tmp_path / "reports")
+    review = pipeline.review(455045484)
+    _write_requestable_pipeline_decisions(review.decisions_path)
+    pipeline.write_request(review.directory)
+    decisions = json.loads(review.decisions_path.read_text(encoding="utf-8"))
+    decisions["workout"]["selected_start_time"] = "2024-04-10T16:00:00+00:00"
+    review.decisions_path.write_text(json.dumps(decisions) + "\n", encoding="utf-8")
+    writer = _RecordingWorkoutWriter()
+
+    with pytest.raises(WorkoutBackfillReviewError, match="Request artifact is stale"):
+        pipeline.apply(review.directory, workout_writer=writer)
+
+    assert writer.requests == []
+    with store.unit_of_work() as uow:
+        tracker_workout = uow.tracker.get_workout(true_coach_id=455045484)
+        assert tracker_workout is not None
+        assert tracker_workout.hevy_app_id is None
+
+
 def test_workout_backfill_review_and_inspect_cli_smoke(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -652,6 +733,54 @@ def test_workout_backfill_diff_cli_returns_zero_for_no_differences(
 
     assert exit_code == 0
     assert "No differences between request and linked local Hevy Workout cache." in output
+
+
+def test_workout_backfill_apply_and_apply_manual_cli_smoke(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    pipeline = WorkoutBackfillPipeline(store=store, output_root=tmp_path / "reports")
+    review = pipeline.review(455045484)
+    _write_requestable_pipeline_decisions(review.decisions_path)
+    request = pipeline.write_request(review.directory)
+    fake_client = _FakeHevyWorkoutClient(
+        response=_hevy_workout_response(workout_id="hevy-created-455045484")
+    )
+    monkeypatch.setattr(cli, "_hevy_client_from_config", lambda: fake_client)
+
+    apply_exit_code = main(
+        [
+            "workout-backfill",
+            "apply",
+            "--review-dir",
+            str(review.directory),
+            "--database-url",
+            f"sqlite:///{db_path}",
+        ]
+    )
+    apply_output = capsys.readouterr().out
+    manual_exit_code = main(
+        [
+            "workout-backfill",
+            "apply-manual",
+            "--workout-id",
+            "455045484",
+            "--request-path",
+            str(request.request_path),
+        ]
+    )
+    manual_output = capsys.readouterr().out
+
+    assert apply_exit_code == 0
+    assert f"Created Hevy Workout from request: {request.request_path}" in apply_output
+    assert manual_exit_code == 0
+    assert f"Created Hevy Workout from request: {request.request_path}" in manual_output
+    assert len(fake_client.workouts.created_requests) == 2
 
 
 def test_workout_backfill_review_reports_missing_hevy_template_mapping(
@@ -2931,6 +3060,44 @@ class _RecordingWorkoutWriter:
         if self.existing_workout and self.existing_workout.id == workout_id:
             return self.existing_workout
         return None
+
+
+class _FakeHevyWorkoutClient:
+    def __init__(
+        self,
+        response: PostWorkoutsResponse | None = None,
+        existing_workout: HevyWorkout | None = None,
+    ) -> None:
+        self.workouts = _FakeHevyWorkouts(response, existing_workout)
+
+
+class _FakeHevyWorkouts:
+    def __init__(
+        self,
+        response: PostWorkoutsResponse | None,
+        existing_workout: HevyWorkout | None,
+    ) -> None:
+        self.created_requests: list[PostWorkoutsRequestBody] = []
+        self.response = response
+        self.existing_workout = existing_workout
+
+    def create(self, workout: PostWorkoutsRequestBody) -> PostWorkoutsResponse | None:
+        self.created_requests.append(workout)
+        return self.response
+
+    def get_workout(self, workout_id: str) -> HevyWorkout | None:
+        if self.existing_workout and self.existing_workout.id == workout_id:
+            return self.existing_workout
+        return None
+
+    def get(self, *, page: int, per_page: int) -> object | None:
+        if page != 1 or self.existing_workout is None:
+            return None
+        return type(
+            "WorkoutPage",
+            (),
+            {"workouts": [self.existing_workout], "page_count": 1},
+        )()
 
 
 def _write_timestamp_decisions(
