@@ -19,8 +19,8 @@ from fitness_tracker.database.models.apple_health import (
     AppleHealthWorkout,
     AppleHealthWorkoutType,
 )
-from fitness_tracker.database.models.hevy_app import HevyAppExercise
 from fitness_tracker.database.models.hevy_app import (
+    HevyAppExercise,
     HevyAppSets,
     HevyAppWorkout,
     HevyAppWorkoutItem,
@@ -188,6 +188,12 @@ PIPELINE_REQUEST_MANIFEST_FILENAME = "request-manifest.json"
 PIPELINE_REQUEST_FILENAME = "hevy-workout-request.json"
 PIPELINE_REQUEST_WORKFLOW = "workout-backfill"
 PIPELINE_REQUEST_SCHEMA_VERSION = 1
+PIPELINE_REQUEST_ARTIFACT_NAMES = (
+    "plan",
+    "decisions",
+    "decision_validation",
+    "request",
+)
 PIPELINE_ARTIFACT_FILENAMES = {
     "plan": "plan.json",
     "decisions": "decisions.json",
@@ -782,12 +788,7 @@ def _validate_pipeline_request_manifest(
     if not isinstance(artifacts, dict):
         msg = f"Request manifest {manifest_path} must contain an artifacts object"
         raise WorkoutBackfillReviewError(msg)
-    expected_artifacts = {
-        "plan": paths.plan.name,
-        "decisions": paths.decisions.name,
-        "decision_validation": paths.decision_validation.name,
-        "request": paths.request.name,
-    }
+    expected_artifacts = _pipeline_request_artifacts(paths)
     if artifacts != expected_artifacts:
         msg = (
             f"Request manifest {manifest_path} does not describe the review artifacts; "
@@ -809,13 +810,7 @@ def _validate_pipeline_request_hashes(
             "run workout-backfill write-request --review-dir <dir>."
         )
         raise WorkoutBackfillReviewError(msg)
-    path_by_artifact = {
-        "plan": paths.plan,
-        "decisions": paths.decisions,
-        "decision_validation": paths.decision_validation,
-        "request": paths.request,
-    }
-    for artifact_name, path in path_by_artifact.items():
+    for artifact_name, path in _pipeline_request_artifact_paths(paths).items():
         expected_hash = hashes.get(artifact_name)
         if not isinstance(expected_hash, str):
             msg = (
@@ -884,19 +879,28 @@ def _pipeline_request_manifest(
         "workflow": PIPELINE_REQUEST_WORKFLOW,
         "schema_version": PIPELINE_REQUEST_SCHEMA_VERSION,
         "generated_at": datetime.now(UTC).isoformat(),
-        "artifacts": {
-            "plan": paths.plan.name,
-            "decisions": paths.decisions.name,
-            "decision_validation": paths.decision_validation.name,
-            "request": paths.request.name,
-        },
+        "artifacts": _pipeline_request_artifacts(paths),
         "sha256": {
-            "plan": _sha256_file(paths.plan),
-            "decisions": _sha256_file(paths.decisions),
-            "decision_validation": _sha256_file(paths.decision_validation),
-            "request": _sha256_file(paths.request),
+            name: _sha256_file(path)
+            for name, path in _pipeline_request_artifact_paths(paths).items()
         },
     }
+
+
+def _pipeline_request_artifacts(paths: WorkoutBackfillPipelineRequestPaths) -> dict[str, str]:
+    return {name: path.name for name, path in _pipeline_request_artifact_paths(paths).items()}
+
+
+def _pipeline_request_artifact_paths(
+    paths: WorkoutBackfillPipelineRequestPaths,
+) -> dict[str, Path]:
+    path_by_artifact = {
+        "plan": paths.plan,
+        "decisions": paths.decisions,
+        "decision_validation": paths.decision_validation,
+        "request": paths.request,
+    }
+    return {name: path_by_artifact[name] for name in PIPELINE_REQUEST_ARTIFACT_NAMES}
 
 
 def _sha256_file(path: Path) -> str:
@@ -927,10 +931,18 @@ def _linked_hevy_workout_snapshot(
     true_coach_workout_id: int,
 ) -> dict[str, Any] | None:
     with store.unit_of_work() as uow:
-        tracker_workout = uow.session.get(TrackerWorkout, true_coach_id=true_coach_workout_id)
+        tracker_workout = (
+            uow.session.query(TrackerWorkout)
+            .filter_by(true_coach_id=true_coach_workout_id)
+            .one_or_none()
+        )
         if tracker_workout is None or tracker_workout.hevy_app_id is None:
             return None
-        hevy_workout = uow.session.get(HevyAppWorkout, id=tracker_workout.hevy_app_id)
+        hevy_workout = (
+            uow.session.query(HevyAppWorkout)
+            .filter_by(id=tracker_workout.hevy_app_id)
+            .one_or_none()
+        )
         if hevy_workout is None:
             return None
         exercises = (
@@ -1025,7 +1037,7 @@ def _workout_exercise_differences(
     request_exercise: dict[str, Any],
     local_exercise: dict[str, Any],
 ) -> list[str]:
-    differences = []
+    differences: list[str] = []
     comparisons = (
         (
             "template",
