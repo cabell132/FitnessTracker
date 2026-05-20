@@ -64,8 +64,8 @@ class SyncService:
             source=deps.hevy,
             llm=deps.llm,
         )
-        self._tc_workout_item_writer = TrueCoachWorkoutItemWriterAdapter(deps.true_coach)
-        self._hevy_result_sync = HevyToTrueCoachResultSyncWorkflow(store=deps.store)
+        self._true_coach_workout_item_writer = TrueCoachWorkoutItemWriterAdapter(deps.true_coach)
+        self._hevy_result_sync_workflow = HevyToTrueCoachResultSyncWorkflow(store=deps.store)
         self._tc_to_tracker = TrueCoachToFitnessTrackerSyncronizer(
             store=deps.store,
             source=deps.true_coach,
@@ -174,9 +174,9 @@ class SyncService:
 
         for event in events:
             if isinstance(event, UpdatedWorkout):
-                self._hevy_result_sync.sync_one(
+                self._hevy_result_sync_workflow.sync_one(
                     event.workout.id,
-                    workout_item_writer=self._tc_workout_item_writer,
+                    workout_item_writer=self._true_coach_workout_item_writer,
                 )
 
         return events

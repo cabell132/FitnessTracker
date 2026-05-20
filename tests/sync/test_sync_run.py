@@ -16,7 +16,6 @@ from fitness_tracker.sync.adapters.file_checkpoint_store import (
     HEVY_CHECKPOINT_KEY,
     InMemoryCheckpointStore,
 )
-from fitness_tracker.sync.hevy_true_coach.sync import HevyToTrueCoachSyncronizer
 
 _SENTINEL = datetime(1970, 1, 1, tzinfo=UTC)
 
@@ -183,29 +182,23 @@ def test_should_sync_true_coach_workouts_only_when_fetch_returns_payload(
 
 def test_hevy_workout_updates_use_result_sync_workflow(
     store,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Updated Hevy Workouts cascade through the strict Result sync workflow."""
     checkpoints = InMemoryCheckpointStore()
     deps = _deps_with_mocks(store, checkpoints)
     svc = SyncService(deps)
     event = UpdatedWorkout(type="updated", workout=_hevy_workout("hevy-workout-1"))
-    workflow_calls: list[str] = []
 
-    monkeypatch.setattr(
-        HevyToTrueCoachSyncronizer,
-        "sync_workout",
-        lambda *_: pytest.fail("legacy syncer called"),
-    )
     svc._hevy_to_tracker.sync_workouts = MagicMock(return_value=[event])
-    svc._hevy_result_sync.sync_one = MagicMock(
-        side_effect=lambda workout_id, **_: workflow_calls.append(workout_id)
-    )
+    svc._hevy_result_sync_workflow.sync_one = MagicMock()
 
     result = svc.sync_hevy_workouts(since=datetime(2026, 5, 20, tzinfo=UTC))
 
     assert result == [event]
-    assert workflow_calls == ["hevy-workout-1"]
+    svc._hevy_result_sync_workflow.sync_one.assert_called_once_with(
+        "hevy-workout-1",
+        workout_item_writer=svc._true_coach_workout_item_writer,
+    )
 
 
 def test_should_populate_sync_run_result_counters_from_run(
