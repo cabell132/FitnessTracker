@@ -222,7 +222,7 @@ class SyncService:
         """
         return self._routine_creation_review.apply(
             workout_id,
-            routine_writer=HevyRoutineWriterAdapter(self._deps.hevy),
+            routine_writer=self._hevy_routine_writer(),
         )
 
     def replace_due_hevy_routines(
@@ -240,11 +240,14 @@ class SyncService:
         return self._routine_replacement_batch.sync(
             workouts,
             mutation=RoutineReplacementBatchMutation(
-                routine_writer=HevyRoutineWriterAdapter(self._deps.hevy),
+                routine_writer=self._hevy_routine_writer(),
                 list_existing_routines=self.list_hevy_routines,
                 delete_routine=self.delete_hevy_routine,
             ),
         )
+
+    def _hevy_routine_writer(self) -> HevyRoutineWriterAdapter:
+        return HevyRoutineWriterAdapter(self._deps.hevy)
 
     def sync_assessments(self) -> None:
         """Push tracker metric rows to True Coach assessments."""

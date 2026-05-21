@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
-from fitness_tracker.apis import HevyAppClient, TrueCoachClient
-from fitness_tracker.database import Store
-from fitness_tracker.llm.fitness_llm import FitnessLLM
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from fitness_tracker.apis import HevyAppClient, TrueCoachClient
+    from fitness_tracker.database import Store
+    from fitness_tracker.llm.fitness_llm import FitnessLLM
 
 
 LEGACY_DIRECT_ROUTINE_CREATION_ERROR = (
