@@ -12,6 +12,7 @@ from typing import Any, Literal, TypedDict
 from fitness_tracker.apis.hevy_app.types import (
     PostRoutinesRequestBody,
     PostRoutinesRequestExercise,
+    PostRoutinesResponse,
     PostRoutinesRequestSet,
     Routine,
 )
@@ -199,14 +200,10 @@ class TrueCoachToHevyReviewService:
         result = self.write_apply_request(workout_id)
         response = routine_writer.create_routine(result.request_body)
         created_routine_ids = _created_routine_ids(response)
-        response_path = result.review_bundle.directory / "hevy-response.json"
-        write_json_artifact(
-            response_path,
-            {
-                "created_routine_ids": created_routine_ids,
-                "routine_source_markers": result.request_body.routine.notes,
-                "response": response.model_dump() if response is not None else None,
-            },
+        response_path = _write_hevy_response_artifact(
+            result,
+            response=response,
+            created_routine_ids=created_routine_ids,
         )
         return ApplyResult(
             review_bundle=result.review_bundle,
@@ -366,13 +363,13 @@ class RoutineReplacementBatchWorkflow:
         created_routine_ids = [
             routine_id for result in apply_results for routine_id in result.created_routine_ids
         ]
-        missing_created_ids = [
+        workouts_missing_created_ids = [
             result.review_bundle.directory.name
             for result in apply_results
             if not result.created_routine_ids
         ]
-        if missing_created_ids:
-            ids_text = ", ".join(missing_created_ids)
+        if workouts_missing_created_ids:
+            ids_text = ", ".join(workouts_missing_created_ids)
             msg = f"Hevy Routine creation did not return created Routine ids: {ids_text}"
             raise SyncApplyError(msg)
         deleted = _delete_old_generated_routines(
@@ -420,11 +417,29 @@ def _review_required_batch_result(
     )
 
 
-def _created_routine_ids(response: Any) -> list[str]:
-    routines = getattr(response, "routine", None)
-    if routines is None:
+def _write_hevy_response_artifact(
+    result: ApplyResult,
+    *,
+    response: PostRoutinesResponse | None,
+    created_routine_ids: list[str],
+) -> Path:
+    response_path = result.review_bundle.directory / "hevy-response.json"
+    response_payload = response.model_dump() if response is not None else None
+    write_json_artifact(
+        response_path,
+        {
+            "created_routine_ids": created_routine_ids,
+            "routine_source_markers": result.request_body.routine.notes,
+            "response": response_payload,
+        },
+    )
+    return response_path
+
+
+def _created_routine_ids(response: PostRoutinesResponse | None) -> list[str]:
+    if response is None:
         return []
-    return [routine.id for routine in routines]
+    return [routine.id for routine in response.routine]
 
 
 def _delete_old_generated_routines(
