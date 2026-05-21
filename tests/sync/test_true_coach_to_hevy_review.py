@@ -748,7 +748,7 @@ def test_sync_apply_dry_run_writes_hevy_request_for_clean_plan(tmp_path: Path) -
         "routine": {
             "title": "17 May 2026\nClean Plan\n47",
             "folder_id": None,
-            "notes": "",
+            "notes": "TrueCoachWorkoutId: 47\nRoutineBatch: truecoach-to-hevy",
             "exercises": [
                 {
                     "exercise_template_id": "hevy-push-up",

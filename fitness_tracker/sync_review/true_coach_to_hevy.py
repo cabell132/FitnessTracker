@@ -245,7 +245,7 @@ def _build_hevy_routine_request(plan: dict[str, Any]) -> PostRoutinesRequestBody
     workout = plan["workout"]
     return PostRoutinesRequestBody.build(
         title=_routine_title(workout),
-        notes="",
+        notes=_routine_notes(workout),
         exercises=_request_exercises_for_plan(plan),
     )
 
@@ -296,6 +296,10 @@ def _routine_title(workout: dict[str, Any]) -> str:
     due = workout.get("due")
     due_text = datetime.fromisoformat(due).strftime("%d %b %Y") if due else ""
     return f"{due_text}\n{workout.get('title') or ''}\n{workout['id']}"
+
+
+def _routine_notes(workout: dict[str, Any]) -> str:
+    return f"TrueCoachWorkoutId: {workout['id']}\nRoutineBatch: truecoach-to-hevy"
 
 
 def _request_exercises_for_plan(plan: dict[str, Any]) -> list[PostRoutinesRequestExercise]:
