@@ -18,6 +18,7 @@ from logs import WideEvent
 from fitness_tracker.sync._deps import SyncDeps
 from fitness_tracker.sync._run import SyncRunResult
 from fitness_tracker.sync.adapters.file_checkpoint_store import HEVY_CHECKPOINT_KEY
+from fitness_tracker.sync.adapters.hevy_routine_writer import HevyRoutineWriterAdapter
 from fitness_tracker.sync.adapters.true_coach_workout_item_writer import (
     TrueCoachWorkoutItemWriterAdapter,
 )
@@ -29,6 +30,10 @@ from fitness_tracker.sync.true_coach_hevy.sync import TrueCoachToHevySyncronizer
 from fitness_tracker.sync.true_coach_tracker.sync import TrueCoachToFitnessTrackerSyncronizer
 from fitness_tracker.sync_review.hevy_to_true_coach_result_workflow import (
     HevyToTrueCoachResultSyncWorkflow,
+)
+from fitness_tracker.sync_review.true_coach_to_hevy import (
+    RoutineReplacementBatchResult,
+    RoutineReplacementBatchWorkflow,
 )
 
 if TYPE_CHECKING:
@@ -66,6 +71,10 @@ class SyncService:
         )
         self._true_coach_workout_item_writer = TrueCoachWorkoutItemWriterAdapter(deps.true_coach)
         self._hevy_result_sync_workflow = HevyToTrueCoachResultSyncWorkflow(store=deps.store)
+        self._routine_replacement_batch = RoutineReplacementBatchWorkflow(
+            store=deps.store,
+            output_root=deps.routine_review_output_root,
+        )
         self._tc_to_tracker = TrueCoachToFitnessTrackerSyncronizer(
             store=deps.store,
             source=deps.true_coach,
@@ -111,17 +120,14 @@ class SyncService:
         checkpoints.write(HEVY_CHECKPOINT_KEY, ts)
 
         self.sync_assessments()
-        deleted = self.clear_hevy_routines()
-
         res = self.fetch_recent_true_coach_workouts()
         if res is not None:
             self.sync_true_coach_workouts(res)
 
         workouts = self.get_due_workouts()
-        for workout in workouts:
-            self.create_hevy_routine(workout.id)
+        routine_batch = self.replace_due_hevy_routines(workouts)
 
-        return events, deleted, workouts
+        return events, routine_batch.deleted_routine_count, workouts
 
     def run(self, *, now: datetime | None = None) -> SyncRunResult:
         """Execute the full sync pipeline with internal checkpoint lifecycle.
@@ -196,6 +202,24 @@ class SyncService:
             workout_id (int): True Coach workout id to convert.
         """
         self._tc_to_hevy.sync_workout(workout_id)
+
+    def replace_due_hevy_routines(
+        self,
+        workouts: list[TrueCoachWorkout],
+    ) -> RoutineReplacementBatchResult:
+        """Review-gate a batch of due Routine replacements before mutating Hevy.
+
+        Args:
+            workouts (list[TrueCoachWorkout]): Due True Coach workouts to create as Hevy Routines.
+
+        Returns:
+            RoutineReplacementBatchResult: Batch status, artifacts, and mutation count.
+        """
+        return self._routine_replacement_batch.sync(
+            workouts,
+            routine_writer=HevyRoutineWriterAdapter(self._deps.hevy),
+            clear_existing_routines=self.clear_hevy_routines,
+        )
 
     def sync_assessments(self) -> None:
         """Push tracker metric rows to True Coach assessments."""

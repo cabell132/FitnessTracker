@@ -7,6 +7,7 @@ single SQLAlchemy engine.  Tests construct ``SyncDeps`` directly with fakes.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import dropbox
 from sqlalchemy.engine import Engine
@@ -32,6 +33,7 @@ class SyncDeps:
     llm: FitnessLLM
     dbx: dropbox.Dropbox
     checkpoints: CheckpointStore
+    routine_review_output_root: Path = Path("reports")
 
     @classmethod
     def from_config(cls, engine: Engine, cfg: Config) -> SyncDeps:

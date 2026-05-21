@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any, Literal, TypedDict
 
 from fitness_tracker.apis.hevy_app.types import (
     PostRoutinesRequestBody,
@@ -76,6 +77,21 @@ class ApplyResult:
     review_bundle: ReviewBundle
     request_path: Path
     request_body: PostRoutinesRequestBody
+
+
+type RoutineReplacementBatchStatus = Literal["applied", "review_required", "no_due_workouts"]
+
+
+@dataclass(frozen=True)
+class RoutineReplacementBatchResult:
+    """Outcome of a strict automatic Routine replacement batch."""
+
+    status: RoutineReplacementBatchStatus
+    review_bundles: list[ReviewBundle]
+    apply_results: list[ApplyResult]
+    deleted_routine_count: int = 0
+    review_required_workout_ids: list[int] | None = None
+    review_required_reasons: dict[int, list[str]] | None = None
 
 
 class SafetyStatus(TypedDict):
@@ -260,6 +276,79 @@ class TrueCoachToHevyReviewService:
             lines.append("Blockers: none")
         lines.append("")
         return lines
+
+
+class RoutineReplacementBatchWorkflow:
+    """Plan and apply due Routine replacements as one review-gated batch."""
+
+    def __init__(self, store: Store, output_root: Path = Path("reports")) -> None:
+        """Create the workflow.
+
+        Args:
+            store (Store): Local database snapshot.
+            output_root (Path): Root under which review artifacts are written.
+        """
+        self._review_service = TrueCoachToHevyReviewService(
+            store=store,
+            output_root=output_root,
+        )
+
+    def sync(
+        self,
+        workouts: list[TrueCoachWorkout],
+        *,
+        routine_writer: HevyRoutineWriter,
+        clear_existing_routines: Callable[[], int],
+    ) -> RoutineReplacementBatchResult:
+        """Replace Hevy Routine drafts only when every due Workout is automatic-safe.
+
+        Args:
+            workouts (list[TrueCoachWorkout]): Due True Coach Workouts to replace as one batch.
+            routine_writer (HevyRoutineWriter): Hevy mutation port for safe Routine creation.
+            clear_existing_routines (Callable[[], int]): Mutation that deletes existing drafts.
+
+        Returns:
+            RoutineReplacementBatchResult: No-due, review-required, or applied batch outcome.
+        """
+        if not workouts:
+            return RoutineReplacementBatchResult(
+                status="no_due_workouts",
+                review_bundles=[],
+                apply_results=[],
+            )
+
+        review_bundles = [
+            self._review_service.write_review(workout.id) for workout in _workouts_by_due(workouts)
+        ]
+        plans = [read_json_object(bundle.plan_path) for bundle in review_bundles]
+        unsafe_plans = [plan for plan in plans if not plan["safety"]["auto_safe"]]
+        if unsafe_plans:
+            return RoutineReplacementBatchResult(
+                status="review_required",
+                review_bundles=review_bundles,
+                apply_results=[],
+                review_required_workout_ids=[plan["workout"]["id"] for plan in unsafe_plans],
+                review_required_reasons={
+                    plan["workout"]["id"]: plan["safety"]["review_required_reasons"]
+                    for plan in unsafe_plans
+                },
+            )
+
+        deleted = clear_existing_routines()
+        apply_results = [
+            self._review_service.apply(plan["workout"]["id"], routine_writer=routine_writer)
+            for plan in plans
+        ]
+        return RoutineReplacementBatchResult(
+            status="applied",
+            review_bundles=[result.review_bundle for result in apply_results],
+            apply_results=apply_results,
+            deleted_routine_count=deleted,
+        )
+
+
+def _workouts_by_due(workouts: list[TrueCoachWorkout]) -> list[TrueCoachWorkout]:
+    return sorted(workouts, key=lambda workout: (workout.due is None, workout.due, workout.id))
 
 
 def _build_hevy_routine_request(plan: dict[str, Any]) -> PostRoutinesRequestBody:

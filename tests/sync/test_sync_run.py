@@ -3,12 +3,21 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import json
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 
 from fitness_tracker.apis.hevy_app.types import UpdatedWorkout, Workout
+from fitness_tracker.database.models.hevy_app import HevyAppExercise
+from fitness_tracker.database.models.tracker import Exercise as TrackerExercise
+from fitness_tracker.database.models.true_coach import (
+    TrueCoachExercise,
+    TrueCoachWorkout,
+    TrueCoachWorkoutItem,
+)
 from fitness_tracker.sync._deps import SyncDeps
 from fitness_tracker.sync._service import SyncService
 from fitness_tracker.sync.adapters.file_checkpoint_store import (
@@ -23,6 +32,7 @@ _SENTINEL = datetime(1970, 1, 1, tzinfo=UTC)
 def _deps_with_mocks(
     store,
     checkpoints: InMemoryCheckpointStore | FileCheckpointStore,
+    output_root: Path | None = None,
 ) -> SyncDeps:
     """Build :class:`SyncDeps` with non-persistent clients for isolation.
 
@@ -40,6 +50,7 @@ def _deps_with_mocks(
         llm=MagicMock(),
         dbx=MagicMock(),
         checkpoints=checkpoints,
+        routine_review_output_root=output_root or Path("reports"),
     )
 
 
@@ -103,16 +114,11 @@ def test_should_execute_sync_steps_in_declared_order(
         lambda since: order.append("hevy") or [],
     )
     monkeypatch.setattr(svc, "sync_assessments", lambda: order.append("assessments") or None)
-    monkeypatch.setattr(
-        svc,
-        "clear_hevy_routines",
-        lambda **_: order.append("clear") or 0,
-    )
     monkeypatch.setattr(svc, "get_due_workouts", lambda: order.append("due") or [])
     monkeypatch.setattr(
         svc,
-        "create_hevy_routine",
-        lambda wid: order.append(f"routine:{wid}") or None,
+        "replace_due_hevy_routines",
+        lambda workouts: order.append("routine-batch") or SimpleNamespace(deleted_routine_count=0),
     )
 
     svc.run()
@@ -122,9 +128,9 @@ def test_should_execute_sync_steps_in_declared_order(
         "tc-fetch",
         "hevy",
         "assessments",
-        "clear",
         "tc-fetch",
         "due",
+        "routine-batch",
     ]
 
 
@@ -214,18 +220,19 @@ def test_should_populate_sync_run_result_counters_from_run(
     monkeypatch.setattr(svc, "sync_apple_health", lambda: None)
     monkeypatch.setattr(svc, "sync_hevy_workouts", lambda since: fake_events)
     monkeypatch.setattr(svc, "sync_assessments", lambda: None)
-    monkeypatch.setattr(svc, "clear_hevy_routines", lambda **_: 3)
     monkeypatch.setattr(svc, "fetch_recent_true_coach_workouts", lambda: None)
+    due_workouts = [SimpleNamespace(id=7), SimpleNamespace(id=8)]
     monkeypatch.setattr(
         svc,
         "get_due_workouts",
-        lambda: [SimpleNamespace(id=7), SimpleNamespace(id=8)],
+        lambda: due_workouts,
     )
-    created: list[int] = []
+    batched: list[list[int]] = []
     monkeypatch.setattr(
         svc,
-        "create_hevy_routine",
-        lambda wid: created.append(wid),
+        "replace_due_hevy_routines",
+        lambda workouts: batched.append([workout.id for workout in workouts])
+        or SimpleNamespace(deleted_routine_count=3),
     )
 
     result = svc.run(now=datetime(2026, 1, 1, tzinfo=UTC))
@@ -234,8 +241,54 @@ def test_should_populate_sync_run_result_counters_from_run(
     assert result.hevy_routines_deleted == 3
     assert result.true_coach_workouts_synced == 2
     assert result.outcome == "success"
-    assert created == [7, 8]
+    assert batched == [[7, 8]]
     assert result.duration_ms >= 0.0
+
+
+def test_run_blocks_due_routine_replacement_batch_before_deleting_routines(
+    store,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A review-required due batch writes every review and leaves Hevy untouched."""
+    _seed_clean_due_workout(store)
+    _seed_unsafe_due_workout(store)
+    checkpoints = InMemoryCheckpointStore()
+    deps = _deps_with_mocks(store, checkpoints, output_root=tmp_path / "reports")
+    svc = SyncService(deps)
+
+    _disable_non_routine_sync_steps(svc, monkeypatch)
+
+    result = svc.run(now=datetime(2026, 5, 21, tzinfo=UTC))
+
+    assert result.hevy_routines_deleted == 0
+    deps.hevy.routines.get.assert_not_called()
+    deps.hevy.routines.create.assert_not_called()
+    _assert_routine_plan_safety(tmp_path, workout_id=47, auto_safe=True)
+    _assert_routine_plan_safety(tmp_path, workout_id=42, auto_safe=False)
+    assert result.true_coach_workouts_synced == 2
+
+
+def test_run_skips_routine_deletion_when_no_workouts_are_due(
+    store,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An empty due batch is a no-op for the Hevy Routine menu."""
+    checkpoints = InMemoryCheckpointStore()
+    deps = _deps_with_mocks(store, checkpoints, output_root=tmp_path / "reports")
+    svc = SyncService(deps)
+
+    _disable_non_routine_sync_steps(svc, monkeypatch)
+
+    result = svc.run(now=datetime(2026, 5, 21, tzinfo=UTC))
+
+    assert result.hevy_routines_deleted == 0
+    assert result.true_coach_workouts_synced == 0
+    deps.hevy.routines.get.assert_not_called()
+    deps.hevy.routines.delete.assert_not_called()
+    deps.hevy.routines.create.assert_not_called()
+    assert not (tmp_path / "reports" / "sync-review" / "truecoach-to-hevy").exists()
 
 
 def test_should_round_trip_multiple_keys_in_file_checkpoint_store(tmp_path) -> None:
@@ -293,3 +346,108 @@ def test_should_use_fixed_now_for_hevy_checkpoint_write(
 
     svc.run(now=fixed)
     assert checkpoints.read(HEVY_CHECKPOINT_KEY, _SENTINEL) == fixed
+
+
+def _disable_non_routine_sync_steps(
+    svc: SyncService,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(svc, "sync_apple_health", lambda: None)
+    monkeypatch.setattr(svc, "sync_hevy_workouts", lambda since: [])
+    monkeypatch.setattr(svc, "sync_assessments", lambda: None)
+    monkeypatch.setattr(svc, "fetch_recent_true_coach_workouts", lambda: None)
+
+
+def _assert_routine_plan_safety(
+    tmp_path: Path,
+    *,
+    workout_id: int,
+    auto_safe: bool,
+) -> None:
+    plan_path = (
+        tmp_path / "reports" / "sync-review" / "truecoach-to-hevy" / str(workout_id) / "plan.json"
+    )
+    assert plan_path.exists()
+    assert json.loads(plan_path.read_text())["safety"]["auto_safe"] is auto_safe
+
+
+def _seed_clean_due_workout(store) -> None:
+    workout_id = 47
+    item_id = 1007
+    exercise_id = 506
+    now = datetime(2026, 5, 21, tzinfo=UTC)
+    with store.unit_of_work() as uow:
+        uow.session.add(
+            TrueCoachWorkout(
+                id=workout_id,
+                title="Clean Plan",
+                due=now,
+                short_description="",
+                state="pending",
+                rest_day=False,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        uow.session.add(TrueCoachExercise(id=exercise_id, name="Push Up", default=False))
+        uow.session.add(
+            HevyAppExercise(
+                id=f"hevy-push-up-{workout_id}",
+                name="Push Up",
+                type="reps_only",
+                equipment="bodyweight",
+                default=True,
+            )
+        )
+        uow.session.add(
+            TrackerExercise(
+                name=f"Push Up {workout_id}",
+                hevy_app_id=f"hevy-push-up-{workout_id}",
+                true_coach_id=exercise_id,
+            )
+        )
+        uow.session.add(
+            TrueCoachWorkoutItem(
+                id=item_id,
+                workout_id=workout_id,
+                name="Push Up",
+                info="3 x 12",
+                comment="",
+                is_circuit=False,
+                state="pending",
+                position=1,
+                exercise_id=exercise_id,
+                assessment_id=None,
+            )
+        )
+
+
+def _seed_unsafe_due_workout(store) -> None:
+    now = datetime(2026, 5, 21, tzinfo=UTC)
+    with store.unit_of_work() as uow:
+        uow.session.add(
+            TrueCoachWorkout(
+                id=42,
+                title="Upper Strength",
+                due=now,
+                short_description="",
+                state="pending",
+                rest_day=False,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        uow.session.add(
+            TrueCoachWorkoutItem(
+                id=1002,
+                workout_id=42,
+                name="Mystery Carry",
+                info="3 x 8+8+8",
+                comment="",
+                is_circuit=False,
+                state="pending",
+                position=1,
+                exercise_id=None,
+                assessment_id=None,
+            )
+        )
