@@ -46,6 +46,10 @@ from fitness_tracker.sync_review.workflow import (
 
 SYNC_NAME = "truecoach-to-hevy"
 SET_DISPLAY_KEYS = ("type", "weight_kg", "reps", "distance_meters", "duration_seconds")
+TRUE_COACH_WORKOUT_ID_MARKER = "TrueCoachWorkoutId"
+ROUTINE_BATCH_MARKER = "RoutineBatch"
+MISSING_WORKOUT_ID_MARKER_REASON = f"Missing Routine source marker: {TRUE_COACH_WORKOUT_ID_MARKER}"
+MISSING_ROUTINE_BATCH_MARKER_REASON = f"Missing Routine source marker: {ROUTINE_BATCH_MARKER}"
 
 
 class SyncReviewError(Exception):
@@ -296,30 +300,29 @@ def _review_required_reasons(plan: dict[str, Any]) -> list[str]:
 
 
 def _warning_reasons(items: list[dict[str, Any]]) -> list[str]:
-    reasons: list[str] = []
-    for item in items:
-        reasons.extend(
-            f"Warning for {item['name']}: {warning}" for warning in item.get("warnings", [])
-        )
-        for block in item.get("planned_blocks", []):
-            reasons.extend(
-                f"Warning for {block['source_text']}: {warning}"
-                for warning in block.get("warnings", [])
-            )
-    return reasons
+    return [
+        f"Warning for {source_text}: {warning}"
+        for source_text, entry in _review_reason_entries(items)
+        for warning in entry.get("warnings", [])
+    ]
 
 
 def _placeholder_template_reasons(items: list[dict[str, Any]]) -> list[str]:
-    reasons: list[str] = []
+    return [
+        f"Placeholder Hevy exercise mapping: {source_text}"
+        for source_text, entry in _review_reason_entries(items)
+        if _is_placeholder_plan_template(entry.get("selected_hevy_template"))
+    ]
+
+
+def _review_reason_entries(
+    items: list[dict[str, Any]],
+) -> list[tuple[str, dict[str, Any]]]:
+    entries: list[tuple[str, dict[str, Any]]] = []
     for item in items:
-        if _is_placeholder_plan_template(item.get("selected_hevy_template")):
-            reasons.append(f"Placeholder Hevy exercise mapping: {item['name']}")
-        reasons.extend(
-            f"Placeholder Hevy exercise mapping: {block['source_text']}"
-            for block in item.get("planned_blocks", [])
-            if _is_placeholder_plan_template(block.get("selected_hevy_template"))
-        )
-    return reasons
+        entries.append((item["name"], item))
+        entries.extend((block["source_text"], block) for block in item.get("planned_blocks", []))
+    return entries
 
 
 def _is_placeholder_plan_template(template: dict[str, Any] | None) -> bool:
@@ -329,13 +332,13 @@ def _is_placeholder_plan_template(template: dict[str, Any] | None) -> bool:
 def _routine_source_marker_reasons(plan: dict[str, Any]) -> list[str]:
     markers = plan.get("routine_source_markers")
     if not isinstance(markers, dict):
-        return ["Missing Routine source marker: TrueCoachWorkoutId"]
+        return [MISSING_WORKOUT_ID_MARKER_REASON]
     expected_workout_id = str(plan["workout"]["id"])
     reasons: list[str] = []
-    if markers.get("TrueCoachWorkoutId") != expected_workout_id:
-        reasons.append("Missing Routine source marker: TrueCoachWorkoutId")
-    if markers.get("RoutineBatch") != SYNC_NAME:
-        reasons.append("Missing Routine source marker: RoutineBatch")
+    if markers.get(TRUE_COACH_WORKOUT_ID_MARKER) != expected_workout_id:
+        reasons.append(MISSING_WORKOUT_ID_MARKER_REASON)
+    if markers.get(ROUTINE_BATCH_MARKER) != SYNC_NAME:
+        reasons.append(MISSING_ROUTINE_BATCH_MARKER_REASON)
     return reasons
 
 
@@ -405,8 +408,8 @@ def _routine_notes(workout: dict[str, Any]) -> str:
 def _routine_source_markers(workout: TrueCoachWorkout | dict[str, Any]) -> dict[str, str]:
     workout_id = workout.id if isinstance(workout, TrueCoachWorkout) else workout["id"]
     return {
-        "TrueCoachWorkoutId": str(workout_id),
-        "RoutineBatch": SYNC_NAME,
+        TRUE_COACH_WORKOUT_ID_MARKER: str(workout_id),
+        ROUTINE_BATCH_MARKER: SYNC_NAME,
     }
 
 
