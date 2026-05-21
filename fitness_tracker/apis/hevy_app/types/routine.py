@@ -12,6 +12,7 @@ class Routine(BaseModel):
 
     id: str
     title: str
+    notes: str | None = None
     updated_at: str
     created_at: str
     exercises: list[Exercise]

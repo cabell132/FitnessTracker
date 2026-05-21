@@ -8,7 +8,11 @@ import pytest
 from sqlalchemy import create_engine
 
 from fitness_tracker.cli import main
-from fitness_tracker.apis.hevy_app.types import PostRoutinesRequestBody
+from fitness_tracker.apis.hevy_app.types import (
+    PostRoutinesRequestBody,
+    PostRoutinesResponse,
+    Routine,
+)
 from fitness_tracker.database import Store
 from fitness_tracker.database.models.hevy_app import (
     HevyAppExercise,
@@ -23,7 +27,12 @@ from fitness_tracker.database.models.true_coach import (
     TrueCoachWorkoutItem,
 )
 from fitness_tracker.sync_review import TrueCoachToHevyReviewService
-from fitness_tracker.sync_review.true_coach_to_hevy import SyncApplyError, classify_plan_safety
+from fitness_tracker.sync_review.true_coach_to_hevy import (
+    RoutineReplacementBatchMutation,
+    RoutineReplacementBatchWorkflow,
+    SyncApplyError,
+    classify_plan_safety,
+)
 
 
 def test_sync_review_cli_writes_ordered_report_and_plan(tmp_path: Path) -> None:
@@ -908,6 +917,93 @@ def test_sync_apply_sends_same_hevy_request_as_dry_run(tmp_path: Path) -> None:
     assert applied.request_body.model_dump() == writer.requests[0].model_dump()
 
 
+def test_routine_replacement_batch_applies_all_safe_plans_then_deletes_only_old_marked_routines(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_clean_plan_workout(store)
+    due_workouts = _due_workouts(store, [47])
+
+    writer = _RecordingRoutineWriter(created_ids=["new-routine-47"])
+    existing_routines = [
+        _routine(
+            "old-generated-47",
+            notes="TrueCoachWorkoutId: 47\nRoutineBatch: truecoach-to-hevy",
+        ),
+        _routine(
+            "manual-47",
+            notes="TrueCoachWorkoutId: 47\nRoutineBatch: manual",
+        ),
+        _routine("unmarked", notes=None),
+        _routine(
+            "new-routine-47",
+            notes="TrueCoachWorkoutId: 47\nRoutineBatch: truecoach-to-hevy",
+        ),
+    ]
+    deleted_routine_ids: list[str] = []
+    workflow = RoutineReplacementBatchWorkflow(store=store, output_root=tmp_path / "reports")
+
+    result = workflow.sync(
+        due_workouts,
+        mutation=RoutineReplacementBatchMutation(
+            routine_writer=writer,
+            list_existing_routines=lambda: existing_routines,
+            delete_routine=deleted_routine_ids.append,
+        ),
+    )
+
+    assert result.status == "applied"
+    assert result.deleted_routine_count == 1
+    assert deleted_routine_ids == ["old-generated-47"]
+    assert result.created_routine_ids == ["new-routine-47"]
+    assert result.apply_results[0].created_routine_ids == ["new-routine-47"]
+    assert result.apply_results[0].response_path is not None
+    response_payload = json.loads(result.apply_results[0].response_path.read_text())
+    assert response_payload["created_routine_ids"] == ["new-routine-47"]
+    assert "TrueCoachWorkoutId: 47\nRoutineBatch: truecoach-to-hevy" in [
+        request.routine.notes for request in writer.requests
+    ]
+
+
+def test_routine_replacement_batch_failure_preserves_existing_menu_and_recovery_artifact(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_clean_plan_workout(store)
+    _seed_superset_plan_workout(store)
+    due_workouts = _due_workouts(store, [47, 52])
+
+    writer = _RecordingRoutineWriter(created_ids=["new-routine-47"], fail_on_call=2)
+    existing_routines = [
+        _routine(
+            "old-generated-47",
+            notes="TrueCoachWorkoutId: 47\nRoutineBatch: truecoach-to-hevy",
+        )
+    ]
+    deleted_routine_ids: list[str] = []
+    workflow = RoutineReplacementBatchWorkflow(store=store, output_root=tmp_path / "reports")
+
+    with pytest.raises(RuntimeError, match="failed"):
+        workflow.sync(
+            due_workouts,
+            mutation=RoutineReplacementBatchMutation(
+                routine_writer=writer,
+                list_existing_routines=lambda: existing_routines,
+                delete_routine=deleted_routine_ids.append,
+            ),
+        )
+
+    assert deleted_routine_ids == []
+    response_path = (
+        tmp_path / "reports" / "sync-review" / "truecoach-to-hevy" / "47" / "hevy-response.json"
+    )
+    assert json.loads(response_path.read_text())["created_routine_ids"] == ["new-routine-47"]
+
+
 def test_sync_apply_preserves_true_coach_superset_groups(tmp_path: Path) -> None:
     db_path = tmp_path / "tracker.sqlite"
     store = Store(create_engine(f"sqlite:///{db_path}"))
@@ -1111,11 +1207,59 @@ def test_sync_apply_allows_notes_preserved_nuance(tmp_path: Path) -> None:
 
 
 class _RecordingRoutineWriter:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        created_ids: list[str] | None = None,
+        *,
+        fail_on_call: int | None = None,
+    ) -> None:
         self.requests: list[PostRoutinesRequestBody] = []
+        self.created_ids = created_ids or []
+        self.fail_on_call = fail_on_call
 
-    def create_routine(self, routine: PostRoutinesRequestBody) -> None:
+    def create_routine(
+        self,
+        routine: PostRoutinesRequestBody,
+    ) -> PostRoutinesResponse | None:
         self.requests.append(routine)
+        if self.fail_on_call == len(self.requests):
+            msg = "failed"
+            raise RuntimeError(msg)
+        if not self.created_ids:
+            return None
+        routine_id = self.created_ids[len(self.requests) - 1]
+        return PostRoutinesResponse(
+            routine=[
+                _routine(
+                    routine_id,
+                    title=routine.routine.title,
+                    notes=routine.routine.notes,
+                )
+            ]
+        )
+
+
+def _routine(
+    routine_id: str,
+    *,
+    title: str = "Routine",
+    notes: str | None = None,
+) -> Routine:
+    return Routine(
+        id=routine_id,
+        title=title,
+        notes=notes,
+        updated_at="2026-05-21T00:00:00Z",
+        created_at="2026-05-21T00:00:00Z",
+        exercises=[],
+    )
+
+
+def _due_workouts(store: Store, workout_ids: list[int]) -> list[TrueCoachWorkout]:
+    with store.unit_of_work() as uow:
+        workouts = [uow.true_coach.get_workout(id=workout_id) for workout_id in workout_ids]
+        assert all(workout is not None for workout in workouts)
+        return [workout for workout in workouts if workout is not None]
 
 
 def _assert_mixed_knee_extension_blocks(item: dict) -> None:

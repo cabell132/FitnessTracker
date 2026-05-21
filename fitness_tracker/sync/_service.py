@@ -11,7 +11,7 @@ import time
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
-from fitness_tracker.apis.hevy_app.types import DeletedWorkout, UpdatedWorkout
+from fitness_tracker.apis.hevy_app.types import DeletedWorkout, Routine, UpdatedWorkout
 from fitness_tracker.apis.true_coach.types import WorkoutResponse
 from logs import WideEvent
 
@@ -32,6 +32,7 @@ from fitness_tracker.sync_review.hevy_to_true_coach_result_workflow import (
     HevyToTrueCoachResultSyncWorkflow,
 )
 from fitness_tracker.sync_review.true_coach_to_hevy import (
+    RoutineReplacementBatchMutation,
     RoutineReplacementBatchResult,
     RoutineReplacementBatchWorkflow,
 )
@@ -217,8 +218,11 @@ class SyncService:
         """
         return self._routine_replacement_batch.sync(
             workouts,
-            routine_writer=HevyRoutineWriterAdapter(self._deps.hevy),
-            clear_existing_routines=self.clear_hevy_routines,
+            mutation=RoutineReplacementBatchMutation(
+                routine_writer=HevyRoutineWriterAdapter(self._deps.hevy),
+                list_existing_routines=self.list_hevy_routines,
+                delete_routine=self.delete_hevy_routine,
+            ),
         )
 
     def sync_assessments(self) -> None:
@@ -249,6 +253,34 @@ class SyncService:
         for routine in routines.routines:
             self._deps.hevy.routines.delete(routine.id)
         return len(routines.routines)
+
+    def list_hevy_routines(self, per_page: int = 10) -> list[Routine]:
+        """Fetch all visible Hevy routine drafts.
+
+        Args:
+            per_page (int): Page size.
+
+        Returns:
+            list[Routine]: Routines returned by the Hevy API.
+        """
+        routines: list[Routine] = []
+        page = 1
+        while True:
+            response = self._deps.hevy.routines.get(page=page, per_page=per_page)
+            if response is None:
+                return routines
+            routines.extend(response.routines)
+            if page >= response.page_count:
+                return routines
+            page += 1
+
+    def delete_hevy_routine(self, routine_id: str) -> None:
+        """Delete one Hevy routine draft by id.
+
+        Args:
+            routine_id (str): Hevy Routine id to delete.
+        """
+        self._deps.hevy.routines.delete(routine_id)
 
     def fetch_recent_true_coach_workouts(self) -> WorkoutResponse | None:
         """Fetch recent True Coach workouts for sync.

@@ -1,6 +1,7 @@
 """Read-only sync review bundle generation."""
 
 from fitness_tracker.sync_review.true_coach_to_hevy import (
+    RoutineReplacementBatchMutation,
     RoutineReplacementBatchResult,
     RoutineReplacementBatchWorkflow,
     SyncApplyError,
@@ -50,6 +51,7 @@ __all__ = [
     "HevyToTrueCoachResultReviewService",
     "HevyToTrueCoachResultSyncWorkflow",
     "HevyToTrueCoachResultSyncWorkflowResult",
+    "RoutineReplacementBatchMutation",
     "RoutineReplacementBatchResult",
     "RoutineReplacementBatchWorkflow",
     "SyncApplyError",

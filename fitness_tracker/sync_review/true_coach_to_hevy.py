@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal, TypedDict
@@ -13,6 +13,7 @@ from fitness_tracker.apis.hevy_app.types import (
     PostRoutinesRequestBody,
     PostRoutinesRequestExercise,
     PostRoutinesRequestSet,
+    Routine,
 )
 from fitness_tracker.database import Store
 from fitness_tracker.database.models import HevyAppExercise
@@ -77,6 +78,8 @@ class ApplyResult:
     review_bundle: ReviewBundle
     request_path: Path
     request_body: PostRoutinesRequestBody
+    response_path: Path | None = None
+    created_routine_ids: list[str] = field(default_factory=list)
 
 
 type RoutineReplacementBatchStatus = Literal["applied", "review_required", "no_due_workouts"]
@@ -91,8 +94,18 @@ class RoutineReplacementBatchResult:
     review_bundles: list[ReviewBundle]
     apply_results: list[ApplyResult]
     deleted_routine_count: int = 0
+    created_routine_ids: list[str] = field(default_factory=list)
     review_required_workout_ids: list[int] | None = None
     review_required_reasons: dict[int, list[str]] | None = None
+
+
+@dataclass(frozen=True)
+class RoutineReplacementBatchMutation:
+    """Mutation dependencies for strict-safe Routine replacement."""
+
+    routine_writer: HevyRoutineWriter
+    list_existing_routines: Callable[[], list[Routine]]
+    delete_routine: Callable[[str], None]
 
 
 class SafetyStatus(TypedDict):
@@ -184,8 +197,24 @@ class TrueCoachToHevyReviewService:
             ApplyResult: Request body and local artifacts from the apply attempt.
         """
         result = self.write_apply_request(workout_id)
-        routine_writer.create_routine(result.request_body)
-        return result
+        response = routine_writer.create_routine(result.request_body)
+        created_routine_ids = _created_routine_ids(response)
+        response_path = result.review_bundle.directory / "hevy-response.json"
+        write_json_artifact(
+            response_path,
+            {
+                "created_routine_ids": created_routine_ids,
+                "routine_source_markers": result.request_body.routine.notes,
+                "response": response.model_dump() if response is not None else None,
+            },
+        )
+        return ApplyResult(
+            review_bundle=result.review_bundle,
+            request_path=result.request_path,
+            request_body=result.request_body,
+            response_path=response_path,
+            created_routine_ids=created_routine_ids,
+        )
 
     def _plan(self, workout: TrueCoachWorkout, items: list[ReviewItem]) -> dict[str, Any]:
         plan: dict[str, Any] = {
@@ -298,18 +327,19 @@ class RoutineReplacementBatchWorkflow:
         self,
         workouts: list[TrueCoachWorkout],
         *,
-        routine_writer: HevyRoutineWriter,
-        clear_existing_routines: Callable[[], int],
+        mutation: RoutineReplacementBatchMutation,
     ) -> RoutineReplacementBatchResult:
         """Replace Hevy Routine drafts only when every due Workout is automatic-safe.
 
         Args:
             workouts (list[TrueCoachWorkout]): Due True Coach Workouts to replace as one batch.
-            routine_writer (HevyRoutineWriter): Hevy mutation port for safe Routine creation.
-            clear_existing_routines (Callable[[], int]): Mutation that deletes existing drafts.
+            mutation (RoutineReplacementBatchMutation): Hevy creation, listing, and deletion.
 
         Returns:
             RoutineReplacementBatchResult: No-due, review-required, or applied batch outcome.
+
+        Raises:
+            SyncApplyError: If Hevy creation does not return created Routine ids.
         """
         if not workouts:
             return RoutineReplacementBatchResult(
@@ -326,16 +356,36 @@ class RoutineReplacementBatchWorkflow:
         if plans_requiring_review:
             return _review_required_batch_result(review_bundles, plans_requiring_review)
 
-        deleted = clear_existing_routines()
         apply_results = [
-            self._review_service.apply(plan["workout"]["id"], routine_writer=routine_writer)
+            self._review_service.apply(
+                plan["workout"]["id"],
+                routine_writer=mutation.routine_writer,
+            )
             for plan in plans
         ]
+        created_routine_ids = [
+            routine_id for result in apply_results for routine_id in result.created_routine_ids
+        ]
+        missing_created_ids = [
+            result.review_bundle.directory.name
+            for result in apply_results
+            if not result.created_routine_ids
+        ]
+        if missing_created_ids:
+            ids_text = ", ".join(missing_created_ids)
+            msg = f"Hevy Routine creation did not return created Routine ids: {ids_text}"
+            raise SyncApplyError(msg)
+        deleted = _delete_old_generated_routines(
+            mutation.list_existing_routines(),
+            delete_routine=mutation.delete_routine,
+            created_routine_ids=set(created_routine_ids),
+        )
         return RoutineReplacementBatchResult(
             status="applied",
             review_bundles=[result.review_bundle for result in apply_results],
             apply_results=apply_results,
             deleted_routine_count=deleted,
+            created_routine_ids=created_routine_ids,
         )
 
     def _write_reviews(self, workouts: list[TrueCoachWorkout]) -> list[ReviewBundle]:
@@ -368,6 +418,48 @@ def _review_required_batch_result(
             for plan in plans_requiring_review
         },
     )
+
+
+def _created_routine_ids(response: Any) -> list[str]:
+    routines = getattr(response, "routine", None)
+    if routines is None:
+        return []
+    return [routine.id for routine in routines]
+
+
+def _delete_old_generated_routines(
+    routines: list[Routine],
+    *,
+    delete_routine: Callable[[str], None],
+    created_routine_ids: set[str],
+) -> int:
+    deleted = 0
+    for routine in routines:
+        if routine.id in created_routine_ids:
+            continue
+        if not _routine_has_expected_source_markers(routine):
+            continue
+        delete_routine(routine.id)
+        deleted += 1
+    return deleted
+
+
+def _routine_has_expected_source_markers(routine: Routine) -> bool:
+    markers = _parse_routine_markers(routine.notes or "")
+    return (
+        bool(markers.get(TRUE_COACH_WORKOUT_ID_MARKER))
+        and markers.get(ROUTINE_BATCH_MARKER) == SYNC_NAME
+    )
+
+
+def _parse_routine_markers(notes: str) -> dict[str, str]:
+    markers: dict[str, str] = {}
+    for line in notes.splitlines():
+        key, separator, value = line.partition(":")
+        if not separator:
+            continue
+        markers[key.strip()] = value.strip()
+    return markers
 
 
 def _build_hevy_routine_request(plan: dict[str, Any]) -> PostRoutinesRequestBody:
