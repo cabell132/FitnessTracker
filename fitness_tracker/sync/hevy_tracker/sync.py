@@ -293,12 +293,14 @@ def _true_coach_workout_id(workout: Workout) -> int | None:
     if marker_match:
         return int(marker_match.group("id"))
 
-    title_tail = workout.title.split("\n")[-1]
-    if title_tail.isdigit():
-        return int(title_tail)
+    title_line_id = _digits_to_int(workout.title.split("\n")[-1])
+    if title_line_id is not None:
+        return title_line_id
 
-    legacy_title_tail = workout.title.split(" ")[-1]
-    if legacy_title_tail.isdigit():
-        return int(legacy_title_tail)
+    return _digits_to_int(workout.title.split(" ")[-1])
 
+
+def _digits_to_int(value: str) -> int | None:
+    if value.isdigit():
+        return int(value)
     return None
