@@ -1,6 +1,7 @@
 """Sync Hevy workouts into the internal tracker and link True Coach IDs."""
 
 from datetime import datetime
+import re
 from typing import cast
 
 from fitness_tracker.apis import HevyAppClient
@@ -15,6 +16,8 @@ from fitness_tracker.database.models import TrueCoachExercise
 from fitness_tracker.database.tx import Tx
 from fitness_tracker.llm.fitness_llm import FitnessLLM
 from logs import WideEvent
+
+_TRUE_COACH_WORKOUT_ID_MARKER = re.compile(r"(?m)^TrueCoachWorkoutId:\s*(?P<id>\d+)\s*$")
 
 
 def _parse_api_datetime(value: str) -> datetime:
@@ -85,29 +88,27 @@ class HevyToFitnessTrackerSyncronizer:
         workout_id: str,
         workout: Workout,
     ) -> int | None:
-        """Resolve True Coach workout id embedded in the Hevy title and link IDs.
+        """Resolve True Coach workout id from Hevy notes or title and link IDs.
 
         Args:
             uow (Tx): Active unit of work.
             workout_id (str): Hevy workout id.
-            workout (Workout): Hevy workout payload containing the title tail id.
+            workout (Workout): Hevy workout payload containing source markers.
 
         Returns:
             int | None: Parsed True Coach workout id when valid digits were found.
         """
-        true_coach_id = workout.title.split("\n")[-1]
-        if not true_coach_id.isdigit():
-            true_coach_id = workout.title.split(" ")[-1]
-            if not true_coach_id.isdigit():
-                return None
+        true_coach_id = _true_coach_workout_id(workout)
+        if true_coach_id is None:
+            return None
 
-        tr_workout = uow.tracker.get_workout(true_coach_id=int(true_coach_id))
+        tr_workout = uow.tracker.get_workout(true_coach_id=true_coach_id)
         if tr_workout:
             tr_workout.hevy_app_id = workout_id
             tr_workout.start_date = _parse_api_datetime(workout.start_time)
             tr_workout.end_date = _parse_api_datetime(workout.end_time)
             uow.session.merge(tr_workout)
-        return int(true_coach_id)
+        return true_coach_id
 
     def link_workout_items(self, uow: Tx, true_coach_id: int) -> None:
         """Link Hevy and True Coach workout items using SQL plus LLM suggestions.
@@ -277,3 +278,27 @@ class HevyToFitnessTrackerSyncronizer:
             uow (Tx): Active unit of work.
         """
         uow.cross_domain.insert_hevy_calories_burned_metrics()
+
+
+def _true_coach_workout_id(workout: Workout) -> int | None:
+    """Parse the source True Coach Workout id from canonical notes, then title.
+
+    Args:
+        workout (Workout): Hevy Workout payload with description and title fields.
+
+    Returns:
+        int | None: Parsed source True Coach Workout id, when present.
+    """
+    marker_match = _TRUE_COACH_WORKOUT_ID_MARKER.search(workout.description or "")
+    if marker_match:
+        return int(marker_match.group("id"))
+
+    title_tail = workout.title.split("\n")[-1]
+    if title_tail.isdigit():
+        return int(title_tail)
+
+    legacy_title_tail = workout.title.split(" ")[-1]
+    if legacy_title_tail.isdigit():
+        return int(legacy_title_tail)
+
+    return None
