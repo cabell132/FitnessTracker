@@ -43,6 +43,7 @@ from fitness_tracker.sync_review.workflow import (
     write_json_artifact,
 )
 
+SYNC_NAME = "truecoach-to-hevy"
 SET_DISPLAY_KEYS = ("type", "weight_kg", "reps", "distance_meters", "duration_seconds")
 
 
@@ -116,7 +117,7 @@ class TrueCoachToHevyReviewService:
             plan = self._plan(workout, items)
             report = self._report(workout, items)
 
-        bundle_dir = review_bundle_dir(self._output_root, "truecoach-to-hevy", workout_id)
+        bundle_dir = review_bundle_dir(self._output_root, SYNC_NAME, workout_id)
         report_path = bundle_dir / "report.md"
         plan_path = bundle_dir / "plan.json"
         report_path.write_text(report, encoding="utf-8")
@@ -299,7 +300,11 @@ def _routine_title(workout: dict[str, Any]) -> str:
 
 
 def _routine_notes(workout: dict[str, Any]) -> str:
-    return f"TrueCoachWorkoutId: {workout['id']}\nRoutineBatch: truecoach-to-hevy"
+    markers = [
+        f"TrueCoachWorkoutId: {workout['id']}",
+        f"RoutineBatch: {SYNC_NAME}",
+    ]
+    return "\n".join(markers)
 
 
 def _request_exercises_for_plan(plan: dict[str, Any]) -> list[PostRoutinesRequestExercise]:
