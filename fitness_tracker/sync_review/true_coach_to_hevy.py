@@ -6,7 +6,7 @@ import re
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 
 from fitness_tracker.apis.hevy_app.types import (
     PostRoutinesRequestBody,
@@ -26,6 +26,7 @@ from fitness_tracker.sync._true_coach_html import (
 from fitness_tracker.sync.ports import HevyRoutineWriter
 from fitness_tracker.sync_review.routine_prescription import (
     BLOCKING_REQUIRED_TEMPLATE_STATUSES,
+    HEVY_PLACEHOLDER_TEMPLATE_NAME,
     ISO_PHASE_PATTERN,
     NO_DETERMINISTIC_SET_PARSER_WARNING,
     NO_LINKED_TEMPLATE_WARNING,
@@ -73,6 +74,13 @@ class ApplyResult:
     request_body: PostRoutinesRequestBody
 
 
+class SafetyStatus(TypedDict):
+    """Machine-readable Routine creation safety classification."""
+
+    auto_safe: bool
+    review_required_reasons: list[str]
+
+
 class TrueCoachToHevyReviewService:
     """Create a review bundle for one True Coach workout without writing to Hevy."""
 
@@ -115,7 +123,7 @@ class TrueCoachToHevyReviewService:
                 for index, item in enumerate(sorted_items, start=1)
             ]
             plan = self._plan(workout, items)
-            report = self._report(workout, items)
+            report = self._report(workout, items, plan["safety"])
 
         bundle_dir = review_bundle_dir(self._output_root, SYNC_NAME, workout_id)
         report_path = bundle_dir / "report.md"
@@ -159,15 +167,18 @@ class TrueCoachToHevyReviewService:
         return result
 
     def _plan(self, workout: TrueCoachWorkout, items: list[ReviewItem]) -> dict[str, Any]:
-        return {
+        plan: dict[str, Any] = {
             "workout": {
                 "id": workout.id,
                 "title": workout.title,
                 "due": workout.due.isoformat() if workout.due else None,
                 "state": workout.state,
             },
+            "routine_source_markers": _routine_source_markers(workout),
             "items": [self._plan_item(item) for item in items],
         }
+        plan["safety"] = classify_plan_safety(plan)
+        return plan
 
     def _plan_item(self, item: ReviewItem) -> dict[str, Any]:
         template = item.selected_hevy_template
@@ -192,14 +203,22 @@ class TrueCoachToHevyReviewService:
             "blockers": item.blockers,
         }
 
-    def _report(self, workout: TrueCoachWorkout, items: list[ReviewItem]) -> str:
+    def _report(
+        self,
+        workout: TrueCoachWorkout,
+        items: list[ReviewItem],
+        safety: SafetyStatus,
+    ) -> str:
         lines = [
             f"# True Coach to Hevy Sync Review: {workout.id}",
             "",
             f"Workout: {workout.title or 'Untitled'}",
             f"Due: {workout.due.isoformat() if workout.due else 'unknown'}",
             "",
+            _format_safety_status(safety),
+            "",
         ]
+        lines.extend(_format_review_required_reasons(safety))
         lines.extend(_format_agent_next_actions(items))
         for index, item in enumerate(items, start=1):
             lines.extend(self._report_item(index, item))
@@ -251,6 +270,85 @@ def _build_hevy_routine_request(plan: dict[str, Any]) -> PostRoutinesRequestBody
     )
 
 
+def classify_plan_safety(plan: dict[str, Any]) -> SafetyStatus:
+    """Classify whether automatic sync may apply a Routine creation plan.
+
+    Args:
+        plan (dict[str, Any]): Routine creation plan artifact payload.
+
+    Returns:
+        SafetyStatus: Machine-readable automatic safety status and review reasons.
+    """
+    reasons = _review_required_reasons(plan)
+    return {
+        "auto_safe": not reasons,
+        "review_required_reasons": reasons,
+    }
+
+
+def _review_required_reasons(plan: dict[str, Any]) -> list[str]:
+    reasons: list[str] = []
+    reasons.extend(_warning_reasons(plan["items"]))
+    reasons.extend(_apply_blockers(plan))
+    reasons.extend(_placeholder_template_reasons(plan["items"]))
+    reasons.extend(_routine_source_marker_reasons(plan))
+    return _deduplicate_reasons(reasons)
+
+
+def _warning_reasons(items: list[dict[str, Any]]) -> list[str]:
+    reasons: list[str] = []
+    for item in items:
+        reasons.extend(
+            f"Warning for {item['name']}: {warning}" for warning in item.get("warnings", [])
+        )
+        for block in item.get("planned_blocks", []):
+            reasons.extend(
+                f"Warning for {block['source_text']}: {warning}"
+                for warning in block.get("warnings", [])
+            )
+    return reasons
+
+
+def _placeholder_template_reasons(items: list[dict[str, Any]]) -> list[str]:
+    reasons: list[str] = []
+    for item in items:
+        if _is_placeholder_plan_template(item.get("selected_hevy_template")):
+            reasons.append(f"Placeholder Hevy exercise mapping: {item['name']}")
+        reasons.extend(
+            f"Placeholder Hevy exercise mapping: {block['source_text']}"
+            for block in item.get("planned_blocks", [])
+            if _is_placeholder_plan_template(block.get("selected_hevy_template"))
+        )
+    return reasons
+
+
+def _is_placeholder_plan_template(template: dict[str, Any] | None) -> bool:
+    return template is not None and template.get("name") == HEVY_PLACEHOLDER_TEMPLATE_NAME
+
+
+def _routine_source_marker_reasons(plan: dict[str, Any]) -> list[str]:
+    markers = plan.get("routine_source_markers")
+    if not isinstance(markers, dict):
+        return ["Missing Routine source marker: TrueCoachWorkoutId"]
+    expected_workout_id = str(plan["workout"]["id"])
+    reasons: list[str] = []
+    if markers.get("TrueCoachWorkoutId") != expected_workout_id:
+        reasons.append("Missing Routine source marker: TrueCoachWorkoutId")
+    if markers.get("RoutineBatch") != SYNC_NAME:
+        reasons.append("Missing Routine source marker: RoutineBatch")
+    return reasons
+
+
+def _deduplicate_reasons(reasons: list[str]) -> list[str]:
+    seen: set[str] = set()
+    deduplicated: list[str] = []
+    for reason in reasons:
+        if reason not in seen:
+            deduplicated.append(reason)
+            seen.add(reason)
+    return deduplicated
+
+
 def _apply_blockers(plan: dict[str, Any]) -> list[str]:
     items = plan["items"]
     blockers = [blocker for item in items for blocker in item.get("blockers", [])]
@@ -300,11 +398,16 @@ def _routine_title(workout: dict[str, Any]) -> str:
 
 
 def _routine_notes(workout: dict[str, Any]) -> str:
-    markers = [
-        f"TrueCoachWorkoutId: {workout['id']}",
-        f"RoutineBatch: {SYNC_NAME}",
-    ]
+    markers = [f"{key}: {value}" for key, value in _routine_source_markers(workout).items()]
     return "\n".join(markers)
+
+
+def _routine_source_markers(workout: TrueCoachWorkout | dict[str, Any]) -> dict[str, str]:
+    workout_id = workout.id if isinstance(workout, TrueCoachWorkout) else workout["id"]
+    return {
+        "TrueCoachWorkoutId": str(workout_id),
+        "RoutineBatch": SYNC_NAME,
+    }
 
 
 def _request_exercises_for_plan(plan: dict[str, Any]) -> list[PostRoutinesRequestExercise]:
@@ -564,6 +667,17 @@ def _format_agent_next_actions(items: list[ReviewItem]) -> list[str]:
         lines.extend(f"- {action}" for action in warning_actions)
     lines.append("")
     return lines
+
+
+def _format_safety_status(safety: SafetyStatus) -> str:
+    return "Safety: automatic-safe" if safety["auto_safe"] else "Safety: review-required"
+
+
+def _format_review_required_reasons(safety: SafetyStatus) -> list[str]:
+    reasons = safety["review_required_reasons"]
+    if not reasons:
+        return []
+    return ["Review-required reasons:", *[f"- {reason}" for reason in reasons], ""]
 
 
 def _blocking_agent_actions(items: list[ReviewItem]) -> list[str]:

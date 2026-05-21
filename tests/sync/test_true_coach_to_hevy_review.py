@@ -23,7 +23,7 @@ from fitness_tracker.database.models.true_coach import (
     TrueCoachWorkoutItem,
 )
 from fitness_tracker.sync_review import TrueCoachToHevyReviewService
-from fitness_tracker.sync_review.true_coach_to_hevy import SyncApplyError
+from fitness_tracker.sync_review.true_coach_to_hevy import SyncApplyError, classify_plan_safety
 
 
 def test_sync_review_cli_writes_ordered_report_and_plan(tmp_path: Path) -> None:
@@ -341,12 +341,120 @@ def test_sync_review_agent_next_actions_report_clean_plan(tmp_path: Path) -> Non
 
     report, plan = _write_sync_review(tmp_path, db_path, workout_id=47)
 
+    assert "Safety: automatic-safe" in report
     assert "## Agent Next Actions" in report
     assert "No blocking next actions." in report
     assert "Blocking actions:" not in report
     assert "Warning actions:" not in report
+    assert plan["safety"] == {"auto_safe": True, "review_required_reasons": []}
+    assert plan["routine_source_markers"] == {
+        "TrueCoachWorkoutId": "47",
+        "RoutineBatch": "truecoach-to-hevy",
+    }
     assert plan["items"][0]["warnings"] == []
     assert plan["items"][0]["blockers"] == []
+
+
+def test_sync_review_marks_warning_plan_review_required(tmp_path: Path) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_workout(store)
+
+    report, plan = _write_sync_review(tmp_path, db_path, workout_id=42)
+
+    assert "Safety: review-required" in report
+    assert "Review-required reasons:" in report
+    assert "- Warning for Mystery Carry: No linked Hevy exercise template found." in report
+    assert plan["safety"] == {
+        "auto_safe": False,
+        "review_required_reasons": [
+            "Warning for Bench Press: No matching Athlete history load found.",
+            "Warning for Mystery Carry: No linked Hevy exercise template found.",
+            "Missing required Hevy exercise mapping: Mystery Carry",
+        ],
+    }
+
+
+def test_routine_plan_safety_classifies_apply_blockers_and_missing_source_markers() -> None:
+    plan = {
+        "workout": {"id": 60, "title": "Unsafe Plan", "due": None, "state": "pending"},
+        "items": [
+            {
+                "name": "Placeholder Press",
+                "selected_hevy_template": {
+                    "id": "hevy-placeholder",
+                    "name": "#####PLACEHOLDER#####",
+                    "type": "reps_only",
+                    "equipment": "bodyweight",
+                },
+                "proposed_sets": [{"type": "normal", "reps": 10}],
+                "planned_blocks": [],
+                "warnings": [],
+                "blockers": [],
+            },
+            {
+                "name": "Tempo Press",
+                "selected_hevy_template": {
+                    "id": "hevy-press",
+                    "name": "Press",
+                    "type": "reps_only",
+                    "equipment": "bodyweight",
+                },
+                "proposed_sets": [],
+                "planned_blocks": [],
+                "warnings": [],
+                "blockers": [],
+            },
+            {
+                "name": "Seated Knee Extension",
+                "info": "2 x 30s iso hold then tempo reps",
+                "selected_hevy_template": {
+                    "id": "hevy-knee-extension",
+                    "name": "Seated Knee Extension",
+                    "type": "reps_only",
+                    "equipment": "machine",
+                },
+                "proposed_sets": [{"type": "normal", "duration_seconds": 30}],
+                "planned_blocks": [],
+                "warnings": [],
+                "blockers": [],
+            },
+            {
+                "name": "Circuit Ladder",
+                "selected_hevy_template": None,
+                "proposed_sets": [],
+                "planned_blocks": [
+                    {
+                        "source_text": "Goblet Squat",
+                        "selected_hevy_template": {
+                            "id": "hevy-goblet-squat",
+                            "name": "Goblet Squat",
+                            "type": "reps_only",
+                            "equipment": "dumbbell",
+                        },
+                        "proposed_sets": [{"type": "normal", "reps": 12}],
+                        "notes_only": False,
+                        "warnings": [],
+                        "blockers": ["Circuit block requires Agent decision: ladder"],
+                    }
+                ],
+                "warnings": [],
+                "blockers": ["Circuit block requires Agent decision: ladder"],
+            },
+        ],
+    }
+
+    assert classify_plan_safety(plan) == {
+        "auto_safe": False,
+        "review_required_reasons": [
+            "Circuit block requires Agent decision: ladder",
+            "Unsplit required mixed-mode item: Seated Knee Extension",
+            "Invalid set payload for Tempo Press: no sets",
+            "Placeholder Hevy exercise mapping: Placeholder Press",
+            "Missing Routine source marker: TrueCoachWorkoutId",
+        ],
+    }
 
 
 def test_sync_review_plan_includes_parsed_circuit_block_context(tmp_path: Path) -> None:
