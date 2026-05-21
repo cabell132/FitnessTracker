@@ -168,27 +168,34 @@ The Agent should prompt the Athlete instead of deciding when:
 
 ## True Coach to Hevy Routine flow
 
-After Hevy results and assessments have been processed, the service deletes
-existing Hevy Routine drafts and recreates Routines for due True Coach Workouts.
+After Hevy results and assessments have been processed, the service plans due
+True Coach Workouts through the Routine creation review workflow. It deletes
+existing generated Hevy Routine drafts and recreates Routines only when every
+due plan is strict-safe.
 
 For each due Workout:
 
-1. The True Coach Workout is mirrored into the tracker.
+1. The review service writes `report.md` and `plan.json` under
+   `reports/sync-review/truecoach-to-hevy/WORKOUT_ID`.
 2. True Coach Workout Items are sorted by position.
 3. The Workout order and superset groups are parsed from the True Coach short
-   description.
-4. Each Workout Item is mapped to a Hevy exercise template through its True
-   Coach exercise link, a tracker exercise name match, or a placeholder.
-5. Sets are parsed from the True Coach prescription, using the LLM parser for
-   known Hevy templates and deterministic fallback parsing otherwise.
-6. A Hevy Routine request is built with a title containing the due date, Workout
-   title, and True Coach Workout id.
-7. The Routine is created in Hevy.
-8. True Coach Workout Items are inserted into tracker linking tables.
+   description when available.
+4. Each Workout Item is mapped to a concrete Hevy exercise template through its
+   True Coach exercise link, tracker mapping, deterministic template selection,
+   or explicit override.
+5. Sets are parsed from the True Coach prescription with deterministic planners.
+6. Safety classification marks plans with warnings, blockers, placeholder
+   templates, missing source markers, or non-deterministic set provenance as
+   review-required.
+7. If any due Workout requires review, no Hevy Routine drafts are deleted or
+   created.
+8. If every due Workout is strict-safe, the workflow writes `hevy-request.json`,
+   creates the new Hevy Routines, records `hevy-response.json`, then deletes old
+   generated Routine drafts marked with `RoutineBatch: truecoach-to-hevy`.
 
-This automatic path may use placeholders and broad parsing fallbacks. For
-nuanced Routine creation, Agents should prefer the review-first command workflow
-before writing to Hevy.
+The retired direct Routine creator is no longer an automatic path. It raises a
+deprecation error instead of using placeholders, LLM-derived set structures, or
+direct Hevy Routine mutation.
 
 ## Agent review workflows
 

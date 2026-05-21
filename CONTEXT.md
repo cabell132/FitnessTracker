@@ -7,8 +7,8 @@
 4. `docs/adr/0004-circuits-sync-as-superset-routine-blocks.md` (lines 1-46) - circuit semantics, backfill requirements, and synthetic tracker row expectations.
 5. `docs/adr/0006-hevy-to-truecoach-result-sync-uses-review-artifacts.md` (lines 1-8) - result sync must use review/apply artifacts for brittle mappings.
 6. `docs/adr/0007-split-circuit-planning-uses-shared-review-core.md` (lines 1-22) - shared split-circuit core and workflow-adapter boundary.
-7. `fitness_tracker/sync/_service.py` (lines 70-175) - full automatic sync pipeline and calls into legacy directional syncers.
-8. `fitness_tracker/sync/true_coach_hevy/sync.py` (lines 47-138) - legacy direct True Coach to Hevy Routine creation orchestration.
+7. `fitness_tracker/sync/_service.py` (lines 70-175) - full automatic sync pipeline and strict-safe Routine creation workflow wiring.
+8. `fitness_tracker/sync/true_coach_hevy/sync.py` (lines 1-50) - deprecated legacy direct True Coach to Hevy Routine creation shim.
 9. `fitness_tracker/sync/hevy_true_coach/sync.py` (lines 40-140) - legacy direct Hevy result to True Coach mutation path.
 10. `fitness_tracker/sync_review/true_coach_to_hevy.py` (lines 75-158, 241-320) - review/apply service and request builder for Routine creation.
 11. `fitness_tracker/sync_review/routine_prescription.py` (lines 163-238, 255-428) - large Routine prescription planner, template selection, mixed-mode and circuit adaptation.
@@ -23,7 +23,7 @@
 
 - `SyncService.run()` calls `_execute_full_sync()`, which imports Apple Health, syncs True Coach, syncs Hevy events, writes checkpoints, syncs assessments, clears routines, re-syncs True Coach, then creates Hevy routines for due workouts (`fitness_tracker/sync/_service.py` lines 85-121). `sync_hevy_workouts()` immediately cascades updated Hevy workouts to the direct True Coach syncer (`fitness_tracker/sync/_service.py` lines 161-175).
 
-- Legacy Routine creation is a single orchestration method with template lookup, placeholder allocation, superset extraction, LLM/deterministic set parsing, request creation, remote mutation, and cross-domain linking in one Module (`fitness_tracker/sync/true_coach_hevy/sync.py` lines 47-138). It does not write review artifacts.
+- Legacy direct Routine creation is retired. `SyncService.create_hevy_routine()` now applies through `TrueCoachToHevyReviewService`, while `fitness_tracker/sync/true_coach_hevy/sync.py` raises a deprecation error instead of owning placeholder allocation, LLM parsing, or direct Hevy mutation.
 
 - The review path is a separate Module: `TrueCoachToHevyReviewService.write_review()` builds plan/report artifacts, `write_apply_request()` rebuilds a typed Hevy request from `plan.json`, and `apply()` calls a writer (`fitness_tracker/sync_review/true_coach_to_hevy.py` lines 75-158). `_build_hevy_routine_request()` validates blockers and converts the plan dict into request models (`fitness_tracker/sync_review/true_coach_to_hevy.py` lines 241-320).
 
@@ -44,16 +44,13 @@ The deeper domain vocabulary in `CONTEXT.md` and ADRs favors review artifacts fo
 
 ## Start Here
 
-Start with `fitness_tracker/sync/_service.py`. It shows where automatic sync still enters legacy direct-mutation Implementations, which is the highest-leverage place to decide whether review/apply workflows should replace or be explicitly kept separate from automatic sync.
+Start with `fitness_tracker/sync/_service.py`. It shows the automatic sync ordering and where strict-safe review/apply workflows replace direct mutation for Routine creation and Hevy result sync.
 
 ## Architectural Deepening Candidates
 
-1. **Unify or retire the legacy direct Routine creation path**
-   - **Files:** `fitness_tracker/sync/_service.py` lines 85-121; `fitness_tracker/sync/true_coach_hevy/sync.py` lines 47-138; `fitness_tracker/sync_review/true_coach_to_hevy.py` lines 75-158 and 241-320.
-   - **Problem:** Two Modules implement True Coach -> Hevy Routine creation with different depth. The legacy Implementation is shallow at the seam but deep inside one method: it directly mutates Hevy, uses placeholder templates, sets `rest_seconds=0`, mixes LLM parsing with fallback parsing, and bypasses review blockers. The review Module has better Locality for artifacts and safety, but automatic `SyncService` still calls the legacy path.
-   - **Deletion test:** If `fitness_tracker/sync/true_coach_hevy/sync.py` disappeared, the review/apply path still knows how to plan and create Routines, but `SyncService.create_hevy_routine()` would need a replacement policy. That indicates duplicate capability, not a necessary Adapter.
-   - **Solution sketch:** Make one Routine creation Implementation authoritative. Either route automatic Routine creation through the review planner with an explicit no-review policy for safe cases, or explicitly mark the legacy syncer as a constrained fast path and strip duplicated parsing/planning logic from it.
-   - **Benefits:** Higher Leverage from one prescription planner; fewer bugs hidden in orchestration; clearer Seam between deterministic planning, Agent review, and remote mutation; better alignment with Routine feedback/backfill ADR language.
+1. **Completed: legacy direct Routine creation is retired**
+   - **Files:** `fitness_tracker/sync/_service.py`; `fitness_tracker/sync/true_coach_hevy/sync.py`; `fitness_tracker/sync_review/true_coach_to_hevy.py`.
+   - **Outcome:** Routine creation has one authoritative workflow. Automatic batch replacement and single-workout service creation both use the strict-safe review/apply path; the old direct syncer raises a deprecation error before any placeholder, LLM, or direct Hevy mutation can run.
 
 2. **Separate result-sync safety policy from direct cascade mutation**
    - **Files:** `fitness_tracker/sync/_service.py` lines 161-175; `fitness_tracker/sync/hevy_true_coach/sync.py` lines 40-140; `fitness_tracker/sync_review/hevy_to_true_coach_result.py` lines 73-220; `fitness_tracker/sync_review/hevy_to_true_coach_result_planner.py` lines 22-131; `docs/adr/0006-hevy-to-truecoach-result-sync-uses-review-artifacts.md` lines 1-8.

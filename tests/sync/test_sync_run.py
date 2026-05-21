@@ -25,6 +25,10 @@ from fitness_tracker.sync.adapters.file_checkpoint_store import (
     HEVY_CHECKPOINT_KEY,
     InMemoryCheckpointStore,
 )
+from fitness_tracker.sync.true_coach_hevy.sync import (
+    LEGACY_DIRECT_ROUTINE_CREATION_ERROR,
+    TrueCoachToHevySyncronizer,
+)
 from fitness_tracker.sync_review.true_coach_to_hevy import (
     ReviewBundle,
     RoutineReplacementBatchResult,
@@ -209,6 +213,45 @@ def test_hevy_workout_updates_use_result_sync_workflow(
         "hevy-workout-1",
         workout_item_writer=svc._true_coach_workout_item_writer,
     )
+
+
+def test_create_hevy_routine_uses_strict_review_apply_workflow(
+    store,
+    tmp_path: Path,
+) -> None:
+    """Single Routine creation uses the review/apply path, not legacy LLM parsing."""
+    _seed_clean_due_workout(store)
+    deps = _deps_with_mocks(
+        store,
+        InMemoryCheckpointStore(),
+        output_root=tmp_path / "reports",
+    )
+    deps.hevy.routines.create.return_value = None
+    svc = SyncService(deps)
+
+    svc.create_hevy_routine(47)
+
+    deps.hevy.routines.create.assert_called_once()
+    deps.llm.parse_the_sets.assert_not_called()
+    request = deps.hevy.routines.create.call_args.args[0]
+    assert request.routine.notes == "TrueCoachWorkoutId: 47\nRoutineBatch: truecoach-to-hevy"
+    _assert_routine_plan_safety(tmp_path, workout_id=47, auto_safe=True)
+    assert (
+        tmp_path / "reports" / "sync-review" / "truecoach-to-hevy" / "47" / "hevy-request.json"
+    ).exists()
+
+
+def test_legacy_direct_routine_creation_raises_deprecation_error(store) -> None:
+    """Retired direct Routine creation cannot mutate Hevy outside the workflow."""
+    syncer = TrueCoachToHevySyncronizer(
+        store=store,
+        source=MagicMock(),
+        target=MagicMock(),
+        llm=MagicMock(),
+    )
+
+    with pytest.raises(RuntimeError, match=LEGACY_DIRECT_ROUTINE_CREATION_ERROR):
+        syncer.sync_workout(47)
 
 
 def test_should_populate_sync_run_result_counters_from_run(

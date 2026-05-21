@@ -27,16 +27,17 @@ from fitness_tracker.sync.apple_health_tracker.sync import AppleHealthToFitnessT
 from fitness_tracker.sync.hevy_tracker.sync import HevyToFitnessTrackerSyncronizer
 from fitness_tracker.sync.tracker_hevy.sync import TrackerToHevySyncronizer
 from fitness_tracker.sync.tracker_true_coach.sync import TrackerToTrueCoachSyncronizer
-from fitness_tracker.sync.true_coach_hevy.sync import TrueCoachToHevySyncronizer
 from fitness_tracker.sync.true_coach_tracker.sync import TrueCoachToFitnessTrackerSyncronizer
 from fitness_tracker.sync_review.hevy_to_true_coach_result_workflow import (
     HevyToTrueCoachResultSyncWorkflow,
 )
 from fitness_tracker.sync_review.true_coach_to_hevy import (
+    ApplyResult,
     RoutineReplacementBatchMutation,
     RoutineReplacementBatchResult,
     RoutineReplacementBatchWorkflow,
     SyncApplyError,
+    TrueCoachToHevyReviewService,
 )
 
 if TYPE_CHECKING:
@@ -68,12 +69,6 @@ class SyncService:
         self._store = deps.store
 
         # --- internal syncers (callers never see these) ---
-        self._tc_to_hevy = TrueCoachToHevySyncronizer(
-            store=deps.store,
-            source=deps.true_coach,
-            target=deps.hevy,
-            llm=deps.llm,
-        )
         self._hevy_to_tracker = HevyToFitnessTrackerSyncronizer(
             store=deps.store,
             source=deps.hevy,
@@ -82,6 +77,10 @@ class SyncService:
         self._true_coach_workout_item_writer = TrueCoachWorkoutItemWriterAdapter(deps.true_coach)
         self._hevy_result_sync_workflow = HevyToTrueCoachResultSyncWorkflow(store=deps.store)
         self._routine_replacement_batch = RoutineReplacementBatchWorkflow(
+            store=deps.store,
+            output_root=deps.routine_review_output_root,
+        )
+        self._routine_creation_review = TrueCoachToHevyReviewService(
             store=deps.store,
             output_root=deps.routine_review_output_root,
         )
@@ -212,13 +211,19 @@ class SyncService:
         """
         self._tc_to_tracker.sync_workouts(workouts)
 
-    def create_hevy_routine(self, workout_id: int) -> None:
-        """Build a Hevy routine draft from a True Coach workout.
+    def create_hevy_routine(self, workout_id: int) -> ApplyResult:
+        """Build a Hevy routine draft from a strict-safe review plan.
 
         Args:
             workout_id (int): True Coach workout id to convert.
+
+        Returns:
+            ApplyResult: Review bundle and request artifacts for the created Routine.
         """
-        self._tc_to_hevy.sync_workout(workout_id)
+        return self._routine_creation_review.apply(
+            workout_id,
+            routine_writer=HevyRoutineWriterAdapter(self._deps.hevy),
+        )
 
     def replace_due_hevy_routines(
         self,
