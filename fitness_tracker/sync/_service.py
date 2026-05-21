@@ -43,6 +43,13 @@ if TYPE_CHECKING:
     from fitness_tracker.database.models.true_coach import TrueCoachWorkout
 
 
+type FullSyncResult = tuple[
+    list[UpdatedWorkout | DeletedWorkout],
+    RoutineReplacementBatchResult,
+    list[TrueCoachWorkout],
+]
+
+
 class SyncService:
     """Intent-named methods replace direction-named attributes.
 
@@ -100,18 +107,15 @@ class SyncService:
     def _execute_full_sync(
         self,
         ts: datetime,
-    ) -> tuple[
-        list[UpdatedWorkout | DeletedWorkout],
-        RoutineReplacementBatchResult,
-        list[TrueCoachWorkout],
-    ]:
+    ) -> FullSyncResult:
         """Run ordered platform steps and return counts inputs for :class:`SyncRunResult`.
 
         Args:
             ts (datetime): Wall time written to the Hevy checkpoint after Hevy sync.
 
         Returns:
-            tuple[list[UpdatedWorkout | DeletedWorkout], RoutineReplacementBatchResult, list[TrueCoachWorkout]]: Hevy events, Routine replacement batch result, and due True Coach workouts.
+            FullSyncResult: Hevy events, Routine replacement batch result,
+            and due True Coach workouts.
         """
         checkpoints = self._deps.checkpoints
         self.sync_apple_health()
