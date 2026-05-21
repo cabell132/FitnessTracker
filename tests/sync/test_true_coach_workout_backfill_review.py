@@ -1339,6 +1339,46 @@ def test_workout_backfill_choice_item_converts_single_performed_modality(
     }
 
 
+def test_performed_work_planner_keeps_feedback_without_duplicating_structured_set_lines(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    with store.unit_of_work() as uow:
+        item = uow.true_coach.get_workout_item(id=8101)
+        item.comment = (
+            "10x30\n10x30\n10x30\n\nNote: I got a wee bit of sharp pain in my mid left back"
+        )
+        tracker_item = item.tracker
+        assert tracker_item is not None
+        for set_row in tracker_item.sets:
+            set_row.weight_kg = 30.0
+            set_row.reps = 10
+
+    with store.unit_of_work() as uow:
+        workout = uow.true_coach.get_workout(id=455045484)
+        assert isinstance(workout.tracker, TrackerWorkout)
+        tracker_items = sorted(
+            workout.tracker.workout_items,
+            key=lambda item: (item.position, item.id),
+        )
+        templates = list(
+            uow.session.execute(select(HevyAppExercise).order_by(HevyAppExercise.name)).scalars()
+        )
+
+        items = plan_performed_work_items(
+            tracker_items,
+            templates,
+            superset_ids_by_position={},
+        )
+
+    assert items[0].notes == (
+        "Athlete comment: Note: I got a wee bit of sharp pain in my mid left back"
+    )
+
+
 def test_performed_work_planner_converts_choice_item_without_review_service(
     tmp_path: Path,
 ) -> None:
@@ -1417,11 +1457,51 @@ def test_workout_backfill_choice_item_splits_multiple_performed_modalities(
         "hevy-cycle",
     ]
     assert request["workout"]["exercises"][2]["notes"] == (
-        "Athlete comment: Cycle 20mins, 1840 steps, 250 calories"
+        "Athlete comment: 1840 steps, 250 calories"
     )
     assert request["workout"]["exercises"][3]["notes"] == (
-        "Athlete comment: Stairmaster 10mins, 1840 steps, 250 calories"
+        "Athlete comment: 1840 steps, 250 calories"
     )
+
+
+def test_workout_backfill_choice_item_uses_name_options_and_cardio_template_aliases(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_backfill_review_workout(store)
+    _add_choice_templates(
+        store,
+        [
+            ("hevy-cycle", "Cycling"),
+            ("hevy-stairs", "Stair Machine"),
+        ],
+    )
+    _add_choice_backfill_item(
+        store,
+        name="Cycle, Cross Trainer, Stairmaster or a Combination",
+        info="For as long as you have left",
+        comment="Stairs 10mins/663 steps\nCycle 20mins/193kcal",
+    )
+
+    bundle_dir = _write_backfill_review(db_path, tmp_path)
+    plan = json.loads((bundle_dir / "plan.json").read_text(encoding="utf-8"))
+    request = json.loads((bundle_dir / "hevy-workout-request.json").read_text(encoding="utf-8"))
+
+    assert plan["blockers"] == []
+    assert [item["name"] for item in plan["items"][2:]] == ["Stairmaster", "Cycle"]
+    assert [item["sets"] for item in plan["items"][2:]] == [
+        [{"type": "normal", "duration_seconds": 600}],
+        [{"type": "normal", "duration_seconds": 1200}],
+    ]
+    assert [item["split_choice_performance"] for item in plan["items"][2:]] == [True, True]
+    assert [exercise["exercise_template_id"] for exercise in request["workout"]["exercises"]] == [
+        "hevy-bench",
+        "hevy-row",
+        "hevy-stairs",
+        "hevy-cycle",
+    ]
 
 
 def test_workout_backfill_circuit_item_expands_performed_movements(  # noqa: PLR0915
@@ -2727,7 +2807,13 @@ def _add_choice_templates(store: Store, templates: list[tuple[str, str]]) -> Non
             )
 
 
-def _add_choice_backfill_item(store: Store, *, info: str, comment: str) -> None:
+def _add_choice_backfill_item(  # noqa: PLR0913
+    store: Store,
+    *,
+    info: str,
+    comment: str,
+    name: str = "Conditioning Choice",
+) -> None:
     with store.unit_of_work() as uow:
         workout = uow.true_coach.get_workout(id=455045484).tracker
         assert workout is not None
@@ -2737,7 +2823,7 @@ def _add_choice_backfill_item(store: Store, *, info: str, comment: str) -> None:
             TrueCoachWorkoutItem(
                 id=8104,
                 workout_id=455045484,
-                name="Conditioning Choice",
+                name=name,
                 info=info,
                 comment=comment,
                 is_circuit=False,

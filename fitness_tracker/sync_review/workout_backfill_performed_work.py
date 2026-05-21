@@ -56,6 +56,7 @@ class BackfillReviewItem:
     completed_round_count: int | None = None
     choice_template_candidate_ids: list[str] | None = None
     choice_decision_reason: str | None = None
+    split_choice_performance: bool = False
     circuit_template_candidate_ids: list[str] | None = None
     circuit_decision_reason: str | None = None
     replacement_for_movement_name: str | None = None
@@ -101,6 +102,7 @@ class ChoicePlanningContext:
     source_id: int | None
     position: int
     superset_id: int | None
+    name: str
     info: str
     comment: str
     templates: list[HevyAppExercise]
@@ -203,6 +205,7 @@ def _choice_plan_items_for_tracker_item(
             source_id=context.source_id,
             position=context.item.position,
             superset_id=context.superset_ids_by_position.get(context.item.position),
+            name=context.name,
             info=context.info,
             comment=context.comment,
             templates=context.templates,
@@ -615,11 +618,12 @@ def _circuit_note_extra_lines(
 
 
 def _choice_plan_items(context: ChoicePlanningContext) -> list[BackfillReviewItem]:
-    options = _choice_options(context.info)
+    options = _choice_options(context.info) or _choice_options(context.name)
     performances = _choice_performances(context.comment, options)
     if not options or not performances:
         return []
     planned_items = []
+    split_choice_performance = len(performances) > 1
     for offset, performance in enumerate(performances):
         matches = _matching_choice_templates(performance.name, context.templates)
         blockers = []
@@ -654,6 +658,7 @@ def _choice_plan_items(context: ChoicePlanningContext) -> list[BackfillReviewIte
                 blockers=blockers,
                 choice_template_candidate_ids=[template.id for template in matches],
                 choice_decision_reason=choice_decision_reason,
+                split_choice_performance=split_choice_performance,
             )
         )
     return planned_items
@@ -679,7 +684,7 @@ def _choice_performances(comment: str, options: list[str]) -> list[ChoicePerform
         duration_seconds = _duration_seconds(segment)
         if option is None or duration_seconds is None:
             continue
-        notes = _choice_segment_notes(comment, segment)
+        notes = _choice_segment_notes(comment, segment, options)
         performances.append(
             ChoicePerformance(
                 name=option,
@@ -731,7 +736,10 @@ def _comment_segments(comment: str) -> list[str]:
 def _matching_choice_option(segment: str, options: list[str]) -> str | None:
     normalized_segment = _normalize_choice_text(segment)
     for option in options:
-        if _normalize_choice_text(option) in normalized_segment:
+        normalized_option = _normalize_choice_text(option)
+        if normalized_option in normalized_segment:
+            return option
+        if _choice_text_alias(normalized_option) in _choice_text_alias(normalized_segment):
             return option
     return None
 
@@ -747,15 +755,31 @@ def _duration_seconds(segment: str) -> int | None:
     return round(float(match.group(1)) * 60)
 
 
-def _choice_segment_notes(comment: str, performed_segment: str) -> str:
-    note_segments = [
-        segment
-        for segment in _comment_segments(comment)
-        if segment.strip() != performed_segment.strip()
-    ]
+def _choice_segment_notes(comment: str, performed_segment: str, options: list[str]) -> str:
+    note_segments = []
+    for segment in _comment_segments(comment):
+        if segment.strip() == performed_segment.strip():
+            detail = _choice_performed_segment_detail(segment)
+            if detail:
+                note_segments.append(detail)
+            continue
+        if _matching_choice_option(segment, options) is not None and _duration_seconds(segment):
+            continue
+        note_segments.append(segment)
     if not note_segments:
         return ""
     return f"Athlete comment: {', '.join(note_segments)}"
+
+
+def _choice_performed_segment_detail(segment: str) -> str:
+    without_duration = re.sub(
+        r"\b\d+(?:\.\d+)?\s*(?:mins?|minutes?)\b",
+        "",
+        segment,
+        count=1,
+        flags=re.IGNORECASE,
+    ).strip(" /,-")
+    return re.sub(r"^[A-Za-z][A-Za-z ]*(?:/|,|-)?\s*", "", without_duration).strip(" /,-")
 
 
 def _matching_choice_templates(
@@ -763,11 +787,28 @@ def _matching_choice_templates(
     templates: list[HevyAppExercise],
 ) -> list[HevyAppExercise]:
     normalized_name = _normalize_choice_text(performance_name)
+    aliased_name = _choice_text_alias(normalized_name)
     return [
         template
         for template in templates
         if _normalize_choice_text(template.name) == normalized_name
+        or _choice_text_alias(_normalize_choice_text(template.name)) == aliased_name
     ]
+
+
+def _choice_text_alias(value: str) -> str:
+    aliases = {
+        "indoor cycling": "cycling",
+        "cycle": "cycling",
+        "bike": "cycling",
+        "stair climbing": "stair machine",
+        "stairmaster": "stair machine",
+        "stairs": "stair machine",
+    }
+    aliased = value
+    for source, target in aliases.items():
+        aliased = re.sub(rf"\b{re.escape(source)}\b", target, aliased)
+    return aliased
 
 
 def _is_down_regulate_item(name: str) -> bool:
@@ -804,8 +845,9 @@ def _notes(*, info: str, comment: str, sets: list[PostWorkoutsRequestSet]) -> st
         return "\n".join(parts)
     if info and any(set_row.distance_meters is not None for set_row in sets):
         parts.append(f"Coach prescription: {info}")
-    if comment and not _comment_duplicates_structured_sets(comment, sets):
-        parts.append(f"Athlete comment: {comment}")
+    residual_comment = _comment_without_structured_set_lines(comment, sets)
+    if residual_comment:
+        parts.append(f"Athlete comment: {residual_comment}")
     return "\n".join(parts)
 
 
@@ -822,25 +864,28 @@ def _duration_note_for_structured_set(
     return None
 
 
-def _comment_duplicates_structured_sets(
+def _comment_without_structured_set_lines(
     comment: str,
     sets: list[PostWorkoutsRequestSet],
-) -> bool:
-    if not sets:
-        return False
-    comment_signatures = _comment_set_signatures(comment)
+) -> str:
+    if not comment:
+        return ""
     set_signatures = [_set_signature(set_row) for set_row in sets]
-    return bool(comment_signatures) and comment_signatures == set_signatures
-
-
-def _comment_set_signatures(comment: str) -> list[tuple[Any, ...]]:
-    signatures = []
+    if not set_signatures:
+        return comment
+    next_set_signature_index = 0
+    residual_segments: list[str] = []
     for segment in _comment_segments(comment):
         signature = _comment_segment_signature(segment)
-        if signature is None:
-            return []
-        signatures.append(signature)
-    return signatures
+        if (
+            signature is not None
+            and next_set_signature_index < len(set_signatures)
+            and signature == set_signatures[next_set_signature_index]
+        ):
+            next_set_signature_index += 1
+            continue
+        residual_segments.append(segment)
+    return "; ".join(residual_segments)
 
 
 def _comment_segment_signature(segment: str) -> tuple[Any, ...] | None:

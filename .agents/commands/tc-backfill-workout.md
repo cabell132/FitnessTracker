@@ -53,7 +53,7 @@ Also accept a plain True Coach Workout id if the user invokes this command with 
 
    Appropriate Agent decisions:
    - Set `selected_start_time` and `selected_end_time` from Apple Health, True Coach timing, and workout structure.
-   - Resolve Choice Workout Items where Ross prescribed options and the athlete result names the performed choice.
+   - Resolve Choice Workout Items where Ross prescribed options and the athlete result names the performed choice. If the Athlete result clearly names multiple performed modalities, such as `Stairs 10mins/663 steps` and `Cycle 20mins/193kcal`, treat them as separate performed Hevy exercise blocks rather than forcing one placeholder template.
    - Resolve split Circuit/AMRAP movement templates listed under `circuit_items`.
      The backfill review may expand one True Coach circuit item into multiple
      performed movement items. Pick concrete Hevy templates for movements that
@@ -80,6 +80,7 @@ Also accept a plain True Coach Workout id if the user invokes this command with 
    - Hevy duration values must be integer seconds.
    - Hevy does not accept zero-set exercises. Intentional non-set movements such as `Down Regulate` should use a deterministic fallback set, currently 4 minutes.
    - Placeholder Rest items with no meaningful performance should remain omitted.
+   - Placeholder Choice/cardio items with clear performed modalities should be split into those performed exercises, preserving non-structured values such as steps or calories in notes when Hevy cannot represent them structurally.
    - Backfill apply/repair may persist synthetic local tracker Workout Items
      for split circuit movements. This is expected; it gives each created Hevy
      exercise row a one-to-one local link.

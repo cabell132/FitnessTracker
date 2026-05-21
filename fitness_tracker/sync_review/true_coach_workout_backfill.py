@@ -1333,6 +1333,8 @@ def _plan_item(item: BackfillReviewItem) -> dict[str, Any]:
     if item.choice_decision_reason is not None:
         plan["choice_template_candidates"] = item.choice_template_candidate_ids or []
         plan["choice_decision_reason"] = item.choice_decision_reason
+    if item.split_choice_performance:
+        plan["split_choice_performance"] = True
     if item.circuit_decision_reason is not None:
         plan["circuit_template_candidates"] = item.circuit_template_candidate_ids or []
         plan["circuit_decision_reason"] = item.circuit_decision_reason

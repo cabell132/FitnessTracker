@@ -260,7 +260,7 @@ def _tracker_item_for_created_hevy_row(
     context: CreatedWorkoutItemLinkContext,
 ) -> TrackerWorkoutItem | None:
     item = context.item
-    if not _is_expanded_circuit_movement_item(item):
+    if not _is_expanded_circuit_movement_item(item) and not _is_split_choice_performance_item(item):
         return session.get(TrackerWorkoutItem, id=item["tracker_workout_item_id"])
     template_id = _request_exercise_template_id(item, context.decisions)
     if template_id is None:
@@ -294,15 +294,22 @@ def _tracker_exercise_for_synthetic_item(
     name: str,
     hevy_app_id: str,
 ) -> TrackerExercise:
-    exercise = session.execute(
-        select(TrackerExercise).where(TrackerExercise.hevy_app_id == hevy_app_id)
-    ).scalar_one_or_none()
-    if exercise is not None:
-        return exercise
-    exercise = session.execute(
-        select(TrackerExercise).where(TrackerExercise.name == name)
-    ).scalar_one_or_none()
-    if exercise is not None:
+    linked_exercises = list(
+        session.execute(
+            select(TrackerExercise)
+            .where(TrackerExercise.hevy_app_id == hevy_app_id)
+            .order_by(TrackerExercise.id)
+        ).scalars()
+    )
+    if linked_exercises:
+        return _preferred_tracker_exercise(linked_exercises, name=name)
+    named_exercises = list(
+        session.execute(
+            select(TrackerExercise).where(TrackerExercise.name == name).order_by(TrackerExercise.id)
+        ).scalars()
+    )
+    if named_exercises:
+        exercise = named_exercises[0]
         exercise.hevy_app_id = hevy_app_id
         session.flush()
         return exercise
@@ -310,6 +317,22 @@ def _tracker_exercise_for_synthetic_item(
     session.add(exercise)
     session.flush()
     return exercise
+
+
+def _preferred_tracker_exercise(
+    exercises: list[TrackerExercise],
+    *,
+    name: str,
+) -> TrackerExercise:
+    normalized_name = _normalized_exercise_name(name)
+    for exercise in exercises:
+        if _normalized_exercise_name(exercise.name) == normalized_name:
+            return exercise
+    return exercises[0]
+
+
+def _normalized_exercise_name(value: str) -> str:
+    return " ".join(value.casefold().split())
 
 
 def _existing_synthetic_tracker_item(
@@ -499,6 +522,10 @@ def _is_expanded_circuit_movement_item(item: dict[str, Any]) -> bool:
         and "original_prescription_text" in item
         and "completed_round_count" in item
     )
+
+
+def _is_split_choice_performance_item(item: dict[str, Any]) -> bool:
+    return bool(item.get("split_choice_performance"))
 
 
 def _load_manual_request(request_path: Path) -> PostWorkoutsRequestBody:
