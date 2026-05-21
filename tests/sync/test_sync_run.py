@@ -25,6 +25,10 @@ from fitness_tracker.sync.adapters.file_checkpoint_store import (
     HEVY_CHECKPOINT_KEY,
     InMemoryCheckpointStore,
 )
+from fitness_tracker.sync_review.true_coach_to_hevy import (
+    ReviewBundle,
+    RoutineReplacementBatchResult,
+)
 
 _SENTINEL = datetime(1970, 1, 1, tzinfo=UTC)
 
@@ -118,17 +122,7 @@ def test_should_execute_sync_steps_in_declared_order(
     monkeypatch.setattr(
         svc,
         "replace_due_hevy_routines",
-        lambda workouts: order.append("routine-batch")
-        or SimpleNamespace(
-            status="no_due_workouts",
-            review_bundles=[],
-            apply_results=[],
-            deleted_routine_count=0,
-            created_routine_ids=[],
-            review_required_workout_ids=None,
-            review_required_reasons=None,
-            error_message=None,
-        ),
+        lambda workouts: order.append("routine-batch") or _routine_batch_result(),
     )
 
     svc.run()
@@ -425,19 +419,35 @@ def test_should_use_fixed_now_for_hevy_checkpoint_write(
     assert checkpoints.read(HEVY_CHECKPOINT_KEY, _SENTINEL) == fixed
 
 
-def _applied_routine_batch_result() -> SimpleNamespace:
-    return SimpleNamespace(
+def _applied_routine_batch_result() -> RoutineReplacementBatchResult:
+    return _routine_batch_result(
         status="applied",
         review_bundles=[
-            SimpleNamespace(directory=Path("reports/sync-review/truecoach-to-hevy/7")),
-            SimpleNamespace(directory=Path("reports/sync-review/truecoach-to-hevy/8")),
+            _review_bundle(7),
+            _review_bundle(8),
         ],
         apply_results=[object(), object()],
         deleted_routine_count=3,
         created_routine_ids=["routine-7", "routine-8"],
-        review_required_workout_ids=None,
-        review_required_reasons=None,
-        error_message=None,
+    )
+
+
+def _routine_batch_result(**overrides) -> RoutineReplacementBatchResult:
+    defaults = {
+        "status": "no_due_workouts",
+        "review_bundles": [],
+        "apply_results": [],
+    }
+    defaults.update(overrides)
+    return RoutineReplacementBatchResult(**defaults)
+
+
+def _review_bundle(workout_id: int) -> ReviewBundle:
+    directory = Path("reports/sync-review/truecoach-to-hevy") / str(workout_id)
+    return ReviewBundle(
+        directory=directory,
+        report_path=directory / "report.md",
+        plan_path=directory / "plan.json",
     )
 
 

@@ -9,15 +9,15 @@ from __future__ import annotations
 
 import time
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, TypedDict
 
-from fitness_tracker.apis.hevy_app.types import DeletedWorkout, Routine, UpdatedWorkout
 from fitness_tracker.apis.exceptions import APIError
+from fitness_tracker.apis.hevy_app.types import DeletedWorkout, Routine, UpdatedWorkout
 from fitness_tracker.apis.true_coach.types import WorkoutResponse
 from logs import WideEvent
 
 from fitness_tracker.sync._deps import SyncDeps
-from fitness_tracker.sync._run import SyncRunResult
+from fitness_tracker.sync._run import RoutineReplacementStatus, SyncRunResult
 from fitness_tracker.sync.adapters.file_checkpoint_store import HEVY_CHECKPOINT_KEY
 from fitness_tracker.sync.adapters.hevy_routine_writer import HevyRoutineWriterAdapter
 from fitness_tracker.sync.adapters.true_coach_workout_item_writer import (
@@ -100,15 +100,18 @@ class SyncService:
     def _execute_full_sync(
         self,
         ts: datetime,
-    ) -> tuple[list[UpdatedWorkout | DeletedWorkout], RoutineReplacementBatchResult, list[Any]]:
+    ) -> tuple[
+        list[UpdatedWorkout | DeletedWorkout],
+        RoutineReplacementBatchResult,
+        list[TrueCoachWorkout],
+    ]:
         """Run ordered platform steps and return counts inputs for :class:`SyncRunResult`.
 
         Args:
             ts (datetime): Wall time written to the Hevy checkpoint after Hevy sync.
 
         Returns:
-            tuple[list[UpdatedWorkout | DeletedWorkout], RoutineReplacementBatchResult, list[Any]]:
-                Hevy events, Routine replacement batch result, and due True Coach workouts.
+            tuple[list[UpdatedWorkout | DeletedWorkout], RoutineReplacementBatchResult, list[TrueCoachWorkout]]: Hevy events, Routine replacement batch result, and due True Coach workouts.
         """
         checkpoints = self._deps.checkpoints
         self.sync_apple_health()
@@ -131,12 +134,7 @@ class SyncService:
         try:
             routine_batch = self.replace_due_hevy_routines(workouts)
         except (APIError, RuntimeError, SyncApplyError) as exc:
-            routine_batch = RoutineReplacementBatchResult(
-                status="failed",
-                review_bundles=[],
-                apply_results=[],
-                error_message=str(exc),
-            )
+            routine_batch = _failed_routine_replacement_result(exc)
 
         return events, routine_batch, workouts
 
@@ -162,7 +160,7 @@ class SyncService:
                 routine_batch,
                 due_workout_count=len(workouts),
             )
-            outcome = "failed" if routine_batch.status == "failed" else "success"
+            outcome = _sync_outcome(routine_batch)
             evt.set(
                 hevy_event_count=len(events),
                 outcome=outcome,
@@ -325,14 +323,44 @@ class SyncService:
             return uow.true_coach.get_workouts(due=due)
 
 
+class _RoutineReplacementResultFields(TypedDict):
+    """Fields derived from a Routine replacement batch for run summaries."""
+
+    routine_replacement_status: RoutineReplacementStatus
+    routine_replacement_due_workout_count: int
+    routine_replacement_safe_plan_count: int
+    routine_replacement_review_required_plan_count: int
+    routine_replacement_review_artifact_count: int
+    routine_replacement_review_artifact_dirs: tuple[str, ...]
+    routine_replacement_error: str | None
+    hevy_routines_created: int
+    hevy_routines_deleted: int
+    true_coach_workouts_synced: int
+
+
+def _failed_routine_replacement_result(exc: Exception) -> RoutineReplacementBatchResult:
+    return RoutineReplacementBatchResult(
+        status="failed",
+        review_bundles=[],
+        apply_results=[],
+        error_message=str(exc),
+    )
+
+
+def _sync_outcome(result: RoutineReplacementBatchResult) -> str:
+    if result.status == "failed":
+        return "failed"
+    return "success"
+
+
 def _routine_replacement_result_fields(
     result: RoutineReplacementBatchResult,
     *,
     due_workout_count: int,
-) -> dict[str, Any]:
-    review_bundles = getattr(result, "review_bundles", [])
-    review_required_workout_ids = getattr(result, "review_required_workout_ids", None) or []
-    created_routine_ids = getattr(result, "created_routine_ids", [])
+) -> _RoutineReplacementResultFields:
+    review_bundles = result.review_bundles
+    review_required_workout_ids = result.review_required_workout_ids or []
+    created_routine_ids = result.created_routine_ids
     review_required_plan_count = len(review_required_workout_ids)
     review_artifact_dirs = tuple(str(bundle.directory) for bundle in review_bundles)
     safe_plan_count = max(len(review_bundles) - review_required_plan_count, 0)
@@ -343,8 +371,8 @@ def _routine_replacement_result_fields(
         "routine_replacement_review_required_plan_count": review_required_plan_count,
         "routine_replacement_review_artifact_count": len(review_artifact_dirs),
         "routine_replacement_review_artifact_dirs": review_artifact_dirs,
-        "routine_replacement_error": getattr(result, "error_message", None),
+        "routine_replacement_error": result.error_message,
         "hevy_routines_created": len(created_routine_ids),
-        "hevy_routines_deleted": getattr(result, "deleted_routine_count", 0),
+        "hevy_routines_deleted": result.deleted_routine_count,
         "true_coach_workouts_synced": 0,
     }
