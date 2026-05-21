@@ -80,6 +80,7 @@ class ApplyResult:
 
 
 type RoutineReplacementBatchStatus = Literal["applied", "review_required", "no_due_workouts"]
+type RoutineReviewPlan = dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -317,22 +318,13 @@ class RoutineReplacementBatchWorkflow:
                 apply_results=[],
             )
 
-        review_bundles = [
-            self._review_service.write_review(workout.id) for workout in _workouts_by_due(workouts)
-        ]
-        plans = [read_json_object(bundle.plan_path) for bundle in review_bundles]
-        unsafe_plans = [plan for plan in plans if not plan["safety"]["auto_safe"]]
-        if unsafe_plans:
-            return RoutineReplacementBatchResult(
-                status="review_required",
-                review_bundles=review_bundles,
-                apply_results=[],
-                review_required_workout_ids=[plan["workout"]["id"] for plan in unsafe_plans],
-                review_required_reasons={
-                    plan["workout"]["id"]: plan["safety"]["review_required_reasons"]
-                    for plan in unsafe_plans
-                },
-            )
+        sorted_workouts = _sort_workouts_by_due_date(workouts)
+        review_bundles = self._write_reviews(sorted_workouts)
+        plans = _read_review_plans(review_bundles)
+
+        plans_requiring_review = _plans_requiring_review(plans)
+        if plans_requiring_review:
+            return _review_required_batch_result(review_bundles, plans_requiring_review)
 
         deleted = clear_existing_routines()
         apply_results = [
@@ -346,9 +338,36 @@ class RoutineReplacementBatchWorkflow:
             deleted_routine_count=deleted,
         )
 
+    def _write_reviews(self, workouts: list[TrueCoachWorkout]) -> list[ReviewBundle]:
+        return [self._review_service.write_review(workout.id) for workout in workouts]
 
-def _workouts_by_due(workouts: list[TrueCoachWorkout]) -> list[TrueCoachWorkout]:
+
+def _sort_workouts_by_due_date(workouts: list[TrueCoachWorkout]) -> list[TrueCoachWorkout]:
     return sorted(workouts, key=lambda workout: (workout.due is None, workout.due, workout.id))
+
+
+def _read_review_plans(review_bundles: list[ReviewBundle]) -> list[RoutineReviewPlan]:
+    return [read_json_object(bundle.plan_path) for bundle in review_bundles]
+
+
+def _plans_requiring_review(plans: list[RoutineReviewPlan]) -> list[RoutineReviewPlan]:
+    return [plan for plan in plans if not plan["safety"]["auto_safe"]]
+
+
+def _review_required_batch_result(
+    review_bundles: list[ReviewBundle],
+    plans_requiring_review: list[RoutineReviewPlan],
+) -> RoutineReplacementBatchResult:
+    return RoutineReplacementBatchResult(
+        status="review_required",
+        review_bundles=review_bundles,
+        apply_results=[],
+        review_required_workout_ids=[plan["workout"]["id"] for plan in plans_requiring_review],
+        review_required_reasons={
+            plan["workout"]["id"]: plan["safety"]["review_required_reasons"]
+            for plan in plans_requiring_review
+        },
+    )
 
 
 def _build_hevy_routine_request(plan: dict[str, Any]) -> PostRoutinesRequestBody:
