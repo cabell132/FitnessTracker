@@ -118,7 +118,17 @@ def test_should_execute_sync_steps_in_declared_order(
     monkeypatch.setattr(
         svc,
         "replace_due_hevy_routines",
-        lambda workouts: order.append("routine-batch") or SimpleNamespace(deleted_routine_count=0),
+        lambda workouts: order.append("routine-batch")
+        or SimpleNamespace(
+            status="no_due_workouts",
+            review_bundles=[],
+            apply_results=[],
+            deleted_routine_count=0,
+            created_routine_ids=[],
+            review_required_workout_ids=None,
+            review_required_reasons=None,
+            error_message=None,
+        ),
     )
 
     svc.run()
@@ -211,7 +221,7 @@ def test_should_populate_sync_run_result_counters_from_run(
     store,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Summary counts reflect Hevy events, deletions, and due workouts."""
+    """Summary counts reflect Hevy events and applied Routine replacement results."""
     checkpoints = InMemoryCheckpointStore()
     deps = _deps_with_mocks(store, checkpoints)
     svc = SyncService(deps)
@@ -232,15 +242,42 @@ def test_should_populate_sync_run_result_counters_from_run(
         svc,
         "replace_due_hevy_routines",
         lambda workouts: batched.append([workout.id for workout in workouts])
-        or SimpleNamespace(deleted_routine_count=3),
+        or _applied_routine_batch_result(),
     )
 
     result = svc.run(now=datetime(2026, 1, 1, tzinfo=UTC))
 
-    assert result.hevy_event_count == 2
-    assert result.hevy_routines_deleted == 3
-    assert result.true_coach_workouts_synced == 2
-    assert result.outcome == "success"
+    assert {
+        "hevy_event_count": result.hevy_event_count,
+        "routine_replacement_status": result.routine_replacement_status,
+        "routine_replacement_due_workout_count": result.routine_replacement_due_workout_count,
+        "routine_replacement_safe_plan_count": result.routine_replacement_safe_plan_count,
+        "routine_replacement_review_required_plan_count": (
+            result.routine_replacement_review_required_plan_count
+        ),
+        "hevy_routines_created": result.hevy_routines_created,
+        "hevy_routines_deleted": result.hevy_routines_deleted,
+        "routine_replacement_review_artifact_count": (
+            result.routine_replacement_review_artifact_count
+        ),
+        "true_coach_workouts_synced": result.true_coach_workouts_synced,
+        "outcome": result.outcome,
+    } == {
+        "hevy_event_count": 2,
+        "routine_replacement_status": "applied",
+        "routine_replacement_due_workout_count": 2,
+        "routine_replacement_safe_plan_count": 2,
+        "routine_replacement_review_required_plan_count": 0,
+        "hevy_routines_created": 2,
+        "hevy_routines_deleted": 3,
+        "routine_replacement_review_artifact_count": 2,
+        "true_coach_workouts_synced": 0,
+        "outcome": "success",
+    }
+    assert result.routine_replacement_review_artifact_dirs == (
+        "reports/sync-review/truecoach-to-hevy/7",
+        "reports/sync-review/truecoach-to-hevy/8",
+    )
     assert batched == [[7, 8]]
     assert result.duration_ms >= 0.0
 
@@ -261,12 +298,18 @@ def test_run_blocks_due_routine_replacement_batch_before_deleting_routines(
 
     result = svc.run(now=datetime(2026, 5, 21, tzinfo=UTC))
 
+    assert result.routine_replacement_status == "review_required"
+    assert result.routine_replacement_due_workout_count == 2
+    assert result.routine_replacement_safe_plan_count == 1
+    assert result.routine_replacement_review_required_plan_count == 1
+    assert result.routine_replacement_review_artifact_count == 2
+    assert result.hevy_routines_created == 0
     assert result.hevy_routines_deleted == 0
     deps.hevy.routines.get.assert_not_called()
     deps.hevy.routines.create.assert_not_called()
     _assert_routine_plan_safety(tmp_path, workout_id=47, auto_safe=True)
     _assert_routine_plan_safety(tmp_path, workout_id=42, auto_safe=False)
-    assert result.true_coach_workouts_synced == 2
+    assert result.true_coach_workouts_synced == 0
 
 
 def test_run_skips_routine_deletion_when_no_workouts_are_due(
@@ -283,12 +326,46 @@ def test_run_skips_routine_deletion_when_no_workouts_are_due(
 
     result = svc.run(now=datetime(2026, 5, 21, tzinfo=UTC))
 
+    assert result.routine_replacement_status == "no_due_workouts"
+    assert result.routine_replacement_due_workout_count == 0
+    assert result.routine_replacement_safe_plan_count == 0
+    assert result.routine_replacement_review_required_plan_count == 0
+    assert result.routine_replacement_review_artifact_count == 0
     assert result.hevy_routines_deleted == 0
     assert result.true_coach_workouts_synced == 0
     deps.hevy.routines.get.assert_not_called()
     deps.hevy.routines.delete.assert_not_called()
     deps.hevy.routines.create.assert_not_called()
     assert not (tmp_path / "reports" / "sync-review" / "truecoach-to-hevy").exists()
+
+
+def test_run_reports_failed_due_routine_replacement_batch(
+    store,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Routine replacement failures are visible in the sync run result."""
+    checkpoints = InMemoryCheckpointStore()
+    deps = _deps_with_mocks(store, checkpoints)
+    svc = SyncService(deps)
+
+    _disable_non_routine_sync_steps(svc, monkeypatch)
+    monkeypatch.setattr(svc, "get_due_workouts", lambda: [SimpleNamespace(id=7)])
+
+    def fail_replacement(workouts):
+        msg = "routine API failed"
+        raise RuntimeError(msg)
+
+    monkeypatch.setattr(svc, "replace_due_hevy_routines", fail_replacement)
+
+    result = svc.run(now=datetime(2026, 5, 21, tzinfo=UTC))
+
+    assert result.outcome == "failed"
+    assert result.routine_replacement_status == "failed"
+    assert result.routine_replacement_due_workout_count == 1
+    assert result.routine_replacement_error == "routine API failed"
+    assert result.hevy_routines_created == 0
+    assert result.hevy_routines_deleted == 0
+    assert result.true_coach_workouts_synced == 0
 
 
 def test_should_round_trip_multiple_keys_in_file_checkpoint_store(tmp_path) -> None:
@@ -346,6 +423,22 @@ def test_should_use_fixed_now_for_hevy_checkpoint_write(
 
     svc.run(now=fixed)
     assert checkpoints.read(HEVY_CHECKPOINT_KEY, _SENTINEL) == fixed
+
+
+def _applied_routine_batch_result() -> SimpleNamespace:
+    return SimpleNamespace(
+        status="applied",
+        review_bundles=[
+            SimpleNamespace(directory=Path("reports/sync-review/truecoach-to-hevy/7")),
+            SimpleNamespace(directory=Path("reports/sync-review/truecoach-to-hevy/8")),
+        ],
+        apply_results=[object(), object()],
+        deleted_routine_count=3,
+        created_routine_ids=["routine-7", "routine-8"],
+        review_required_workout_ids=None,
+        review_required_reasons=None,
+        error_message=None,
+    )
 
 
 def _disable_non_routine_sync_steps(

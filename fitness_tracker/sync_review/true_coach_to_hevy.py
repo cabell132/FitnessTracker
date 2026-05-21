@@ -83,7 +83,12 @@ class ApplyResult:
     created_routine_ids: list[str] = field(default_factory=list)
 
 
-type RoutineReplacementBatchStatus = Literal["applied", "review_required", "no_due_workouts"]
+type RoutineReplacementBatchStatus = Literal[
+    "applied",
+    "review_required",
+    "no_due_workouts",
+    "failed",
+]
 type RoutineReviewPlan = dict[str, Any]
 
 
@@ -98,6 +103,7 @@ class RoutineReplacementBatchResult:
     created_routine_ids: list[str] = field(default_factory=list)
     review_required_workout_ids: list[int] | None = None
     review_required_reasons: dict[int, list[str]] | None = None
+    error_message: str | None = None
 
 
 @dataclass(frozen=True)
