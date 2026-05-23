@@ -9,11 +9,12 @@ from __future__ import annotations
 
 import time
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, TypedDict
+from typing import TypedDict
 
 from fitness_tracker.apis.exceptions import APIError
 from fitness_tracker.apis.hevy_app.types import DeletedWorkout, Routine, UpdatedWorkout
 from fitness_tracker.apis.true_coach.types import WorkoutResponse
+from fitness_tracker.database.models.true_coach import TrueCoachWorkout
 from logs import WideEvent
 
 from fitness_tracker.sync._deps import SyncDeps
@@ -39,10 +40,6 @@ from fitness_tracker.sync_review.true_coach_to_hevy import (
     SyncApplyError,
     TrueCoachToHevyReviewService,
 )
-
-if TYPE_CHECKING:
-    from fitness_tracker.database.models.true_coach import TrueCoachWorkout
-
 
 type FullSyncResult = tuple[
     list[UpdatedWorkout | DeletedWorkout],
@@ -133,7 +130,7 @@ class SyncService:
         if res is not None:
             self.sync_true_coach_workouts(res)
 
-        workouts = self.get_due_workouts()
+        workouts = self.get_due_workouts(now=ts)
         try:
             routine_batch = self.replace_due_hevy_routines(workouts)
         except (APIError, RuntimeError, SyncApplyError) as exc:
@@ -319,20 +316,29 @@ class SyncService:
             states=["pending", "completed", "missed"],
         )
 
-    def get_due_workouts(self) -> list[TrueCoachWorkout]:
-        """Return True Coach workouts due today.
+    def get_due_workouts(self, *, now: datetime | None = None) -> list[TrueCoachWorkout]:
+        """Return True Coach workouts due by the run date.
+
+        Args:
+            now (datetime | None): Clock value for determining the due cutoff.
+                Defaults to the current UTC time.
 
         Returns:
-            list[TrueCoachWorkout]: Workouts due on or before today's midnight UTC.
+            list[TrueCoachWorkout]: Workouts due on or before the run day's midnight UTC.
         """
+        reference = now if now is not None else datetime.now(tz=UTC)
+        due = reference.astimezone(UTC).replace(
+            hour=0,
+            minute=0,
+            second=0,
+            microsecond=0,
+        )
         with self._store.unit_of_work() as uow:
-            due = datetime.now(tz=UTC).replace(
-                hour=0,
-                minute=0,
-                second=0,
-                microsecond=0,
+            return (
+                uow.session.query(TrueCoachWorkout)
+                .filter(TrueCoachWorkout.due.is_not(None), TrueCoachWorkout.due <= due)
+                .all()
             )
-            return uow.true_coach.get_workouts(due=due)
 
 
 class _RoutineReplacementResultFields(TypedDict):

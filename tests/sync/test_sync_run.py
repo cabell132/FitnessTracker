@@ -90,7 +90,7 @@ def test_should_update_hevy_checkpoint_after_run_when_using_in_memory_store(
     monkeypatch.setattr(svc, "sync_assessments", lambda: None)
     monkeypatch.setattr(svc, "clear_hevy_routines", lambda **_: 0)
     monkeypatch.setattr(svc, "fetch_recent_true_coach_workouts", lambda: None)
-    monkeypatch.setattr(svc, "get_due_workouts", list)
+    monkeypatch.setattr(svc, "get_due_workouts", lambda **_: [])
 
     fixed_now = datetime(2026, 4, 6, 12, 0, tzinfo=UTC)
     result = svc.run(now=fixed_now)
@@ -122,7 +122,7 @@ def test_should_execute_sync_steps_in_declared_order(
         lambda since: order.append("hevy") or [],
     )
     monkeypatch.setattr(svc, "sync_assessments", lambda: order.append("assessments") or None)
-    monkeypatch.setattr(svc, "get_due_workouts", lambda: order.append("due") or [])
+    monkeypatch.setattr(svc, "get_due_workouts", lambda **_: order.append("due") or [])
     monkeypatch.setattr(
         svc,
         "replace_due_hevy_routines",
@@ -161,7 +161,7 @@ def test_should_pass_default_since_when_hevy_checkpoint_missing(
     monkeypatch.setattr(svc, "sync_assessments", lambda: None)
     monkeypatch.setattr(svc, "clear_hevy_routines", lambda **_: 0)
     monkeypatch.setattr(svc, "fetch_recent_true_coach_workouts", lambda: None)
-    monkeypatch.setattr(svc, "get_due_workouts", list)
+    monkeypatch.setattr(svc, "get_due_workouts", lambda **_: [])
 
     svc.run()
 
@@ -188,7 +188,7 @@ def test_should_sync_true_coach_workouts_only_when_fetch_returns_payload(
         "sync_true_coach_workouts",
         lambda res: tc_called.append(True),
     )
-    monkeypatch.setattr(svc, "get_due_workouts", list)
+    monkeypatch.setattr(svc, "get_due_workouts", lambda **_: [])
 
     svc.run()
     assert tc_called == [True, True]
@@ -272,7 +272,7 @@ def test_should_populate_sync_run_result_counters_from_run(
     monkeypatch.setattr(
         svc,
         "get_due_workouts",
-        lambda: due_workouts,
+        lambda **_: due_workouts,
     )
     batched: list[list[int]] = []
     monkeypatch.setattr(
@@ -386,7 +386,7 @@ def test_run_reports_failed_due_routine_replacement_batch(
     svc = SyncService(deps)
 
     _disable_non_routine_sync_steps(svc, monkeypatch)
-    monkeypatch.setattr(svc, "get_due_workouts", lambda: [SimpleNamespace(id=7)])
+    monkeypatch.setattr(svc, "get_due_workouts", lambda **_: [SimpleNamespace(id=7)])
 
     def fail_replacement(workouts):
         msg = "routine API failed"
@@ -456,7 +456,7 @@ def test_should_use_fixed_now_for_hevy_checkpoint_write(
     monkeypatch.setattr(svc, "sync_assessments", lambda: None)
     monkeypatch.setattr(svc, "clear_hevy_routines", lambda **_: 0)
     monkeypatch.setattr(svc, "fetch_recent_true_coach_workouts", lambda: None)
-    monkeypatch.setattr(svc, "get_due_workouts", list)
+    monkeypatch.setattr(svc, "get_due_workouts", lambda **_: [])
 
     svc.run(now=fixed)
     assert checkpoints.read(HEVY_CHECKPOINT_KEY, _SENTINEL) == fixed
