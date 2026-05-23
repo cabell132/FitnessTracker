@@ -203,9 +203,9 @@ The automatic workflow explains what the production sync does. When an Agent is
 asked to make a nuanced Hevy write, use the command recipes instead:
 
 - Upcoming Coach prescription to Hevy Routine:
-  `.agents/commands/create-hevy-routine.md`
+  `.pi/prompts/create-hevy-routine.md`
 - Historical completed True Coach Workout to logged Hevy Workout:
-  `.agents/commands/tc-backfill-workout.md`
+  `.pi/prompts/tc-backfill-workout.md`
 
 Those workflows generate review artifacts, expose blockers, and keep heuristic
 judgement explicit before applying remote writes.

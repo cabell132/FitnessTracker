@@ -1,3 +1,8 @@
+---
+description: Backfill one completed True Coach Workout into Hevy as a logged Workout
+argument-hint: "<TRUECOACH_WORKOUT_ID>"
+---
+
 # Backfill True Coach Workout To Hevy
 
 Backfill one completed True Coach Workout into Hevy as a logged Workout.

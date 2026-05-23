@@ -1,3 +1,8 @@
+---
+description: Review and apply one completed Hevy Workout result sync to True Coach
+argument-hint: "<HEVY_WORKOUT_ID>"
+---
+
 # Sync Hevy Results To True Coach
 
 Review and apply one completed Hevy Workout's performed results to the matching

@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-AGENT_COMMANDS_DIR = REPO_ROOT / ".agents" / "commands"
+AGENT_COMMANDS_DIR = REPO_ROOT / ".pi" / "prompts"
 HEVY_TRUECOACH_WORKFLOW_DOC = REPO_ROOT / "docs" / "agents" / "hevy-truecoach-workflow.md"
 CREATE_HEVY_ROUTINE_DOC = "create-hevy-routine.md"
 

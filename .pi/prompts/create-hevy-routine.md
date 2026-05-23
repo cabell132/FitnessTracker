@@ -1,3 +1,8 @@
+---
+description: Create Hevy Routine(s) from True Coach Workout(s) due on a target date
+argument-hint: "[date|today|tomorrow|yesterday]"
+---
+
 # Create Hevy Routine From True Coach
 
 Create Hevy Routine(s) from True Coach Workout(s) due on a given day.
