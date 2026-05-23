@@ -1089,6 +1089,63 @@ def test_sync_apply_allows_missing_history_enrichment_warning(tmp_path: Path) ->
     ]
 
 
+def test_sync_review_blocks_explicit_load_on_non_weight_template(tmp_path: Path) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_explicit_load_non_weight_template_workout(store)
+    service = TrueCoachToHevyReviewService(store=store, output_root=tmp_path / "reports")
+
+    bundle = service.write_review(61)
+    plan = json.loads(bundle.plan_path.read_text(encoding="utf-8"))
+
+    item = plan["items"][0]
+    assert item["proposed_sets"][0]["weight_kg"] == 10.0
+    assert item["selected_hevy_template"]["type"] == "reps_only"
+    assert item["blockers"] == ["Explicit load requires weight-capable Hevy template: Triceps Dip"]
+    with pytest.raises(
+        SyncApplyError,
+        match="Explicit load requires weight-capable Hevy template: Triceps Dip",
+    ):
+        service.write_apply_request(61)
+
+
+def test_sync_apply_uses_explicit_non_circuit_rest_text(tmp_path: Path) -> None:
+    db_path = tmp_path / "tracker.sqlite"
+    store = Store(create_engine(f"sqlite:///{db_path}"))
+    store.init_db()
+    _seed_explicit_rest_plan_workout(store)
+    service = TrueCoachToHevyReviewService(store=store, output_root=tmp_path / "reports")
+
+    result = service.write_apply_request(60)
+
+    exercise = result.request_body.model_dump()["routine"]["exercises"][0]
+    assert exercise["rest_seconds"] == 10
+    assert exercise["sets"] == [
+        {
+            "weight_kg": None,
+            "reps": 6,
+            "distance_meters": None,
+            "duration_seconds": None,
+            "type": "normal",
+        },
+        {
+            "weight_kg": None,
+            "reps": 6,
+            "distance_meters": None,
+            "duration_seconds": None,
+            "type": "normal",
+        },
+        {
+            "weight_kg": None,
+            "reps": 6,
+            "distance_meters": None,
+            "duration_seconds": None,
+            "type": "normal",
+        },
+    ]
+
+
 def test_sync_apply_uses_first_duration_set_as_rest_timer(tmp_path: Path) -> None:
     db_path = tmp_path / "tracker.sqlite"
     store = Store(create_engine(f"sqlite:///{db_path}"))
@@ -2519,6 +2576,102 @@ def _seed_clean_weight_plan_workout(store: Store) -> None:
                 state="pending",
                 position=1,
                 exercise_id=507,
+                assessment_id=None,
+            )
+        )
+
+
+def _seed_explicit_load_non_weight_template_workout(store: Store) -> None:
+    now = datetime(2026, 5, 17, tzinfo=UTC)
+    with store.unit_of_work() as uow:
+        uow.session.add(
+            TrueCoachWorkout(
+                id=61,
+                title="Explicit Load Plan",
+                due=now,
+                short_description="",
+                state="pending",
+                rest_day=False,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        uow.session.add(TrueCoachExercise(id=535, name="Triceps Dip", default=False))
+        uow.session.add(
+            HevyAppExercise(
+                id="hevy-triceps-dip",
+                name="Triceps Dip",
+                type="reps_only",
+                equipment="bodyweight",
+                default=True,
+            )
+        )
+        uow.session.add(
+            TrackerExercise(
+                name="Triceps Dip",
+                hevy_app_id="hevy-triceps-dip",
+                true_coach_id=535,
+            )
+        )
+        uow.session.add(
+            TrueCoachWorkoutItem(
+                id=1035,
+                workout_id=61,
+                name="Triceps Dip",
+                info="3 x 10-12 @ 10kg",
+                comment="",
+                is_circuit=False,
+                state="pending",
+                position=1,
+                exercise_id=535,
+                assessment_id=None,
+            )
+        )
+
+
+def _seed_explicit_rest_plan_workout(store: Store) -> None:
+    now = datetime(2026, 5, 17, tzinfo=UTC)
+    with store.unit_of_work() as uow:
+        uow.session.add(
+            TrueCoachWorkout(
+                id=60,
+                title="Explicit Rest Plan",
+                due=now,
+                short_description="",
+                state="pending",
+                rest_day=False,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        uow.session.add(TrueCoachExercise(id=534, name="Triceps Dip", default=False))
+        uow.session.add(
+            HevyAppExercise(
+                id="hevy-triceps-dip",
+                name="Triceps Dip",
+                type="reps_only",
+                equipment="bodyweight",
+                default=True,
+            )
+        )
+        uow.session.add(
+            TrackerExercise(
+                name="Triceps Dip",
+                hevy_app_id="hevy-triceps-dip",
+                true_coach_id=534,
+            )
+        )
+        uow.session.add(
+            TrueCoachWorkoutItem(
+                id=1034,
+                workout_id=60,
+                name="Triceps Dip",
+                info="3 x 6\n- 10s Rest",
+                comment="",
+                is_circuit=False,
+                state="pending",
+                position=1,
+                exercise_id=534,
                 assessment_id=None,
             )
         )

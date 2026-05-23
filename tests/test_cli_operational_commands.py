@@ -1449,6 +1449,62 @@ def test_hevy_routines_diff_json_reports_normalized_differences(
     assert '"duration_seconds": 99' in output
 
 
+def test_hevy_routines_diff_json_ignores_remote_zero_defaults(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    request_path = tmp_path / "hevy-request.json"
+    request_path.write_text(
+        json.dumps(
+            {
+                "routine": {
+                    "title": "Routine",
+                    "notes": "",
+                    "exercises": [
+                        {
+                            "exercise_template_id": "stretch",
+                            "sets": [{"type": "normal", "duration_seconds": 10}],
+                        }
+                    ],
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        cli,
+        "_hevy_api_json",
+        lambda *args, **kwargs: {
+            "routine": {
+                "id": "routine-3",
+                "title": "Routine",
+                "exercises": [
+                    {
+                        "exercise_template_id": "stretch",
+                        "title": "Stretch",
+                        "sets": [
+                            {
+                                "type": "normal",
+                                "duration_seconds": 10,
+                                "reps": 0,
+                                "weight_kg": 0,
+                                "distance_meters": 0,
+                                "custom_metric": 0,
+                            }
+                        ],
+                    }
+                ],
+            }
+        },
+    )
+
+    exit_code = cli.main(["hevy", "routines", "diff-json", "routine-3", str(request_path)])
+
+    assert exit_code == 0
+    assert "No normalized differences found." in capsys.readouterr().out
+
+
 def test_hevy_routines_diff_json_hides_low_signal_differences_by_default(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

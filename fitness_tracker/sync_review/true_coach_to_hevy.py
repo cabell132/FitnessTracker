@@ -51,6 +51,18 @@ SYNC_NAME = "truecoach-to-hevy"
 SET_DISPLAY_KEYS = ("type", "weight_kg", "reps", "distance_meters", "duration_seconds")
 TRUE_COACH_WORKOUT_ID_MARKER = "TrueCoachWorkoutId"
 ROUTINE_BATCH_MARKER = "RoutineBatch"
+DURATION_UNIT_PATTERN = r"min|mins|minute|minutes|s|sec|secs|second|seconds"
+DURATION_RANGE_PATTERN = r"\d+(?:[ \t]*-[ \t]*\d+)?"
+EXPLICIT_REST_PATTERN = re.compile(
+    rf"(?:"
+    rf"\b(?:rest|recovery)\b[^\d\n]*(?P<after>{DURATION_RANGE_PATTERN})"
+    rf"\s*(?P<after_unit>{DURATION_UNIT_PATTERN})\b"
+    rf"|"
+    rf"(?P<before>{DURATION_RANGE_PATTERN})\s*"
+    rf"(?P<before_unit>{DURATION_UNIT_PATTERN})\b[^\n]*\b(?:rest|recovery)\b"
+    rf")",
+    re.IGNORECASE,
+)
 MISSING_WORKOUT_ID_MARKER_REASON = f"Missing Routine source marker: {TRUE_COACH_WORKOUT_ID_MARKER}"
 MISSING_ROUTINE_BATCH_MARKER_REASON = f"Missing Routine source marker: {ROUTINE_BATCH_MARKER}"
 
@@ -671,6 +683,7 @@ def _request_exercises_for_item(
             superset_id=item.get("superset_id"),
             notes=_item_notes(item),
             sets=item["proposed_sets"],
+            rest_seconds=_explicit_non_circuit_rest_seconds(item),
             template=item["selected_hevy_template"],
         )
     ]
@@ -834,6 +847,26 @@ def _request_exercise(  # noqa: PLR0913
             for set_row in sets
         ],
     )
+
+
+def _explicit_non_circuit_rest_seconds(item: dict[str, Any]) -> int | None:
+    for text in (item.get("info") or "", item.get("comment") or ""):
+        for line in text.splitlines():
+            match = EXPLICIT_REST_PATTERN.search(line)
+            if match is None:
+                continue
+            value = match.group("after") or match.group("before")
+            unit = match.group("after_unit") or match.group("before_unit")
+            return _duration_text_to_seconds(value, unit)
+    return None
+
+
+def _duration_text_to_seconds(value: str, unit: str) -> int:
+    bounds = [int(part.strip()) for part in value.split("-")]
+    seconds = max(bounds)
+    if unit.casefold().startswith("min"):
+        seconds *= 60
+    return seconds
 
 
 def _rest_seconds_from_sets(

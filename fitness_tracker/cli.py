@@ -2245,7 +2245,7 @@ def _normalized_routine_exercise(row: dict[str, Any]) -> dict[str, Any]:
 
 def _normalized_routine_set(row: dict[str, Any]) -> dict[str, Any]:
     keys = ("type", "weight_kg", "reps", "distance_meters", "duration_seconds", "custom_metric")
-    return {key: row[key] for key in keys if row.get(key) is not None or key == "type"}
+    return {key: row[key] for key in keys if key == "type" or row.get(key) not in (None, 0, 0.0)}
 
 
 def _print_sync_review_summary(plan_path: Path) -> None:

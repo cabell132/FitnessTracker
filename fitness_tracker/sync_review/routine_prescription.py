@@ -217,6 +217,11 @@ class RoutinePrescriptionPlanner:
             blockers=_required_template_blockers(
                 required_templates_for_blockers(required_templates, planned_blocks)
             )
+            + _set_template_compatibility_blockers(
+                item.name,
+                template,
+                proposed_sets,
+            )
             + block_blockers(planned_blocks),
         )
 
@@ -309,7 +314,11 @@ class RoutinePrescriptionPlanner:
                     set_provenance=set_provenance,
                     notes_only=False,
                     warnings=[],
-                    blockers=[],
+                    blockers=_set_template_compatibility_blockers(
+                        phase.source_text,
+                        phase_template,
+                        proposed_sets,
+                    ),
                 )
             )
         return blocks
@@ -384,7 +393,12 @@ class RoutinePrescriptionPlanner:
                     set_provenance=set_provenance,
                     notes_only=exercise.notes_only,
                     warnings=list(exercise.warnings),
-                    blockers=list(exercise.blockers),
+                    blockers=list(exercise.blockers)
+                    + _set_template_compatibility_blockers(
+                        exercise.source_text,
+                        template,
+                        proposed_sets,
+                    ),
                 )
             )
         return blocks
@@ -476,6 +490,18 @@ def block_blockers(planned_blocks: list[PlannedBlock]) -> list[str]:
         list[str]: Blocker messages carried by the planned blocks.
     """
     return [blocker for block in planned_blocks for blocker in block.blockers]
+
+
+def _set_template_compatibility_blockers(
+    source_text: str,
+    template: HevyAppExercise | None,
+    proposed_sets: list[PostRoutinesRequestSet],
+) -> list[str]:
+    if template is None or _is_weight_capable(template):
+        return []
+    if any((set_.weight_kg or 0) > 0 for set_ in proposed_sets):
+        return [f"Explicit load requires weight-capable Hevy template: {source_text}"]
+    return []
 
 
 @cache
