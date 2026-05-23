@@ -47,7 +47,7 @@ def test_pi_hooks_config_uses_supported_bash_actions() -> None:
 
 def test_pre_bash_hooks_read_pi_tool_args_command() -> None:
     """Pre-bash guards should understand pi-yaml-hooks tool_args.command payloads."""
-    payload = {"tool_args": {"command": "pytest tests"}}
+    payload = {"tool_args": {"command": "uv run pytest tests"}}
 
     poe_result = run_hook("enforce-poe.sh", payload)
 

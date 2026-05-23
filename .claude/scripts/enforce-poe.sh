@@ -26,10 +26,6 @@ case "$base_cmd" in
             exit 2
         fi
         ;;
-    pytest)
-        echo "BLOCKED: Use 'uv run poe test' instead of 'pytest'" >&2
-        exit 2
-        ;;
     ty)
         action=$(echo "$command" | awk '{print $2}')
         if [ "$action" = "check" ]; then
