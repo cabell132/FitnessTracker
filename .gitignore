@@ -19,6 +19,10 @@ data/
 # dotenv
 .env
 
+# Rotating Hevy web credentials
+.hevy-web-auth.json
+.hevy-web-auth.json.lock
+
 # Hypothesis
 .hypothesis/
 
