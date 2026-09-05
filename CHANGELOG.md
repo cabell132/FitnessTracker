@@ -2,6 +2,17 @@
 
 <!-- version list -->
 
+## v1.5.0 (2026-09-05)
+
+### Features
+
+- Refresh Hevy web authentication
+  ([`7b4081f`](https://github.com/cabell132/FitnessTracker/commit/7b4081fdbc93e3f0c452af25841359a32e2c3693))
+
+- **hevy**: Add website API client and rich workout timestamps
+  ([`944bde8`](https://github.com/cabell132/FitnessTracker/commit/944bde8c8774a94b6f81f5baf19dc44757f1f313))
+
+
 ## v1.4.0 (2026-05-23)
 
 ### Bug Fixes
