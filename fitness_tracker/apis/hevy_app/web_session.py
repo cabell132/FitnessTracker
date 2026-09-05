@@ -3,6 +3,8 @@
 from pathlib import Path
 from typing import Any
 
+import requests
+
 from fitness_tracker.apis.hevy_app.exceptions import HevyAppAPIError
 from fitness_tracker.apis.hevy_app.web_auth import (
     HevyWebAuth,
@@ -31,6 +33,19 @@ class HevyWebSession(APISession):
         )
         self._auth = auth
 
+    def _format_response(self, response: requests.Response) -> dict[str, Any]:
+        """Accept successful web mutations that return an empty body.
+
+        Args:
+            response (requests.Response): Successful HTTP response.
+
+        Returns:
+            dict[str, Any]: Normalized JSON, or an empty object for a bodyless success.
+        """
+        if not response.content:
+            return {}
+        return super()._format_response(response)
+
     def make_request(self, method: str, endpoint: str, **kwargs: Any) -> dict[str, Any] | None:
         """Send a request with a valid token and retry one authentication failure.
 
@@ -41,6 +56,9 @@ class HevyWebSession(APISession):
 
         Returns:
             dict[str, Any] | None: Normalized response body.
+
+        Raises:
+            HevyAppAPIError: When the API error cannot be retried with rotating credentials.
         """
         self._set_auth_headers(self._auth.access_token())
         try:
