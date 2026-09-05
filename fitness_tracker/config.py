@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from dotenv import load_dotenv
 from pydantic import SecretStr
@@ -15,12 +15,12 @@ class Config:
     """Immutable bundle of every configurable value in the application."""
 
     hevy_api_key: SecretStr
-    hevy_web_api_key: SecretStr
     openai_api_key: SecretStr
     truecoach_password: SecretStr
     dropbox_access_token: SecretStr
     email: str
     database_url: str = "sqlite:///fitness_tracker.db"
+    hevy_web_api_key: SecretStr = field(default_factory=lambda: SecretStr(""))
     llm_model: str = "gpt-4o-mini-2024-07-18"
     llm_temperature: float = 0.0
     llm_max_tokens: int = 150
@@ -36,7 +36,6 @@ class Config:
             "DROPBOX_ACCESS_TOKEN",
             "EMAIL",
             "HEVY_API_KEY",
-            "HEVY_WEB_API_KEY",
             "OPENAI_API_KEY",
             "TRUECOACH_PASSWORD",
         )
@@ -57,7 +56,7 @@ class Config:
             )
         return cls(
             hevy_api_key=SecretStr(os.environ["HEVY_API_KEY"]),
-            hevy_web_api_key=SecretStr(os.environ["HEVY_WEB_API_KEY"]),
+            hevy_web_api_key=SecretStr(os.environ.get("HEVY_WEB_API_KEY", "")),
             openai_api_key=SecretStr(os.environ["OPENAI_API_KEY"]),
             truecoach_password=SecretStr(os.environ["TRUECOACH_PASSWORD"]),
             dropbox_access_token=SecretStr(os.environ["DROPBOX_ACCESS_TOKEN"]),

@@ -48,6 +48,7 @@ from fitness_tracker.database.models.hevy_app import (
     HevyAppWorkoutItem,
 )
 from fitness_tracker.database.models.true_coach import TrueCoachWorkout, TrueCoachWorkoutItem
+from fitness_tracker.hevy_auth_cli import add_hevy_auth_parser, run_hevy_auth_command
 from fitness_tracker.maintenance.hevy_exercise_migration import (
     HevyExerciseTemplateMigrationService,
     MigrationError,
@@ -119,6 +120,8 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0911, PLR0912,
         handler = _hevy_exercise_template_command_handler(args.exercise_templates_command)
         if handler is not None:
             return handler(args)
+    if args.command == "hevy" and args.hevy_command == "auth":
+        return run_hevy_auth_command(args)
     if args.command == "truecoach" and args.truecoach_command == "due":
         return _truecoach_due(args)
     if args.command == "truecoach" and args.truecoach_command == "import-recent":
@@ -249,6 +252,7 @@ def _add_hevy_parser(subparsers: Any) -> None:  # noqa: PLR0915
     _add_json_output_argument(ensure)
 
     _add_hevy_exercise_templates_parser(hevy_subparsers)
+    add_hevy_auth_parser(hevy_subparsers)
 
 
 def _add_json_output_argument(parser: argparse.ArgumentParser) -> None:
@@ -1472,7 +1476,7 @@ def _empty_set_block_warnings(label: str, empty_set_blocks: list[int]) -> list[s
 
 
 def _delete_hevy_routine(args: argparse.Namespace) -> int:
-    _hevy_web_json("DELETE", f"/routine/{args.routine_id}")
+    _hevy_client_from_config().routines.delete(args.routine_id)
     if args.json:
         return _emit_json_result(
             {
@@ -2028,18 +2032,6 @@ def _hevy_api_json(  # noqa: PLR0913
         headers={"api-key": cfg.hevy_api_key.get_secret_value()},
         json_body=json_body,
         params=params,
-    )
-
-
-def _hevy_web_json(method: str, endpoint: str) -> dict[str, Any] | None:
-    cfg = Config.from_env()
-    return _request_json(
-        method=method,
-        url=f"https://api.hevyapp.com{endpoint}",
-        headers={
-            "auth-token": cfg.hevy_web_api_key.get_secret_value(),
-            "x-api-key": "shelobs_hevy_web",
-        },
     )
 
 
