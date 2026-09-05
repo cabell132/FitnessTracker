@@ -16,6 +16,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
+    JSON,
     String,
     Text,
     UniqueConstraint,
@@ -62,6 +63,9 @@ class HevyAppWorkout(BaseModel):
     created_at = Column(DateTime, default=func.now(), nullable=False)
     updated_at = Column(DateTime, onupdate=func.now(), nullable=True)
 
+    web_payload = Column(JSON, nullable=True)
+    web_fetched_at = Column(DateTime(timezone=True), nullable=True)
+
     # Relationships
     workout_items: Mapped[list["HevyAppWorkoutItem"]] = relationship(
         "HevyAppWorkoutItem", back_populates="workout", cascade="all, delete-orphan"
@@ -91,6 +95,8 @@ class HevyAppWorkoutItem(BaseModel):
     id = Column(Integer, primary_key=True, autoincrement=True)  # API provides id
     workout_id = Column(String, ForeignKey("HevyAppWorkout.id"), nullable=False)
     index = Column(Integer, nullable=False)
+    source_exercise_id = Column(String, nullable=True)
+    rest_seconds = Column(Integer, nullable=True)
     name = Column(String, nullable=False)
     notes = Column(String, nullable=False)
     superset_id = Column(Integer, nullable=True)
@@ -136,6 +142,8 @@ class HevyAppSets(BaseModel):
     id = Column(Integer, primary_key=True, autoincrement=True)
     workout_item_id = Column(Integer, ForeignKey("HevyAppWorkoutItem.id"), nullable=False)
     index = Column(Integer, nullable=False)
+    source_set_id = Column(String, nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
     type = Column(String, nullable=False)
     weight_kg = Column(Float, nullable=True)
     reps = Column(Integer, nullable=True)
