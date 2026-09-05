@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.6.0 (2026-09-05)
+
+### Features
+
+- **hevy**: Persist web workout metadata in database schema
+  ([`833f84a`](https://github.com/cabell132/FitnessTracker/commit/833f84ad7d1474924eabb4ddf3d515535ec14324))
+
+
 ## v1.5.0 (2026-09-05)
 
 ### Features
