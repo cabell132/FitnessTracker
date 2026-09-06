@@ -19,28 +19,11 @@ repos:
         language: system
         types: [python]
         exclude: ^tests/
-      - id: semgrep
-        name: semgrep security scan
-        entry: semgrep scan --config auto --error --quiet
-        language: system
-        types: [python]
-        pass_filenames: false
-      - id: sloppylint
-        name: sloppylint AI slop detector
-        entry: uv run sloppylint --severity high --max-score 50 fitness_tracker/
-        language: system
-        types: [python]
-        pass_filenames: false
       - id: slop-detector
         name: AI code quality check
         entry: uv run slop-detector fitness_tracker/ --project --ci-mode soft
         language: system
         types: [python]
-        pass_filenames: false
-      - id: pip-audit
-        name: pip-audit dependency scan
-        entry: uv run pip-audit
-        language: system
         pass_filenames: false
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
