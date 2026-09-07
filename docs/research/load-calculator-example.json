@@ -1,0 +1,401 @@
+{
+  "evaluation_date": "2026-09-06",
+  "context": {
+    "exercise_id": "db-press",
+    "setup_id": "dumbbells",
+    "role": "working",
+    "execution": "bilateral; controlled tempo; per hand"
+  },
+  "prescription": {
+    "structure": "straight",
+    "efforts": [
+      {
+        "round": 0,
+        "part": 0,
+        "lower_reps": 8,
+        "upper_reps": 10
+      },
+      {
+        "round": 1,
+        "part": 0,
+        "lower_reps": 8,
+        "upper_reps": 10
+      },
+      {
+        "round": 2,
+        "part": 0,
+        "lower_reps": 8,
+        "upper_reps": 10
+      }
+    ],
+    "instructions": "3 x 8-10, bilateral; controlled tempo; normal rest."
+  },
+  "equipment": {
+    "setup_id": "dumbbells",
+    "recording_convention": "kg per dumbbell",
+    "options": [
+      {
+        "label": "1 kg",
+        "weight_kg": 1.0,
+        "recorded_aliases_kg": []
+      },
+      {
+        "label": "2 kg",
+        "weight_kg": 2.0,
+        "recorded_aliases_kg": []
+      },
+      {
+        "label": "3 kg",
+        "weight_kg": 3.0,
+        "recorded_aliases_kg": []
+      },
+      {
+        "label": "4 kg",
+        "weight_kg": 4.0,
+        "recorded_aliases_kg": []
+      },
+      {
+        "label": "5 kg",
+        "weight_kg": 5.0,
+        "recorded_aliases_kg": []
+      },
+      {
+        "label": "6 kg",
+        "weight_kg": 6.0,
+        "recorded_aliases_kg": []
+      },
+      {
+        "label": "7 kg",
+        "weight_kg": 7.0,
+        "recorded_aliases_kg": []
+      },
+      {
+        "label": "7.5 kg",
+        "weight_kg": 7.5,
+        "recorded_aliases_kg": []
+      },
+      {
+        "label": "8 kg",
+        "weight_kg": 8.0,
+        "recorded_aliases_kg": []
+      },
+      {
+        "label": "9 kg",
+        "weight_kg": 9.0,
+        "recorded_aliases_kg": []
+      },
+      {
+        "label": "10 kg",
+        "weight_kg": 10.0,
+        "recorded_aliases_kg": []
+      },
+      {
+        "label": "12 kg",
+        "weight_kg": 12.0,
+        "recorded_aliases_kg": []
+      },
+      {
+        "label": "12.5 kg",
+        "weight_kg": 12.5,
+        "recorded_aliases_kg": []
+      },
+      {
+        "label": "14 kg",
+        "weight_kg": 14.0,
+        "recorded_aliases_kg": []
+      },
+      {
+        "label": "15 kg",
+        "weight_kg": 15.0,
+        "recorded_aliases_kg": []
+      },
+      {
+        "label": "16 kg",
+        "weight_kg": 16.0,
+        "recorded_aliases_kg": []
+      },
+      {
+        "label": "17.5 kg",
+        "weight_kg": 17.5,
+        "recorded_aliases_kg": []
+      },
+      {
+        "label": "18 kg",
+        "weight_kg": 18.0,
+        "recorded_aliases_kg": []
+      },
+      {
+        "label": "20 kg",
+        "weight_kg": 20.0,
+        "recorded_aliases_kg": []
+      },
+      {
+        "label": "22 kg",
+        "weight_kg": 22.0,
+        "recorded_aliases_kg": []
+      },
+      {
+        "label": "24 kg",
+        "weight_kg": 24.0,
+        "recorded_aliases_kg": []
+      },
+      {
+        "label": "26 kg",
+        "weight_kg": 26.0,
+        "recorded_aliases_kg": []
+      },
+      {
+        "label": "28 kg",
+        "weight_kg": 28.0,
+        "recorded_aliases_kg": []
+      },
+      {
+        "label": "30 kg",
+        "weight_kg": 30.0,
+        "recorded_aliases_kg": []
+      },
+      {
+        "label": "32 kg",
+        "weight_kg": 32.0,
+        "recorded_aliases_kg": []
+      },
+      {
+        "label": "34 kg",
+        "weight_kg": 34.0,
+        "recorded_aliases_kg": []
+      },
+      {
+        "label": "36 kg",
+        "weight_kg": 36.0,
+        "recorded_aliases_kg": []
+      },
+      {
+        "label": "38 kg",
+        "weight_kg": 38.0,
+        "recorded_aliases_kg": []
+      },
+      {
+        "label": "40 kg",
+        "weight_kg": 40.0,
+        "recorded_aliases_kg": []
+      },
+      {
+        "label": "42 kg",
+        "weight_kg": 42.0,
+        "recorded_aliases_kg": []
+      },
+      {
+        "label": "44 kg",
+        "weight_kg": 44.0,
+        "recorded_aliases_kg": []
+      },
+      {
+        "label": "46 kg",
+        "weight_kg": 46.0,
+        "recorded_aliases_kg": []
+      },
+      {
+        "label": "48 kg",
+        "weight_kg": 48.0,
+        "recorded_aliases_kg": []
+      },
+      {
+        "label": "50 kg",
+        "weight_kg": 50.0,
+        "recorded_aliases_kg": []
+      }
+    ],
+    "steps": [
+      [
+        1.0,
+        2.0
+      ],
+      [
+        2.0,
+        3.0
+      ],
+      [
+        3.0,
+        4.0
+      ],
+      [
+        4.0,
+        5.0
+      ],
+      [
+        5.0,
+        6.0
+      ],
+      [
+        6.0,
+        7.0
+      ],
+      [
+        7.0,
+        7.5
+      ],
+      [
+        7.5,
+        8.0
+      ],
+      [
+        8.0,
+        9.0
+      ],
+      [
+        9.0,
+        10.0
+      ],
+      [
+        10.0,
+        12.0
+      ],
+      [
+        12.0,
+        12.5
+      ],
+      [
+        12.5,
+        14.0
+      ],
+      [
+        14.0,
+        15.0
+      ],
+      [
+        15.0,
+        16.0
+      ],
+      [
+        16.0,
+        17.5
+      ],
+      [
+        17.5,
+        18.0
+      ],
+      [
+        18.0,
+        20.0
+      ],
+      [
+        20.0,
+        22.0
+      ],
+      [
+        22.0,
+        24.0
+      ],
+      [
+        24.0,
+        26.0
+      ],
+      [
+        26.0,
+        28.0
+      ],
+      [
+        28.0,
+        30.0
+      ],
+      [
+        30.0,
+        32.0
+      ],
+      [
+        32.0,
+        34.0
+      ],
+      [
+        34.0,
+        36.0
+      ],
+      [
+        36.0,
+        38.0
+      ],
+      [
+        38.0,
+        40.0
+      ],
+      [
+        40.0,
+        42.0
+      ],
+      [
+        42.0,
+        44.0
+      ],
+      [
+        44.0,
+        46.0
+      ],
+      [
+        46.0,
+        48.0
+      ],
+      [
+        48.0,
+        50.0
+      ]
+    ],
+    "inventory_complete": true
+  },
+  "history": [
+    {
+      "evidence_id": "workout-1/item-1",
+      "performed_on": "2026-09-01",
+      "context": {
+        "exercise_id": "db-press",
+        "setup_id": "dumbbells",
+        "role": "working",
+        "execution": "bilateral; controlled tempo; per hand"
+      },
+      "prescription": {
+        "structure": "straight",
+        "efforts": [
+          {
+            "round": 0,
+            "part": 0,
+            "lower_reps": 8,
+            "upper_reps": 10
+          },
+          {
+            "round": 1,
+            "part": 0,
+            "lower_reps": 8,
+            "upper_reps": 10
+          },
+          {
+            "round": 2,
+            "part": 0,
+            "lower_reps": 8,
+            "upper_reps": 10
+          }
+        ],
+        "instructions": "3 x 8-10, bilateral; controlled tempo; normal rest."
+      },
+      "conditions": "normal",
+      "results": [
+        {
+          "round": 0,
+          "part": 0,
+          "reps": 10,
+          "recorded_kg": 14
+        },
+        {
+          "round": 1,
+          "part": 0,
+          "reps": 10,
+          "recorded_kg": 14
+        },
+        {
+          "round": 2,
+          "part": 0,
+          "reps": 10,
+          "recorded_kg": 14
+        }
+      ]
+    }
+  ]
+}
