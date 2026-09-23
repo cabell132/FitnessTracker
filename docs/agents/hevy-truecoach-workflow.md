@@ -27,7 +27,8 @@ Workout is a completed training session.
 
 `SyncService.run()` executes one full sync in this order:
 
-1. Import Apple Health metrics and workouts into the local tracker.
+1. Import Apple Health metrics, workouts, and primary-profile VeSync scale
+   readings into the local tracker.
 2. Fetch recent True Coach Workouts from the True Coach API.
 3. Persist those True Coach Workouts and Workout Items locally.
 4. Read the Hevy workout-events checkpoint.
@@ -37,7 +38,7 @@ Workout is a completed training session.
    workflow. Strict-safe plans apply through the review/apply path; plans with
    warnings or blockers write review artifacts without mutating True Coach.
 8. Write the new Hevy checkpoint.
-9. Push tracker assessment metrics to True Coach assessments.
+9. Push tracker assessment metrics and missing VeSync scale weights to True Coach assessments.
 10. Delete existing Hevy Routine drafts.
 11. Fetch recent True Coach Workouts again.
 12. Persist the fresh True Coach snapshot again.
@@ -64,7 +65,9 @@ on these directional responsibilities:
   Workouts, applies strict-safe result updates through the review/apply path,
   and marks the True Coach Workout completed only when the result workflow
   decides it is safe.
-- Tracker to True Coach pushes local metric rows into True Coach assessments.
+- Tracker to True Coach pushes local metric rows and missing VeSync scale weights into
+  True Coach assessments. Scale weights match existing chart entries by London date
+  and kilogram value before posting.
 - True Coach to Hevy converts due True Coach Workouts into Hevy Routines.
 
 ## Hevy checkpoint behavior

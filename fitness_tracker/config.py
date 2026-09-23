@@ -6,7 +6,6 @@ import os
 import sys
 from dataclasses import dataclass, field
 
-from dotenv import load_dotenv
 from pydantic import SecretStr
 
 
@@ -21,6 +20,9 @@ class Config:
     email: str
     database_url: str = "sqlite:///fitness_tracker.db"
     hevy_web_api_key: SecretStr = field(default_factory=lambda: SecretStr(""))
+    vesync_email: str | None = None
+    vesync_password: SecretStr = field(default_factory=lambda: SecretStr(""))
+    vesync_athlete_mode: bool = False
     llm_model: str = "gpt-4o-mini-2024-07-18"
     llm_temperature: float = 0.0
     llm_max_tokens: int = 150
@@ -42,12 +44,11 @@ class Config:
 
     @classmethod
     def from_env(cls) -> Config:
-        """Load ``.env`` once, validate required settings, and return config.
+        """Read the environment injected by Varlock and validate required settings.
 
         Returns:
             Config: Fully populated application configuration.
         """
-        load_dotenv()
         missing = [name for name in cls.required_env_vars() if not os.environ.get(name)]
         if missing:
             sys.exit(
@@ -62,4 +63,8 @@ class Config:
             dropbox_access_token=SecretStr(os.environ["DROPBOX_ACCESS_TOKEN"]),
             email=os.environ["EMAIL"],
             database_url=os.environ.get("DATABASE_URL", cls.database_url),
+            vesync_email=os.environ.get("VESYNC_EMAIL"),
+            vesync_password=SecretStr(os.environ.get("VESYNC_PASSWORD", "")),
+            vesync_athlete_mode=os.environ.get("VESYNC_ATHLETE_MODE", "false").lower()
+            in {"true", "1"},
         )

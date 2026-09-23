@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 
-from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 
@@ -22,7 +21,6 @@ def get_database_url(default: str = DEFAULT_DATABASE_URL) -> str:
     Returns:
         str: SQLAlchemy database URL.
     """
-    load_dotenv()
     return os.environ.get("DATABASE_URL", default)
 
 

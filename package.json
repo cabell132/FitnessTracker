@@ -1,9 +1,15 @@
 {
   "scripts": {
+    "env:check": "varlock load --agent",
+    "env:run": "varlock run --inject vars --",
+    "start": "varlock run --inject vars -- uv run python main.py",
+    "cli": "varlock run --inject vars -- uv run fitness-tracker",
+    "db": "varlock run --inject vars -- uv run alembic",
     "sandcastle": "npx tsx .sandcastle/main.mts"
   },
   "devDependencies": {
     "@ai-hero/sandcastle": "^0.5.10",
-    "tsx": "^4.22.1"
+    "tsx": "^4.22.1",
+    "varlock": "1.18.0"
   }
 }

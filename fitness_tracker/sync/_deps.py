@@ -13,6 +13,7 @@ import dropbox
 from sqlalchemy.engine import Engine
 
 from fitness_tracker.apis import HevyAppClient, TrueCoachClient
+from fitness_tracker.apis.vesync import VeSyncClient
 from fitness_tracker.config import Config
 from fitness_tracker.database import Store
 from fitness_tracker.llm.fitness_llm import FitnessLLM
@@ -34,6 +35,8 @@ class SyncDeps:
     dbx: dropbox.Dropbox
     checkpoints: CheckpointStore
     routine_review_output_root: Path = Path("reports")
+    vesync: VeSyncClient | None = None
+    vesync_athlete_mode: bool = False
 
     @classmethod
     def from_config(cls, engine: Engine, cfg: Config) -> SyncDeps:
@@ -65,4 +68,10 @@ class SyncDeps:
             ),
             dbx=dropbox.Dropbox(cfg.dropbox_access_token.get_secret_value()),
             checkpoints=FileCheckpointStore(),
+            vesync=(
+                VeSyncClient(cfg.vesync_email, cfg.vesync_password.get_secret_value())
+                if cfg.vesync_email and cfg.vesync_password.get_secret_value()
+                else None
+            ),
+            vesync_athlete_mode=cfg.vesync_athlete_mode,
         )

@@ -1,12 +1,23 @@
-"""Tests for True Coach -> tracker snapshot import."""
+"""Tests for True Coach snapshot import and scale weight chart sync."""
 
+from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
-from fitness_tracker.apis.true_coach.types import Meta, Workout, WorkoutItem, WorkoutResponse
+from fitness_tracker.apis.true_coach.types import (
+    Assessment,
+    AssessmentItem,
+    AssessmentResponse,
+    Meta,
+    Workout,
+    WorkoutItem,
+    WorkoutResponse,
+)
 from fitness_tracker.database.models.tracker import Workout as TrackerWorkout
 from fitness_tracker.database.models.tracker import WorkoutItem as TrackerWorkoutItem
 from fitness_tracker.database.models.true_coach import TrueCoachExercise, TrueCoachWorkoutItem
+from fitness_tracker.database.models.vesync import VeSyncWeighIn
 from fitness_tracker.database.store import Store
+from fitness_tracker.sync.tracker_true_coach.sync import TrackerToTrueCoachSyncronizer
 from fitness_tracker.sync.true_coach_tracker.sync import TrueCoachToFitnessTrackerSyncronizer
 
 
@@ -102,3 +113,77 @@ def test_sync_workouts_creates_tracker_workout_and_items_for_result_sync_linking
     assert tracker_item is not None
     assert tracker_item.workout_id == tracker_workout.id
     assert tracker_item.position == 8
+
+
+def test_weight_assessment_sync_only_posts_missing_scale_readings(store: Store) -> None:
+    existing = AssessmentItem(
+        id=1,
+        assessment_id=13513325,
+        value="90.20",
+        attachments=[],
+        created_at="2025-02-04T07:00:00.000000Z",
+        updated_at="2025-02-04T07:00:00.000000Z",
+        date="2025-02-04T07:00:00.000000Z",
+        completed_date="2025-02-04",
+    )
+    history = AssessmentResponse(
+        assessment=Assessment(
+            id=13513325,
+            assessment_group_id=1,
+            name="Weight",
+            units="kilograms",
+            order=1,
+            updated_at="2025-02-04T07:00:00.000000Z",
+            created_at="2025-02-04T07:00:00.000000Z",
+            created_by="client",
+            assessment_item_ids=[1],
+        ),
+        assessment_items=[existing],
+    )
+    with store.unit_of_work() as tx:
+        for index, (timestamp, grams) in enumerate(
+            [
+                (datetime(2025, 2, 4, 7, tzinfo=UTC), 90200),
+                (datetime(2025, 2, 5, 7, tzinfo=UTC), 89950),
+                (datetime(2025, 2, 5, 9, tzinfo=UTC), 89700),
+            ]
+        ):
+            tx.add(
+                VeSyncWeighIn(
+                    source_key=f"source-{index}",
+                    measured_at=timestamp,
+                    weight_g=grams,
+                    is_manual_input=False,
+                )
+            )
+
+    target = MagicMock()
+    target.assessments.get_weights.return_value = history
+
+    def post(request):
+        payload = request.assessment_item
+        item = AssessmentItem(
+            id=len(history.assessment_items) + 1,
+            assessment_id=13513325,
+            value=payload.value,
+            attachments=[],
+            created_at=payload.date,
+            updated_at=payload.date,
+            date=payload.date,
+            completed_date=payload.date[:10],
+        )
+        history.assessment_items.append(item)
+        return item
+
+    target.assessments.post.side_effect = post
+    syncer = TrackerToTrueCoachSyncronizer(store, target)
+
+    syncer.sync_assessments()
+    assert syncer.sync_vesync_weights() == 0
+    assert target.assessments.post.call_count == 2
+    assert [
+        call.args[0].assessment_item.value for call in target.assessments.post.call_args_list
+    ] == [
+        "89.95",
+        "89.70",
+    ]

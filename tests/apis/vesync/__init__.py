@@ -1,0 +1,1 @@
+"""VeSync API tests."""

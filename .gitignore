@@ -16,12 +16,17 @@ data/
 # direnv
 .envrc
 
-# dotenv
+# Local Varlock values and overrides
 .env
+.env.*
+!.env.schema
 
 # Rotating Hevy web credentials
 .hevy-web-auth.json
 .hevy-web-auth.json.lock
+
+# VeSync session token cache
+.cache-vesync-tokens
 
 # Hypothesis
 .hypothesis/

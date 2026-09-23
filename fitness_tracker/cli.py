@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -16,9 +17,13 @@ from pydantic import ValidationError
 from rapidfuzz import fuzz, process
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import SQLAlchemyError
 
 from fitness_tracker.apis import HevyAppClient, TrueCoachClient
+from fitness_tracker.apis.exceptions import APIError
 from fitness_tracker.apis.hevy_app.exceptions import HevyAppAPIError
+from fitness_tracker.apis.vesync import VeSyncClient
+from fitness_tracker.apis.vesync.exceptions import VeSyncBaseError
 from fitness_tracker.apis.hevy_app.types import (
     PostRoutineFolderRequest,
     PostRoutineFolderRequestBody,
@@ -67,6 +72,8 @@ from fitness_tracker.sync.adapters import (
     TrueCoachWorkoutItemWriterAdapter,
 )
 from fitness_tracker.sync.true_coach_tracker.sync import TrueCoachToFitnessTrackerSyncronizer
+from fitness_tracker.sync.tracker_true_coach.sync import TrackerToTrueCoachSyncronizer
+from fitness_tracker.sync.vesync import sync_vesync_weigh_ins
 from fitness_tracker.sync_review import (
     HevyToTrueCoachResultApplyError,
     HevyToTrueCoachResultApplyResult,
@@ -1692,6 +1699,32 @@ def _sync_apply_hevy_to_truecoach_results(args: argparse.Namespace) -> int:
         _emit(f"Error: {exc}")
         return 2
     _print_hevy_to_truecoach_result_apply_summary(result)
+    if not args.dry_run:
+        return _sync_scale_after_result_apply(store)
+    return 0
+
+
+def _sync_scale_after_result_apply(store: Store) -> int:
+    if not (os.environ.get("VESYNC_EMAIL") and os.environ.get("VESYNC_PASSWORD")):
+        return 0
+    try:
+        athlete_mode = os.environ.get("VESYNC_ATHLETE_MODE", "false").lower() in {"true", "1"}
+        result = sync_vesync_weigh_ins(store, VeSyncClient.from_env(), athlete_mode=athlete_mode)
+    except (VeSyncBaseError, RuntimeError, SQLAlchemyError) as exc:
+        _emit(f"VeSync scale import failed after workout result apply: {type(exc).__name__}")
+        return 2
+    _emit(f"vesync_weigh_ins_inserted: {result.inserted}")
+    _emit(f"vesync_weigh_ins_updated: {result.updated}")
+    try:
+        posted = TrackerToTrueCoachSyncronizer(
+            store, _truecoach_client_from_config()
+        ).sync_vesync_weights()
+    except (APIError, ValueError, SQLAlchemyError) as exc:
+        _emit(
+            f"True Coach weight chart sync failed after workout result apply: {type(exc).__name__}"
+        )
+        return 2
+    _emit(f"truecoach_weight_entries_added: {posted}")
     return 0
 
 

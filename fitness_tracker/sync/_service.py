@@ -29,6 +29,7 @@ from fitness_tracker.sync.hevy_tracker.sync import HevyToFitnessTrackerSyncroniz
 from fitness_tracker.sync.tracker_hevy.sync import TrackerToHevySyncronizer
 from fitness_tracker.sync.tracker_true_coach.sync import TrackerToTrueCoachSyncronizer
 from fitness_tracker.sync.true_coach_tracker.sync import TrueCoachToFitnessTrackerSyncronizer
+from fitness_tracker.sync.vesync import sync_vesync_weigh_ins
 from fitness_tracker.sync_review.hevy_to_true_coach_result_workflow import (
     HevyToTrueCoachResultSyncWorkflow,
 )
@@ -115,6 +116,7 @@ class SyncService:
         """
         checkpoints = self._deps.checkpoints
         self.sync_apple_health()
+        self.sync_scale()
 
         res = self.fetch_recent_true_coach_workouts()
         if res is not None:
@@ -137,6 +139,13 @@ class SyncService:
             routine_batch = _failed_routine_replacement_result(exc)
 
         return events, routine_batch, workouts
+
+    def sync_scale(self) -> None:
+        """Import account-owner scale readings before pushing True Coach weights."""
+        if self._deps.vesync is not None:
+            sync_vesync_weigh_ins(
+                self._store, self._deps.vesync, athlete_mode=self._deps.vesync_athlete_mode
+            )
 
     def run(self, *, now: datetime | None = None) -> SyncRunResult:
         """Execute the full sync pipeline with internal checkpoint lifecycle.

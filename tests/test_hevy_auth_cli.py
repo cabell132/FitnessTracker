@@ -143,7 +143,6 @@ def test_hevy_auth_refresh_rotates_stored_credentials(tmp_path: Path, monkeypatc
 
 
 def test_config_does_not_require_legacy_hevy_web_token(monkeypatch) -> None:
-    monkeypatch.setattr("fitness_tracker.config.load_dotenv", lambda: None)
     monkeypatch.delenv("HEVY_WEB_API_KEY", raising=False)
     for name in Config.required_env_vars():
         monkeypatch.setenv(name, "configured")
@@ -163,7 +162,7 @@ def test_hevy_routine_delete_uses_refreshing_client(monkeypatch, capsys) -> None
     class FakeClient:
         routines = FakeRoutines()
 
-    monkeypatch.setattr(cli, "_hevy_client_from_config", lambda: FakeClient())
+    monkeypatch.setattr(cli, "_hevy_client_from_config", FakeClient)
 
     exit_code = cli.main(["hevy", "routines", "delete", "routine-1", "--yes", "--json"])
 

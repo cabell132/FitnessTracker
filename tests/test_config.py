@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from pydantic import SecretStr
 from sqlalchemy import create_engine
@@ -11,9 +13,29 @@ from fitness_tracker.database.config import get_database_url
 from fitness_tracker.sync._deps import SyncDeps
 
 
+def test_from_env_uses_injected_credentials_without_reading_local_files(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Only the launcher resolves local credentials; Python uses its environment."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env").write_text("HEVY_WEB_API_KEY=local-fallback\n", encoding="utf-8")
+    monkeypatch.delenv("HEVY_WEB_API_KEY", raising=False)
+    for name in Config.required_env_vars():
+        monkeypatch.setenv(name, "injected-value")
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///injected.db")
+    monkeypatch.setenv("VESYNC_ATHLETE_MODE", "true")
+
+    config = Config.from_env()
+
+    assert config.hevy_api_key.get_secret_value() == "injected-value"
+    assert config.hevy_web_api_key.get_secret_value() == ""
+    assert config.database_url == "sqlite:///injected.db"
+    assert config.vesync_athlete_mode is True
+
+
 def test_from_env_reports_all_missing_required_vars(monkeypatch: pytest.MonkeyPatch) -> None:
     """Missing required settings are reported together at startup."""
-    monkeypatch.setattr("fitness_tracker.config.load_dotenv", lambda: None)
     for name in Config.required_env_vars():
         monkeypatch.delenv(name, raising=False)
 
@@ -30,7 +52,6 @@ def test_database_url_defaults_to_env_without_full_config_validation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Database-only commands can read DATABASE_URL without requiring all credentials."""
-    monkeypatch.setattr("fitness_tracker.database.config.load_dotenv", lambda: None)
     for name in Config.required_env_vars():
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("DATABASE_URL", "sqlite:///from-env.db")
@@ -87,10 +108,12 @@ def test_sync_deps_from_config_wires_configured_credentials(
         llm_model="model",
         llm_temperature=0.25,
         llm_max_tokens=300,
+        vesync_athlete_mode=True,
     )
 
-    SyncDeps.from_config(create_engine("sqlite:///:memory:"), cfg)
+    deps = SyncDeps.from_config(create_engine("sqlite:///:memory:"), cfg)
 
+    assert deps.vesync_athlete_mode is True
     assert captured == {
         "hevy_api_key": "hevy",
         "hevy_web_api_key": "web",
