@@ -2,6 +2,24 @@
 
 <!-- version list -->
 
+## v1.7.0 (2026-09-26)
+
+### Chores
+
+- Remove semgrep sloppylint and pip-audit pre-commit hooks
+  ([`c478a43`](https://github.com/cabell132/FitnessTracker/commit/c478a4386d53df8b2ca5f5e5d0fe99f9831703f1))
+
+### Documentation
+
+- Rename agent guidance and add simplicity principles
+  ([`7a63aca`](https://github.com/cabell132/FitnessTracker/commit/7a63aca343d0ce6f4b019c33ddb8f5294eddba38))
+
+### Features
+
+- **sync**: Reconcile VeSync weights with TrueCoach
+  ([`592233a`](https://github.com/cabell132/FitnessTracker/commit/592233a9b3771a059283594db8c3a6b25a14608a))
+
+
 ## v1.6.0 (2026-09-05)
 
 ### Features
