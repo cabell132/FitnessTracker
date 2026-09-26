@@ -2,7 +2,7 @@
 
 Review the code changes on branch `{{BRANCH}}` and improve code clarity, consistency, and maintainability while preserving exact functionality.
 
-# CONTEXT
+## CONTEXT
 
 ## Branch diff
 
@@ -12,7 +12,7 @@ Review the code changes on branch `{{BRANCH}}` and improve code clarity, consist
 
 !`git log {{TARGET_BRANCH}}..{{BRANCH}} --oneline`
 
-# REVIEW PROCESS
+## REVIEW PROCESS
 
 1. **Understand the change**: Read the diff and commits above to understand the intent.
 
@@ -42,7 +42,7 @@ Review the code changes on branch `{{BRANCH}}` and improve code clarity, consist
 
 6. **Preserve functionality**: Never change what the code does - only how it does it. All original features, outputs, and behaviors must remain intact.
 
-# EXECUTION
+## EXECUTION
 
 If you find improvements to make:
 

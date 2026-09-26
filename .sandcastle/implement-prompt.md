@@ -8,7 +8,7 @@ Only work on the issue specified.
 
 Work on branch {{BRANCH}}. Make commits and run tests.
 
-# CONTEXT
+## CONTEXT
 
 Here are the last 10 commits:
 
@@ -18,13 +18,13 @@ Here are the last 10 commits:
 
 </recent-commits>
 
-# EXPLORATION
+## EXPLORATION
 
 Explore the repo and fill your context window with relevant information that will allow you to complete the task.
 
 Pay extra attention to test files that touch the relevant parts of the code.
 
-# EXECUTION
+## EXECUTION
 
 If applicable, use RGR to complete the task.
 
@@ -33,15 +33,15 @@ If applicable, use RGR to complete the task.
 3. REPEAT until done
 4. REFACTOR the code
 
-# FEEDBACK LOOPS
+## FEEDBACK LOOPS
 
 Before committing, run `uv run poe check` to ensure the checks pass.
 
-# COMMIT
+## COMMIT
 
 Make a concise git commit using a conventional commit prefix accepted by this repo, such as `feat:` or `fix:`.
 
-# THE ISSUE
+## THE ISSUE
 
 If the task is not complete, leave a comment on the issue with what was done.
 
@@ -49,6 +49,6 @@ Do not close the issue - this will be done later.
 
 Once complete, output <promise>COMPLETE</promise>.
 
-# FINAL RULES
+## FINAL RULES
 
 ONLY WORK ON A SINGLE TASK.

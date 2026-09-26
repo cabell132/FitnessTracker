@@ -126,26 +126,27 @@ Also accept a plain True Coach Workout id if the user invokes this command with 
 
 10. Verify after applying or repairing.
 
-   ```bash
-   uv run fitness-tracker workout-backfill diff --review-dir reports/workout-backfill/WORKOUT_ID
-   ```
+    ```bash
+    uv run fitness-tracker workout-backfill diff --review-dir reports/workout-backfill/WORKOUT_ID
+    ```
 
-   If a Hevy Workout id was created or discovered, inspect the remote workout:
+    If a Hevy Workout id was created or discovered, inspect the remote workout:
 
-   ```bash
-   uv run fitness-tracker hevy workouts inspect HEVY_WORKOUT_ID
-   ```
+    ```bash
+    uv run fitness-tracker hevy workouts inspect HEVY_WORKOUT_ID
+    ```
 
 11. Report the result.
-   - True Coach Workout id and title.
-   - Hevy Workout id, if created, repaired, or already linked.
-   - Selected start/end time and why.
-   - Any Apple Health evidence used.
-   - Any Choice Workout Item decisions.
-   - Any Circuit/AMRAP movement template decisions, omissions, or synthetic
-     tracker items created/repaired.
-   - Any omitted placeholder items.
-   - Report, decisions, and request artifact paths.
-   - Final diff result.
-   - When a Hevy Workout id is known, include: `https://hevy.com/workout/HEVY_WORKOUT_ID`
-   - Any unrelated dirty files left in the working tree.
+
+    - True Coach Workout id and title.
+    - Hevy Workout id, if created, repaired, or already linked.
+    - Selected start/end time and why.
+    - Any Apple Health evidence used.
+    - Any Choice Workout Item decisions.
+    - Any Circuit/AMRAP movement template decisions, omissions, or synthetic
+      tracker items created/repaired.
+    - Any omitted placeholder items.
+    - Report, decisions, and request artifact paths.
+    - Final diff result.
+    - When a Hevy Workout id is known, include: `https://hevy.com/workout/HEVY_WORKOUT_ID`
+    - Any unrelated dirty files left in the working tree.

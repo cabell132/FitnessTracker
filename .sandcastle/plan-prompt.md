@@ -15,7 +15,7 @@ implementation tasks. They may explain the feature and may be referenced by
 child issues, but they must never be selected for implementation, including in
 the fallback case where every child issue appears blocked.
 
-# TASK
+## TASK
 
 Analyze the open issues and build a dependency graph. For each issue, determine whether it **blocks** or **is blocked by** any other open issue.
 
@@ -29,7 +29,7 @@ An issue is **unblocked** if it has zero blocking dependencies on other open iss
 
 For each unblocked issue, assign a branch name using the format `sandcastle/issue-{id}-{slug}`.
 
-# OUTPUT
+## OUTPUT
 
 Output your plan as a JSON object wrapped in `<plan>` tags:
 
